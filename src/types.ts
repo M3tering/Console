@@ -6,3 +6,8 @@ export interface State {
   public_key: string;
   token_id: number;
 }
+export interface Payload {
+  0: string;
+  1: string;
+  2: number[];
+}

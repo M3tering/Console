@@ -8,7 +8,7 @@ export function handleUplinks() {
     host: process.env.CHIRPSTACK_HOST,
     port: 1883,
     clean: true,
-    connectTimeout: 4000,
+    connectTimeout: 9000,
     reconnectPeriod: 1000,
   });
 
@@ -30,14 +30,17 @@ export function handleUplinks() {
       const data = Buffer.from(rawData, "base64").toString();
       try {
         const result = await interact(
-          "4A3sCQ-fWlzSc17He_mPd_s3QTbPuzzOmrR_RAkPPv8",
+          "xJBbK2IPE69XKg0NGylvJ6AhsRUaVUV82oNuuv87Jcc",
           JSON.parse(data)
         );
-        const bytes = prepData(result);
-        enqueue(devEui, bytes);
+        if (result) {
+          const bytes = prepData(result);
+          enqueue(devEui, bytes);
+          console.log("Success onchain; data posted to chirpstack")
+        }
+        console.log("\nDecoded data:\n", data);
       } catch (error) {
         console.log(error);
-        console.log("\nDecoded data:\n", data);
       }
     }
   });
