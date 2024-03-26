@@ -1,7 +1,8 @@
+import { db } from "./db";
 import { connect } from "mqtt";
 import { enqueue } from "./grpc";
+import { encode } from "./encode";
 import { interact } from "./warp";
-import { prepData } from "./encode";
 
 export function handleUplinks() {
   const client = connect({
@@ -21,27 +22,17 @@ export function handleUplinks() {
     );
   });
 
-  client.on("message", async (topic, payload) => {
-    const payloadData = JSON.parse(payload.toString());
-    const devEui = payloadData["deviceInfo"]["devEui"];
-    const rawData = payloadData["data"];
-
-    if (rawData && devEui) {
-      const data = Buffer.from(rawData, "base64").toString();
-      try {
-        const result = await interact(
-          "xJBbK2IPE69XKg0NGylvJ6AhsRUaVUV82oNuuv87Jcc",
-          JSON.parse(data)
-        );
-        if (result) {
-          const bytes = prepData(result);
-          enqueue(devEui, bytes);
-          console.log("Success onchain; data posted to chirpstack")
-        }
-        console.log("\nDecoded data:\n", data);
-      } catch (error) {
-        console.log(error);
-      }
+  client.on("message", async (_, blob) => {
+    try {
+      const message = JSON.parse(blob.toString());
+      const payload = JSON.parse(
+        Buffer.from(message["data"], "base64").toString()
+      );
+      const [_, contractId] = JSON.parse(await db.get(payload[0]));
+      const result = await interact(contractId, payload);
+      if (result) enqueue(message["deviceInfo"]["devEui"], encode(result));
+    } catch (error) {
+      console.log(error);
     }
   });
 }

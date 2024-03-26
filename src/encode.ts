@@ -1,6 +1,6 @@
 import { State } from "./types";
 
-export function prepData(data: State) {
+export function encode(data: State) {
   console.log(data);
   var nonce = data.nonce;
   var byteArray: number[] = [];
