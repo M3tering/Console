@@ -1,26 +1,25 @@
 import "dotenv/config";
 import { db } from "./src/db";
+import { create } from "express-handlebars";
 import bodyParser from "body-parser";
 import { handleUplinks } from "./src/mqtt";
 import express, { Express, Request, Response } from "express";
 
 const port = process.env.PORT || 3000;
 const app: Express = express();
+const hbs = create({ /* config */ });
+
+app.use(express.static("public"));
 app.use(bodyParser.json());
-app.use(
-  bodyParser.urlencoded({
-    extended: true,
-  })
-);
+app.engine("hbs", hbs.engine);
+app.set("view engine", "hbs");
+app.set('views', './views');
 
 handleUplinks();
 
 app.get("/", async (req: Request, res: Response) => {
-  let data: { [key: string]: string } = {};
-  for await (const [key, value] of db.iterator()) {
-    data[key] = JSON.parse(value);
-  }
-  res.send(data);
+  const m3ters = await db.iterator().all();
+  res.render("index", { m3ters });
 });
 
 app.post("/", async (req: Request, res: Response) => {
