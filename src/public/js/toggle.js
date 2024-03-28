@@ -1,21 +1,17 @@
-function toggleApp(appIds) {
-  if (clickRef.current) clickRef.current.play();
-  var state = isOpen;
-  var scroll = document.getElementById("scroll");
-  appIds.forEach((appId) => {
-    var app = document.getElementById(appId);
-    if (!app || !scroll) return console.log(`${appId} not closed`);
-    if (state) {
-      app.style.display = "none";
-      scroll.style.display = "none";
-      console.log(`${appId} closed`);
-      state = false;
-    } else {
-      app.style.display = "block";
-      scroll.style.display = "block";
-      console.log(`${appId} opened`);
-      state = true;
+function toggleApp(appId, state) {
+  const iconState = state === true ? "none" : "block";
+  const appState = state === true ? "block" : "none";
+
+  ["m3ters-icon", "browser-icon", "console-icon", "paint-icon"].forEach(
+    (iconId) => {
+      var icon = document.getElementById(iconId);
+      icon.style.display = iconState;
     }
-  });
-  setOpen(state);
+  );
+
+  var scroll = document.getElementById("scroll");
+  var app = document.getElementById(appId);
+
+  scroll.style.display = appState;
+  app.style.display = appState;
 }

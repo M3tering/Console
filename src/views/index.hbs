@@ -13,10 +13,14 @@
     <div class="nes-container subtle">
       <div>
         {{! {/* M3ters Icon */} }}
-        <div>
+        <div id="m3ters-icon">
           <div>
             <div>
-              <button class="nes-btn"style="background-color: #eee">
+              <div
+                class="nes-btn"
+                style="background-color: #eee"
+                onclick="toggleApp('m3ters', true)"
+              >
                 <div>
                   <img
                     alt="M3ter"
@@ -49,28 +53,29 @@
                     class="nes-avatar"
                   />
                 </div>
-              </button>
+              </div>
               <p>M3ters</p>
             </div>
           </div>
         </div>
 
-        {{! {/* Github Icon */} }}
-        <div>
+        {{! {/* Paint Icon */} }}
+        <div id="paint-icon">
           <div style="float:right">
-            <a class="nes-btn is-warning"target="browser">
+            <a class="nes-btn is-warning" target="browser">
               <i class="nes-icon heart is-medium"></i>
             </a>
             <p>Paint</p>
           </div>
         </div>
 
-        {{! {/* Terminal Icon */} }}
-        <div>
+        {{! {/* Console Icon */} }}
+        <div id="console-icon">
           <div>
             <button
               class="nes-btn is-success"
               style="background-color: black"
+              onclick="toggleApp('console', true)"
             >
               <h1 style="fontSize: 26">&gt;_</h1>
             </button>
@@ -79,9 +84,9 @@
         </div>
 
         {{! {/* Browser Icon */} }}
-        <div>
+        <div id="browser-icon">
           <div style="float: right">
-            <button class="nes-btn">
+            <button class="nes-btn" onclick="toggleApp('browser', true)">
               <i class="nes-icon google is-medium"></i>
             </button>
             <p>browse</p>
@@ -95,10 +100,13 @@
           style="background-color: white,float:left"
         >
           <div>
-            <button class="nes-btn is-error">
+            <button
+              class="nes-btn is-error"
+              onclick="toggleApp('m3ters', false)"
+            >
               <i class="nes-icon close is-small"></i>
             </button>
-            <button class="nes-btn">
+            <button class="nes-btn" onclick="toggleApp('m3ters', false)">
               _
             </button>
           </div>
@@ -109,7 +117,7 @@
               class="nes-input"
               placeholder="tokenId"
             />
-            <button type="button"class="nes-btn is-warning">
+            <button type="button" class="nes-btn is-warning">
               + Add M3ter
             </button>
             <label>
@@ -150,14 +158,17 @@
         </div>
 
         {{! {/* console Terminal */} }}
-        <div class="nes-container is-dark hidden"id="console">
-          <button class="nes-btn is-error">
+        <div class="nes-container is-dark hidden" id="console">
+          <button
+            class="nes-btn is-error"
+            onclick="toggleApp('console', false)"
+          >
             <i class="nes-icon close is-small"></i>
           </button>
-          <button class="nes-btn">
+          <button class="nes-btn" onclick="toggleApp('console', false)">
             _
           </button>
-          <div class="nes-container is-dark"id="m3ter-data">
+          <div class="nes-container is-dark" id="m3ter-data">
             <div class="nes-container is-dark is-centered subtle">
               <h3 class="empty">Loading M3ter data...</h3>
             </div>
@@ -168,12 +179,12 @@
     </div>
 
     {{! {/* google app */} }}
-    <div class="nes-container subtle hidden"id="browser">
-      <div class="nes-container"style="background-color:white">
-        <button class="nes-btn is-error">
+    <div class="nes-container subtle hidden" id="browser">
+      <div class="nes-container" style="background-color:white">
+        <button class="nes-btn is-error" onclick="toggleApp('browser', false)">
           <i class="nes-icon close is-small"></i>
         </button>
-        <button class="nes-btn">
+        <button class="nes-btn" onclick="toggleApp('browser', false)">
           _
         </button>
         <iframe
@@ -197,6 +208,6 @@
     >
       <span>&#x2191;</span>
     </button>
-    <audio ref="clickRef"src="/rclick-13693.mp3"/>
+    <audio ref="clickRef" src="/rclick-13693.mp3" />
   </div>
 </div>
