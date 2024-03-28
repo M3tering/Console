@@ -4,23 +4,26 @@ import { create } from "express-handlebars";
 import bodyParser from "body-parser";
 import { handleUplinks } from "./logic/mqtt";
 import express, { Express, Request, Response } from "express";
+import path from "path";
 
 
 const port = process.env.PORT || 3000;
 const app: Express = express();
 
+app.use(express.static(path.join(__dirname, '/public')));
+
 const hbs = create({
   defaultLayout: "main",
   extname: "hbs",
   helpers: {
-    globalCSS() {return 'src/public/css/global.css'},
+    globalCSS() {return '/css/global.css'},
   },
 });
 
 app.engine("hbs", hbs.engine);
 app.set("view engine", "hbs");
 app.set("views", "./src/views");
-app.use(express.static(".src/public"));
+
 app.use(bodyParser.json());
 
 handleUplinks();
