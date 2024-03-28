@@ -1,0 +1,38 @@
+body {
+  height: 100vh;
+  background-image: url("/assets/8-bit-13.jpg");
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+#m3ter-data,
+.empty {
+  color: lime;
+  font-size: 15px;
+  overflow-wrap: break-word;
+  transition: content 0.5s ease-in-out;
+}
+
+#nav {
+  font-size: 10px;
+  background-color: lightgray;
+  padding: 7px;
+  border-bottom: solid black;
+}
+
+.bbtn {
+  float: right;
+}
+
+iframe {
+  height: 700px;
+  width: 100%;
+}
+
+.subtle {
+  border-color: #0000 !important;
+}
+
+.hidden {
+  display: none;
+}
