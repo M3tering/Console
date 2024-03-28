@@ -1,4 +1,4 @@
-import { State, Payload } from "./types";
+import { State, Payload } from "../types";
 import { WarpFactory, Tag } from "warp-contracts";
 import { EthersExtension } from "m3tering-ethers";
 import { Ed25519Extension } from "m3tering-ed25519";

@@ -1,0 +1,23 @@
+
+<p>Hello World {{foo}}</p>
+
+<table>
+    <thead>
+        <tr>
+            <td>Public Key</td>
+            <td>Token Id</td>
+            <td>Contract Id</td>
+        </tr>
+    </thead>
+    <tbody>
+        {{#each m3ters}}
+            <tr>
+                <td>{{this.[0]}}</td>
+                {{#with this.[1]}}
+                    <td>{{{tokenId}}}</td>
+                    <td>{{{contractId}}}</td>
+                {{/with}}
+            </tr>
+        {{/each}}
+    </tbody>
+</table>

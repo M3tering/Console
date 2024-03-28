@@ -1,3 +1,7 @@
+
+src/db
+.idea
+
 # Logs
 logs
 *.log
@@ -97,12 +101,6 @@ dist
 # https://nextjs.org/blog/next-9-1#public-directory-support
 # public
 
-# vuepress build output
-.vuepress/dist
-
-# vuepress v2.x temp and cache directory
-.temp
-.cache
 
 # Docusaurus cache and generated files
 .docusaurus
@@ -129,3 +127,4 @@ dist
 .yarn/install-state.gz
 .pnp.*
 cache/
+src/db/
