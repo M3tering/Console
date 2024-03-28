@@ -1,25 +1,202 @@
+<div>
+  <div id="nav">
+    &#8192;&#8192;&#8192;&#8192;&#8192;&#8192;
+    <span>File</span>&#8192;&#8192;&#8192;&#8192;&#8192;&#8192;
+    <span>Edit</span>&#8192;&#8192;&#8192;&#8192;&#8192;&#8192;
+    <span>Help</span>
+    <div className="bbtn">
+      Time&#8192;&#8192;&#8192;&#8192;&#8192;&#8192;
+    </div>
+  </div>
+  <div>
+    {{! {/* Apps */} }}
+    <div className="nes-container subtle">
+      <div>
+        {{! {/* M3ters Icon */} }}
+        <div>
+          <div>
+            <div>
+              <button className="nes-btn"style="backgroundColor: #eee">
+                <div>
+                  <img
+                    alt="M3ter"
+                    width="60"
+                    height="60"
+                    src="https://mqtt-node.vercel.app/api/m3ter-head/pretty"
+                    className="nes-avatar"
+                  />
+                  <img
+                    alt="M3ter"
+                    width="60"
+                    height="60"
+                    src="https://mqtt-node.vercel.app/api/m3ter-head/new"
+                    className="nes-avatar"
+                  />
+                </div>
+                <div>
+                  <img
+                    alt="M3ter"
+                    width="60"
+                    height="60"
+                    src="https://mqtt-node.vercel.app/api/m3ter-head/blob"
+                    className="nes-avatar"
+                  />
+                  <img
+                    alt="M3ter"
+                    width="60"
+                    height="60"
+                    src="https://mqtt-node.vercel.app/api/m3ter-head/now"
+                    className="nes-avatar"
+                  />
+                </div>
+              </button>
+              <p>M3ters</p>
+            </div>
+          </div>
+        </div>
 
+        {{! {/* Github Icon */} }}
+        <div>
+          <div style="float:right">
+            <a className="nes-btn is-warning"target="browser">
+              <i className="nes-icon heart is-medium"></i>
+            </a>
+            <p>Paint</p>
+          </div>
+        </div>
 
-<p>Hello World {{foo}}</p>
+        {{! {/* Terminal Icon */} }}
+        <div>
+          <div>
+            <button
+              className="nes-btn is-success"
+              style="backgroundColor: black"
+            >
+              <h1 style="fontSize: 26">&gt;_</h1>
+            </button>
+            <p>console</p>
+          </div>
+        </div>
 
-<table>
-  <thead>
-    <tr>
-      <td>Public Key</td>
-      <td>Token Id</td>
-      <td>Contract Id</td>
-    </tr>
-  </thead>
-  <tbody>
-    {{#each m3ters}}
-      <tr>
-        <td>{{this.[0]}}</td>
-        {{#with this.[1]}}
-          <td>{{{tokenId}}}</td>
-          <td>{{{contractId}}}</td>
-        {{/with}}
-      </tr>
-    {{/each}}
-  </tbody>
-</table>
+        {{! {/* Browser Icon */} }}
+        <div>
+          <div style="float: right">
+            <button className="nes-btn">
+              <i className="nes-icon google is-medium"></i>
+            </button>
+            <p>browse</p>
+          </div>
+        </div>
 
+        {{! {/* M3ters Table */} }}
+        <div
+          className="nes-table-responsive nes-container hidden"
+          id="m3ters"
+          style="backgroundColor: white,float:left"
+        >
+          <div>
+            <button className="nes-btn is-error">
+              <i className="nes-icon close is-small"></i>
+            </button>
+            <button className="nes-btn">
+              _
+            </button>
+          </div>
+          <div className="nes-field is-inline">
+            <input
+              type="text"
+              id="tokenId_input"
+              className="nes-input"
+              placeholder="tokenId"
+            />
+            <button type="button"className="nes-btn is-warning">
+              + Add M3ter
+            </button>
+            <label>
+              <input
+                type="checkbox"
+                className="nes-checkbox"
+                defaultChecked="false"
+              />
+              <span>sudo</span>
+            </label>
+          </div>
+
+          <table className="nes-table is-bordered">
+            <thead className="nes-container is-centered">
+              <tr>
+                <th>TokenId</th>
+                <th>Warp Contract</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each m3ters}}
+                <tr>
+                  <td>
+                    <span> #{{{tokenId}}}</span>
+                  </td>
+                  <td>
+                    <a
+                      target="browser"
+                      href="https://viewblock.io/arweave/contract/{{{contractId}}}"
+                    >
+                      {{{contractId}}}
+                    </a>
+                  </td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+
+        {{! {/* console Terminal */} }}
+        <div className="nes-container is-dark hidden"id="console">
+          <button className="nes-btn is-error">
+            <i className="nes-icon close is-small"></i>
+          </button>
+          <button className="nes-btn">
+            _
+          </button>
+          <div className="nes-container is-dark"id="m3ter-data">
+            <div className="nes-container is-dark is-centered subtle">
+              <h3 className="empty">Loading M3ter data...</h3>
+            </div>
+          </div>
+          <span></span>
+        </div>
+      </div>
+    </div>
+
+    {{! {/* google app */} }}
+    <div className="nes-container subtle hidden"id="browser">
+      <div className="nes-container"style="backgroundColor:white">
+        <button className="nes-btn is-error">
+          <i className="nes-icon close is-small"></i>
+        </button>
+        <button className="nes-btn">
+          _
+        </button>
+        <iframe
+          src="https://www.wikipedia.org/"
+          name="browser"
+          title="Google search"
+        ></iframe>
+      </div>
+    </div>
+
+    <button
+      type="button"
+      id="scroll"
+      className="nes-btn"
+      style="
+            display: none,
+            position: fixed,
+            bottom: 70,
+            right: 70,
+            zIndex: 99"
+    >
+      <span>&#x2191;</span>
+    </button>
+    <audio ref="clickRef"src="/rclick-13693.mp3"/>
+  </div>
+</div>

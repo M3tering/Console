@@ -17,6 +17,7 @@ const hbs = create({
   extname: "hbs",
   helpers: {
     globalCSS() {return '/css/global.css'},
+    toggleJS() {return '/js/toggle.js'},
   },
 });
 
@@ -26,13 +27,18 @@ app.set("views", "./src/views");
 
 app.use(bodyParser.json());
 
-handleUplinks();
+// handleUplinks();
 
 app.get("/", async (req: Request, res: Response) => {
-  const m3ters = await db.iterator().all();
-  for (let i = 0; i < m3ters.length; i++) {
-    m3ters[i][1] = JSON.parse(m3ters[i][1]);
+  let m3ters: any[]= []
+  for await (const [key, value] of db.iterator()) {
+    m3ters.push(JSON.parse(value))
   }
+
+  // const m3ters = await db.iterator().all();
+  // for (let i = 0; i < m3ters.length; i++) {
+  //   m3ters[i][1] = JSON.parse(m3ters[i][1]);
+  // }
   res.render("index", { m3ters });
 });
 
