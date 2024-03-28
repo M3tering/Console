@@ -4,33 +4,33 @@
     <span>File</span>&#8192;&#8192;&#8192;&#8192;&#8192;&#8192;
     <span>Edit</span>&#8192;&#8192;&#8192;&#8192;&#8192;&#8192;
     <span>Help</span>
-    <div className="bbtn">
+    <div class="bbtn">
       Time&#8192;&#8192;&#8192;&#8192;&#8192;&#8192;
     </div>
   </div>
   <div>
     {{! {/* Apps */} }}
-    <div className="nes-container subtle">
+    <div class="nes-container subtle">
       <div>
         {{! {/* M3ters Icon */} }}
         <div>
           <div>
             <div>
-              <button className="nes-btn"style="backgroundColor: #eee">
+              <button class="nes-btn"style="background-color: #eee">
                 <div>
                   <img
                     alt="M3ter"
                     width="60"
                     height="60"
                     src="https://mqtt-node.vercel.app/api/m3ter-head/pretty"
-                    className="nes-avatar"
+                    class="nes-avatar"
                   />
                   <img
                     alt="M3ter"
                     width="60"
                     height="60"
                     src="https://mqtt-node.vercel.app/api/m3ter-head/new"
-                    className="nes-avatar"
+                    class="nes-avatar"
                   />
                 </div>
                 <div>
@@ -39,14 +39,14 @@
                     width="60"
                     height="60"
                     src="https://mqtt-node.vercel.app/api/m3ter-head/blob"
-                    className="nes-avatar"
+                    class="nes-avatar"
                   />
                   <img
                     alt="M3ter"
                     width="60"
                     height="60"
                     src="https://mqtt-node.vercel.app/api/m3ter-head/now"
-                    className="nes-avatar"
+                    class="nes-avatar"
                   />
                 </div>
               </button>
@@ -58,8 +58,8 @@
         {{! {/* Github Icon */} }}
         <div>
           <div style="float:right">
-            <a className="nes-btn is-warning"target="browser">
-              <i className="nes-icon heart is-medium"></i>
+            <a class="nes-btn is-warning"target="browser">
+              <i class="nes-icon heart is-medium"></i>
             </a>
             <p>Paint</p>
           </div>
@@ -69,8 +69,8 @@
         <div>
           <div>
             <button
-              className="nes-btn is-success"
-              style="backgroundColor: black"
+              class="nes-btn is-success"
+              style="background-color: black"
             >
               <h1 style="fontSize: 26">&gt;_</h1>
             </button>
@@ -81,8 +81,8 @@
         {{! {/* Browser Icon */} }}
         <div>
           <div style="float: right">
-            <button className="nes-btn">
-              <i className="nes-icon google is-medium"></i>
+            <button class="nes-btn">
+              <i class="nes-icon google is-medium"></i>
             </button>
             <p>browse</p>
           </div>
@@ -90,40 +90,40 @@
 
         {{! {/* M3ters Table */} }}
         <div
-          className="nes-table-responsive nes-container hidden"
+          class="nes-table-responsive nes-container hidden"
           id="m3ters"
-          style="backgroundColor: white,float:left"
+          style="background-color: white,float:left"
         >
           <div>
-            <button className="nes-btn is-error">
-              <i className="nes-icon close is-small"></i>
+            <button class="nes-btn is-error">
+              <i class="nes-icon close is-small"></i>
             </button>
-            <button className="nes-btn">
+            <button class="nes-btn">
               _
             </button>
           </div>
-          <div className="nes-field is-inline">
+          <div class="nes-field is-inline">
             <input
               type="text"
               id="tokenId_input"
-              className="nes-input"
+              class="nes-input"
               placeholder="tokenId"
             />
-            <button type="button"className="nes-btn is-warning">
+            <button type="button"class="nes-btn is-warning">
               + Add M3ter
             </button>
             <label>
               <input
                 type="checkbox"
-                className="nes-checkbox"
+                class="nes-checkbox"
                 defaultChecked="false"
               />
               <span>sudo</span>
             </label>
           </div>
 
-          <table className="nes-table is-bordered">
-            <thead className="nes-container is-centered">
+          <table class="nes-table is-bordered">
+            <thead class="nes-container is-centered">
               <tr>
                 <th>TokenId</th>
                 <th>Warp Contract</th>
@@ -150,16 +150,16 @@
         </div>
 
         {{! {/* console Terminal */} }}
-        <div className="nes-container is-dark hidden"id="console">
-          <button className="nes-btn is-error">
-            <i className="nes-icon close is-small"></i>
+        <div class="nes-container is-dark hidden"id="console">
+          <button class="nes-btn is-error">
+            <i class="nes-icon close is-small"></i>
           </button>
-          <button className="nes-btn">
+          <button class="nes-btn">
             _
           </button>
-          <div className="nes-container is-dark"id="m3ter-data">
-            <div className="nes-container is-dark is-centered subtle">
-              <h3 className="empty">Loading M3ter data...</h3>
+          <div class="nes-container is-dark"id="m3ter-data">
+            <div class="nes-container is-dark is-centered subtle">
+              <h3 class="empty">Loading M3ter data...</h3>
             </div>
           </div>
           <span></span>
@@ -168,12 +168,12 @@
     </div>
 
     {{! {/* google app */} }}
-    <div className="nes-container subtle hidden"id="browser">
-      <div className="nes-container"style="backgroundColor:white">
-        <button className="nes-btn is-error">
-          <i className="nes-icon close is-small"></i>
+    <div class="nes-container subtle hidden"id="browser">
+      <div class="nes-container"style="background-color:white">
+        <button class="nes-btn is-error">
+          <i class="nes-icon close is-small"></i>
         </button>
-        <button className="nes-btn">
+        <button class="nes-btn">
           _
         </button>
         <iframe
@@ -187,7 +187,7 @@
     <button
       type="button"
       id="scroll"
-      className="nes-btn"
+      class="nes-btn"
       style="
             display: none,
             position: fixed,
