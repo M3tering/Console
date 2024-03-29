@@ -15,6 +15,7 @@
     "@grpc/grpc-js": "^1.10.3",
     "body-parser": "^1.20.2",
     "dotenv": "^16.4.5",
+    "ethers": "^6.11.1",
     "express": "^4.19.1",
     "express-handlebars": "^7.1.2",
     "handlebars": "^4.7.8",

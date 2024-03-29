@@ -1,8 +1,8 @@
-import { db } from "../config/db";
 import { connect } from "mqtt";
 import { enqueue } from "./grpc";
 import { encode } from "./encode";
 import { interact } from "../warp/warp";
+import { db } from "../config/context";
 
 export function handleUplinks() {
   const client = connect({
@@ -31,6 +31,7 @@ export function handleUplinks() {
       const m3ter = JSON.parse(await db.get(payload[0]));
       const result = await interact(m3ter.contractId, payload);
       if (result) enqueue(message["deviceInfo"]["devEui"], encode(result));
+      console.log(payload)
     } catch (error) {
       console.log(error);
     }

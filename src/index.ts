@@ -1,63 +1,37 @@
 import "dotenv/config";
-import { db } from "./config/db";
-import { create } from "express-handlebars";
-import bodyParser from "body-parser";
+import { encodeBase64 } from "ethers";
 import { handleUplinks } from "./logic/mqtt";
-import express, { Express, Request, Response } from "express";
-import path from "path";
+import { Request, Response } from "express";
+import { app, db, m3ter, protocol } from "./config/context";
 
-const port = process.env.PORT || 3000;
-const app: Express = express();
-
-app.use(express.static(path.join(__dirname, "/public")));
-
-const hbs = create({
-  defaultLayout: "main",
-  extname: "hbs",
-  helpers: {
-    globalCSS() {
-      return "/css/global.css";
-    },
-    toggleJS() {
-      return "/js/toggle.js";
-    },
-  },
-});
-
-app.engine("hbs", hbs.engine);
-app.set("view engine", "hbs");
-app.set("views", "./src/views");
-
-app.use(bodyParser.json());
-
-// handleUplinks();
+handleUplinks();
 
 app.get("/", async (req: Request, res: Response) => {
   let m3ters: object[] = [];
-  for await (const [key, value] of db.iterator()) {
-    let m3terData = JSON.parse(value);
-    m3terData["publicKey"] = key;
-    m3ters.push(m3terData);
+  for await (const value of db.values()) {
+    m3ters.push(JSON.parse(value));
   }
   res.render("index", { m3ters });
 });
 
 app.post("/", async (req: Request, res: Response) => {
   try {
-    const { publicKey, tokenId, contractId } = await req.body;
-    await db.put(publicKey, JSON.stringify({ tokenId, contractId }));
-    res.status(200).send("Item Added");
-  } catch (error) {
-    console.log(error);
-    res.status(400).send(error);
+    const tokenId = (await req.body).tokenId;
+    const contractId = await protocol.token_to_contract(tokenId);
+    const _publicKey = await m3ter.token_to_key(tokenId);
+    const publicKey = encodeBase64(_publicKey).toString();
+    await db.put(publicKey, JSON.stringify({ publicKey, tokenId, contractId }));
+  } catch (err) {
+    console.error(err);
   }
+  res.redirect("/");
 });
 
-app.delete("/:publicKey", async (req: Request, res: Response) => {
-  await db.del(req.params.publicKey);
-  res.status(200).send("Item Deleted");
+app.delete("/", async (req: Request, res: Response) => {
+  await db.del(await req.body);
+  res.send("M3ter Deleted").status(200);
 });
 
-app.listen(port, () => {
-  console.log(`[server]: Server is running at http://localhost:${port}`);
+app.listen(process.env.PORT || 3000, () => {
+  console.log(`[server]: Server is running at port ${process.env.PORT}`);
 });

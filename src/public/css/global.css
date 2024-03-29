@@ -14,9 +14,9 @@ body {
 }
 
 #nav {
+  padding: 7px;
   font-size: 10px;
   background-color: lightgray;
-  padding: 7px;
   border-bottom: solid black;
 }
 

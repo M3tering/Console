@@ -115,25 +115,20 @@
               _
             </button>
           </div>
-          <div class="nes-field is-inline">
-            <input
-              type="text"
-              id="tokenId_input"
-              class="nes-input"
-              placeholder="tokenId"
-            />
-            <button type="button" class="nes-btn is-warning">
-              + Add M3ter
-            </button>
-            <label>
+          <form method="post" action="/">
+            <div class="nes-field is-inline">
               <input
-                type="checkbox"
-                class="nes-checkbox"
-                defaultChecked="false"
+                name="tokenId"
+                type="text"
+                id="tokenId_input"
+                class="nes-input"
+                placeholder="tokenId"
               />
-              <span>sudo</span>
-            </label>
-          </div>
+              <button type="submit" class="nes-btn is-warning">
+                + Add M3ter
+              </button>
+            </div>
+          </form>
 
           <table class="nes-table is-bordered">
             <thead class="nes-container is-centered">
