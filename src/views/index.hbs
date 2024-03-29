@@ -24,16 +24,12 @@
                 <div>
                   <img
                     alt="M3ter"
-                    width="60"
-                    height="60"
-                    src="https://mqtt-node.vercel.app/api/m3ter-head/pretty"
+                    src="https://m3ters.ichristwin.com/api/m3ter-head/pretty"
                     class="nes-avatar"
                   />
                   <img
                     alt="M3ter"
-                    width="60"
-                    height="60"
-                    src="https://mqtt-node.vercel.app/api/m3ter-head/new"
+                    src="https://m3ters.ichristwin.com/api/m3ter-head/new"
                     class="nes-avatar"
                   />
                 </div>
@@ -42,14 +38,14 @@
                     alt="M3ter"
                     width="60"
                     height="60"
-                    src="https://mqtt-node.vercel.app/api/m3ter-head/blob"
+                    src="https://m3ters.ichristwin.com/api/m3ter-head/blob"
                     class="nes-avatar"
                   />
                   <img
                     alt="M3ter"
                     width="60"
                     height="60"
-                    src="https://mqtt-node.vercel.app/api/m3ter-head/now"
+                    src="https://m3ters.ichristwin.com/api/m3ter-head/now"
                     class="nes-avatar"
                   />
                 </div>
@@ -62,7 +58,12 @@
         {{! {/* Paint Icon */} }}
         <div id="paint-icon">
           <div style="float:right">
-            <a class="nes-btn is-warning" target="browser">
+            <a
+              class="nes-btn is-warning"
+              target="browser"
+              onclick="toggleApp('browser', true)"
+              href="https://basepaint.xyz/"
+            >
               <i class="nes-icon heart is-medium"></i>
             </a>
             <p>Paint</p>
@@ -106,7 +107,11 @@
             >
               <i class="nes-icon close is-small"></i>
             </button>
-            <button class="nes-btn" onclick="toggleApp('m3ters', false)">
+            <button
+              class="nes-btn"
+              style="font-size: 12px;"
+              onclick="toggleApp('m3ters', false)"
+            >
               _
             </button>
           </div>
@@ -141,14 +146,19 @@
               {{#each m3ters}}
                 <tr>
                   <td>
-                    <span> #{{{tokenId}}}</span>
+                    <img
+                      alt="M3ter"
+                      src="https://m3ters.ichristwin.com/api/m3ter-head/{{publicKey}}"
+                      class="nes-avatar"
+                    />
+                    <span> #{{tokenId}}</span>
                   </td>
                   <td>
                     <a
                       target="browser"
-                      href="https://viewblock.io/arweave/contract/{{{contractId}}}"
+                      href="https://viewblock.io/arweave/contract/{{contractId}}"
                     >
-                      {{{contractId}}}
+                      {{contractId}}
                     </a>
                   </td>
                 </tr>
@@ -165,7 +175,11 @@
           >
             <i class="nes-icon close is-small"></i>
           </button>
-          <button class="nes-btn" onclick="toggleApp('console', false)">
+          <button
+            class="nes-btn"
+            style="font-size: 12px;"
+            onclick="toggleApp('console', false) "
+          >
             _
           </button>
           <div class="nes-container is-dark" id="m3ter-data">
@@ -180,11 +194,15 @@
 
     {{! {/* google app */} }}
     <div class="nes-container subtle hidden" id="browser">
-      <div class="nes-container" style="background-color:white">
+      <div class="nes-container is-dark">
         <button class="nes-btn is-error" onclick="toggleApp('browser', false)">
           <i class="nes-icon close is-small"></i>
         </button>
-        <button class="nes-btn" onclick="toggleApp('browser', false)">
+        <button
+          class="nes-btn"
+          style="font-size: 12px;"
+          onclick="toggleApp('browser', false)"
+        >
           _
         </button>
         <iframe
@@ -208,6 +226,5 @@
     >
       <span>&#x2191;</span>
     </button>
-    <audio ref="clickRef" src="/rclick-13693.mp3" />
   </div>
 </div>

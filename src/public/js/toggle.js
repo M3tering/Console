@@ -1,4 +1,7 @@
 function toggleApp(appId, state) {
+  var click = new Audio("/assets/rclick-13693.mp3");
+  click.play();
+
   const iconState = state === true ? "none" : "block";
   const appState = state === true ? "block" : "none";
 
