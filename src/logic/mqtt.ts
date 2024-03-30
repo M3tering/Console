@@ -1,8 +1,8 @@
 import { connect } from "mqtt";
 import { enqueue } from "./grpc";
+import { interact } from "./warp";
 import { encode } from "./encode";
-import { interact } from "../warp/warp";
-import { db } from "../config/context";
+import { db } from "./context";
 
 export function handleUplinks() {
   const client = connect({

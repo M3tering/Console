@@ -8,9 +8,10 @@ const warp = WarpFactory.forMainnet()
   .use(new EthersExtension());
 
 export async function interact(contractId: string, data: Payload) {
+  const contractLabel = process.env.CONTRACT_LABEL || "M3ters";
   const tags = [
-    { name: "App-User", value: "M3ters" } as Tag,
-    { name: "App-Label", value: "M3tering Protocol" } as Tag,
+    { name: "Contract-Label", value: contractLabel } as Tag,
+    { name: "Contract-Use", value: "M3tering Protocol" } as Tag,
   ];
 
   const contract = warp

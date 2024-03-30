@@ -1,8 +1,7 @@
 import { State } from "../types";
 
-export function encode(data: State) {
-  console.log(data);
-  let nonce = data.nonce;
+export function encode(state: State) {
+  let nonce = state.nonce;
   let byteArray: number[] = [];
 
   if (nonce) {
@@ -13,8 +12,8 @@ export function encode(data: State) {
       nonce = (nonce - byte) / 256;
     }
   }
-  if (data.is_on) {
-    const status = data.is_on ? 1 : 0;
+  if (state.is_on) {
+    const status = state.is_on ? 1 : 0;
     byteArray.unshift(status);
   }
   return byteArray;
