@@ -1,7 +1,7 @@
 {
-  "name": "mqtt_express",
+  "name": "m3tering-console",
   "version": "1.0.0",
-  "description": "MQTT gateway node built with express.js for m3tering",
+  "description": "Service console for providers on the m3tering protocol",
   "main": "src/index.ts",
   "scripts": {
     "start": "ts-node src/index.ts",
