@@ -4,7 +4,7 @@ function toggleApp(appId, state) {
   var app = document.getElementById(appId);
   app.style.display = appState;
 
-  ["m3ters-icon", "browser-icon", "console-icon", "paint-icon"].forEach(
+  ["m3ters-icon", "browser-icon", "terminal-icon", "paint-icon"].forEach(
     (iconId) => {
       var icon = document.getElementById(iconId);
       icon.style.display = iconState;

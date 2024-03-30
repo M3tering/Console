@@ -25,8 +25,6 @@ export function enqueue(devEui: string, data: number[]) {
   enqueueReq.setQueueItem(item);
   deviceService.enqueue(enqueueReq, metadata, (err: any, resp: any) => {
     if (err !== null) return console.log(err);
-    console.log(
-      `Downlink data: \n${data} \nhas been enqueued with id: ` + resp.getId()
-    );
+    console.log(`${data} has been enqueued with id: ` + resp.getId());
   });
 }

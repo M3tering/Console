@@ -70,17 +70,17 @@
           </div>
         </div>
 
-        {{! {/* Console Icon */} }}
-        <div id="console-icon">
+        {{! {/* terminal Icon */} }}
+        <div id="terminal-icon">
           <div>
             <button
               class="nes-btn is-success"
               style="background-color: black"
-              onclick="clickButton(); toggleApp('console', true)"
+              onclick="clickButton(); toggleApp('terminal', true)"
             >
               <h1 style="fontSize: 26">&gt;_</h1>
             </button>
-            <p>console</p>
+            <p>Terminal</p>
           </div>
         </div>
 
@@ -123,7 +123,6 @@
               <input
                 name="tokenId"
                 type="text"
-                id="tokenId_input"
                 class="nes-input"
                 placeholder="tokenId"
               />
@@ -142,6 +141,7 @@
               <tr>
                 <th>TokenId</th>
                 <th>Warp Contract</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -164,24 +164,35 @@
                       {{contractId}}
                     </a>
                   </td>
+                  <td>
+                    <form method="post" action="/{{publicKey}}">
+                      <button
+                        type="submit"
+                        onclick="clickButton()"
+                        class="nes-btn is-error"
+                      >
+                        <i class="nes-icon close is-small"></i>
+                      </button>
+                    </form>
+                  </td>
                 </tr>
               {{/each}}
             </tbody>
           </table>
         </div>
 
-        {{! {/* console Terminal */} }}
-        <div class="nes-container is-dark hidden" id="console">
+        {{! {/* Terminal */} }}
+        <div class="nes-container is-dark hidden" id="terminal">
           <button
             class="nes-btn is-error"
-            onclick="clickButton(); toggleApp('console', false)"
+            onclick="clickButton(); toggleApp('terminal', false)"
           >
             <i class="nes-icon close is-small"></i>
           </button>
           <button
             class="nes-btn"
             style="font-size: 12px;"
-            onclick="clickButton(); toggleApp('console', false) "
+            onclick="clickButton(); toggleApp('terminal', false) "
           >
             _
           </button>
@@ -219,12 +230,12 @@
       </div>
     </div>
 
-    {{!-- <button
+    {{! <button
       type="button"
       class="top nes-btn"
       style="--offset: 50px; position: sticky; bottom: 20px; margin-right: 10px; place-self: end; margin-top: calc(100vh + var(--offset)); float: right"
     >
       <span>&#8593;</span>
-    </button> --}}
+    </button> }}
   </div>
 </div>

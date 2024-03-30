@@ -29,8 +29,8 @@ app.post("/", async (req: Request, res: Response) => {
   console.log("[server]: Server handled POST request at `/`");
 });
 
-app.delete("/", async (req: Request, res: Response) => {
-  await db.del((await req.body).publicKey);
+app.post("/:publicKey", async (req: Request, res: Response) => {
+  await db.del((await req.params).publicKey);
   res.redirect("/");
   console.log("[server]: Server handled DELETE request at `/`");
 });
