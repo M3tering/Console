@@ -19,7 +19,7 @@
               <div
                 class="nes-btn"
                 style="background-color: #eee"
-                onclick="toggleApp('m3ters', true)"
+                onclick="clickButton(); toggleApp('m3ters', true)"
               >
                 <div>
                   <img
@@ -61,7 +61,7 @@
             <a
               class="nes-btn is-warning"
               target="browser"
-              onclick="toggleApp('browser', true)"
+              onclick="clickButton(); toggleApp('browser', true)"
               href="https://basepaint.xyz/"
             >
               <i class="nes-icon heart is-medium"></i>
@@ -76,7 +76,7 @@
             <button
               class="nes-btn is-success"
               style="background-color: black"
-              onclick="toggleApp('console', true)"
+              onclick="clickButton(); toggleApp('console', true)"
             >
               <h1 style="fontSize: 26">&gt;_</h1>
             </button>
@@ -87,7 +87,10 @@
         {{! {/* Browser Icon */} }}
         <div id="browser-icon">
           <div style="float: right">
-            <button class="nes-btn" onclick="toggleApp('browser', true)">
+            <button
+              class="nes-btn"
+              onclick="clickButton(); toggleApp('browser', true)"
+            >
               <i class="nes-icon google is-medium"></i>
             </button>
             <p>browse</p>
@@ -103,14 +106,14 @@
           <div>
             <button
               class="nes-btn is-error"
-              onclick="toggleApp('m3ters', false)"
+              onclick="clickButton(); toggleApp('m3ters', false)"
             >
               <i class="nes-icon close is-small"></i>
             </button>
             <button
               class="nes-btn"
               style="font-size: 12px;"
-              onclick="toggleApp('m3ters', false)"
+              onclick="clickButton(); toggleApp('m3ters', false)"
             >
               _
             </button>
@@ -124,7 +127,11 @@
                 class="nes-input"
                 placeholder="tokenId"
               />
-              <button type="submit" class="nes-btn is-warning">
+              <button
+                type="submit"
+                onclick="clickButton()"
+                class="nes-btn is-warning"
+              >
                 + Add M3ter
               </button>
             </div>
@@ -151,6 +158,7 @@
                   <td>
                     <a
                       target="browser"
+                      onclick="clickButton(); toggleApp('m3ters', false); toggleApp('browser', true)"
                       href="https://viewblock.io/arweave/contract/{{contractId}}"
                     >
                       {{contractId}}
@@ -166,14 +174,14 @@
         <div class="nes-container is-dark hidden" id="console">
           <button
             class="nes-btn is-error"
-            onclick="toggleApp('console', false)"
+            onclick="clickButton(); toggleApp('console', false)"
           >
             <i class="nes-icon close is-small"></i>
           </button>
           <button
             class="nes-btn"
             style="font-size: 12px;"
-            onclick="toggleApp('console', false) "
+            onclick="clickButton(); toggleApp('console', false) "
           >
             _
           </button>
@@ -190,36 +198,33 @@
     {{! {/* google app */} }}
     <div class="nes-container subtle hidden" id="browser">
       <div class="nes-container is-dark">
-        <button class="nes-btn is-error" onclick="toggleApp('browser', false)">
+        <button
+          class="nes-btn is-error"
+          onclick="clickButton(); toggleApp('browser', false)"
+        >
           <i class="nes-icon close is-small"></i>
         </button>
         <button
           class="nes-btn"
           style="font-size: 12px;"
-          onclick="toggleApp('browser', false)"
+          onclick="clickButton(); toggleApp('browser', false)"
         >
           _
         </button>
         <iframe
           src="https://www.wikipedia.org/"
           name="browser"
-          title="Google search"
+          title="Internet Browser"
         ></iframe>
       </div>
     </div>
 
-    <button
+    {{!-- <button
       type="button"
-      id="scroll"
-      class="nes-btn"
-      style="
-            display: none;
-            position: fixed;
-            bottom: 70;
-            right: 70;
-            zIndex: 99;"
+      class="top nes-btn"
+      style="--offset: 50px; position: sticky; bottom: 20px; margin-right: 10px; place-self: end; margin-top: calc(100vh + var(--offset)); float: right"
     >
-      <span>&#x2191;</span>
-    </button>
+      <span>&#8593;</span>
+    </button> --}}
   </div>
 </div>
