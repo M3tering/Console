@@ -26,14 +26,15 @@ export async function interact(contractId: string, data: Payload) {
 
   const state = result.state as State;
 
-  const deviceNonce: number = data[2][0];
+  const payload = JSON.parse(data[0]);
+  const deviceNonce: number = payload[0];
   const nonce: number =
     deviceNonce > state.nonce ? deviceNonce + 1 : state.nonce + 1;
 
   if (result.type === "ok") {
     await contract.writeInteraction({ data, function: "meter" }, { tags });
     return { is_on: state.is_on } as State;
-  } else if (data[2][0] === 0) {
+  } else if (deviceNonce === 0) {
     return { nonce, is_on: true } as State;
   }
   return null;
