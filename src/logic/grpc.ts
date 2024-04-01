@@ -19,7 +19,7 @@ export function enqueue(devEui: string, data: number[]) {
 
   item.setFPort(2);
   item.setDevEui(devEui);
-  item.setConfirmed(true);
+  item.setConfirmed(false);
   item.setData(new Uint8Array(data));
 
   enqueueReq.setQueueItem(item);
