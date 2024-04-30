@@ -3,6 +3,7 @@ RUN mkdir -p /opt/app
 RUN mkdir -p /opt/app/src
 WORKDIR /opt/app
 COPY tsconfig.json ./
+COPY .env ./
 COPY package.json package-lock.json ./
 RUN npm install
 COPY src/ ./src/
