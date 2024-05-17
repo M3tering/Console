@@ -22,12 +22,12 @@ app.use(express.urlencoded({ extended: true }));
 const provider = new JsonRpcProvider(process.env.GNOSIS_RPC);
 export const m3ter = new Contract(
   "0x39fb420Bd583cCC8Afd1A1eAce2907fe300ABD02",
-  ["function token_to_key(uint256) view returns (bytes32)"],
+  ["function keyByToken(uint256) view returns (bytes32)"],
   provider
 );
 export const protocol = new Contract(
   "0x2b3997D82C836bd33C89e20fBaEF96CA99F1B24A",
-  ["function token_to_contract(uint256) view returns (string)"],
+  ["function contractByToken(uint256) view returns (string)"],
   provider
 );
 
