@@ -1,4 +1,7 @@
 export interface State {
+  app_eui: number,
+  app_key: number,
+  dev_eui: number,
   is_on: boolean;
   kwh_balance: number;
   last_block: number;
