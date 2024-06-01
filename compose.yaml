@@ -1,6 +1,7 @@
 services:
   console:
     build: .
+    network_mode: host
     restart: unless-stopped
     ports:
       - "3000:3000"
