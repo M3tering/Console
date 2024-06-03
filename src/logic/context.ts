@@ -1,7 +1,6 @@
 import { Level } from "level";
 import { create } from "express-handlebars";
 import express, { Express } from "express";
-import bodyParser from "body-parser";
 import { JsonRpcProvider, Contract } from "ethers";
 
 // HBS CONFIG
