@@ -29,12 +29,15 @@ app.post("/", async (req: Request, res: Response) => {
   console.log("[server]: Server handled POST request at `/`");
 });
 
-app.post("/:publicKey", async (req: Request, res: Response) => {
-  await db.del((await req.params).publicKey);
-  res.redirect("/");
-  console.log("[server]: Server handled DELETE request at `/`");
+app.delete("/delete-meter", async (req: Request, res: Response) => {
+  let publicKey = req.query?.publicKey;
+  if (publicKey)
+    await db.del(publicKey.toString());
+  else {
+    res.status(400).send({message: "public key not specified"});
+    return;
+  }
+  console.log("[server]: Server handled DELETE request at `/delete-meter`");
+  res.status(200).send({message: "deleted meter"});
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log(`[server]: Server is running at port ${process.env.PORT}`);
-});

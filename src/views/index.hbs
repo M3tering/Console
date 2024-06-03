@@ -165,15 +165,12 @@
                     </a>
                   </td>
                   <td>
-                    <form method="post" action="/{{publicKey}}">
                       <button
-                        type="submit"
-                        onclick="clickButton()"
+                        onclick="deleteMeter(`{{publicKey}}`)"
                         class="nes-btn is-error"
                       >
                         <i class="nes-icon close is-small"></i>
                       </button>
-                    </form>
                   </td>
                 </tr>
               {{/each}}
