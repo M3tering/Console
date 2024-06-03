@@ -1,6 +1,7 @@
 import { Level } from "level";
 import { create } from "express-handlebars";
 import express, { Express } from "express";
+import bodyParser from "body-parser";
 import { JsonRpcProvider, Contract } from "ethers";
 
 // HBS CONFIG
@@ -17,6 +18,10 @@ app.set("views", "./src/views");
 app.use(express.json());
 app.use(express.static("./src/public"));
 app.use(express.urlencoded({ extended: true }));
+
+app.listen(process.env.PORT || 3000, () => {
+  console.log(`[server]: Server is running at port ${process.env.PORT}`);
+});
 
 // ETHERS JS CONTRACT CONFIG
 const provider = new JsonRpcProvider(process.env.GNOSIS_RPC);
