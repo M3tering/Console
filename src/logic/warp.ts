@@ -36,7 +36,11 @@ export async function interact(contractId: string, payload: Payload) {
       { payload, function: "meter" },
       { tags, inputFormatAsData: true }
     );
-    return { is_on: state.is_on } as State;
+    if ("is_on" in state) {
+      return { is_on: state.is_on } as State;
+    } else {
+      return { is_on: true } as State;
+    }
   } else if (deviceNonce === 0) {
     return { nonce, is_on: true } as State;
   }
