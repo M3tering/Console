@@ -8,8 +8,10 @@ const warp = WarpFactory.forMainnet()
   .use(new EthersExtension());
 
 export async function interact(contractId: string, payload: Payload) {
+  const input = { payload, function: "meter" };
   const contractLabel = process.env.CONTRACT_LABEL || "M3ters";
   const tags = [
+    { name: "Input", value: input.toString() } as Tag,
     { name: "Contract-Label", value: contractLabel } as Tag,
     { name: "Contract-Use", value: "M3tering Protocol" } as Tag,
     { name: "Content-Type", value: "application/json" } as Tag,
@@ -20,7 +22,7 @@ export async function interact(contractId: string, payload: Payload) {
     .connect(await warp.arweave.wallets.generate());
 
   const result = await contract.dryWrite(
-    { payload, function: "meter" },
+    input,
     undefined,
     tags
   );
@@ -33,7 +35,7 @@ export async function interact(contractId: string, payload: Payload) {
 
   if (result.type === "ok") {
     await contract.writeInteraction(
-      { payload, function: "meter" },
+      input,
       { tags, inputFormatAsData: true }
     );
     if ("is_on" in state) {
