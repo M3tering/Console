@@ -2,6 +2,7 @@ import { connect } from "mqtt";
 import { enqueue } from "./grpc";
 import { interact } from "./warp";
 import { encode } from "./encode";
+import { getGPS } from "./gps";
 import { db } from "./context";
 
 export function handleUplinks() {
@@ -29,9 +30,12 @@ export function handleUplinks() {
         Buffer.from(message["data"], "base64").toString()
       );
       console.log(payload);
-      const m3ter = JSON.parse(await db.get(payload[2]));
+      const m3ter = JSON.parse(await db.get(payload.pop()));
       const result = await interact(m3ter.contractId, payload);
-      if (result) enqueue(message["deviceInfo"]["devEui"], encode(result));
+
+      let [lat, lon] = getGPS();
+      if (result)
+        enqueue(message["deviceInfo"]["devEui"], encode(result, lat, lon));
     } catch (error) {
       console.log(error);
     }
