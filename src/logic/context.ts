@@ -18,8 +18,10 @@ app.use(express.json());
 app.use(express.static("./src/public"));
 app.use(express.urlencoded({ extended: true }));
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log(`[server]: Server is running at port ${process.env.PORT}`);
+const port = process.env.PORT || 3000;
+
+app.listen(port, () => {
+  console.log(`[server]: Server is running at port ${port}`);
 });
 
 // ETHERS JS CONTRACT CONFIG

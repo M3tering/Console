@@ -12,7 +12,6 @@ export function encode(state: State) {
       nonce = (nonce - byte) / 256;
     }
   }
-  const status = state.is_on ? 1 : 0;
-  byteArray.unshift(status);
+  byteArray.unshift(state.is_on ? 1 : 0);
   return byteArray;
 }
