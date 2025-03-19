@@ -33,18 +33,17 @@ export async function interact(contractId: string, payload: Payload) {
   const nonce: number =
     deviceNonce > state.nonce ? deviceNonce + 1 : state.nonce + 1;
 
-  if (result.type === "ok") {
+  if (result.type === "ok" && "is_on" in state) {
     await contract.writeInteraction(
       input,
       { tags, inputFormatAsData: true }
     );
-    if ("is_on" in state) {
-      return { is_on: state.is_on } as State;
-    } else {
-      return { is_on: true } as State;
+    return { is_on: state.is_on } as State;
     }
-  } else if (deviceNonce === 0) {
-    return { nonce, is_on: true } as State;
+  } else if (deviceNonce === 0 && "is_on" in state) {
+    return { nonce, is_on: state.is_on } as State;
+  } else {
+    return { is_on: false } as State;
   }
   return null;
 }
