@@ -35,7 +35,7 @@ export function handleUplinks() {
 
       let [lat, lon] = getGPS();
       if (result)
-        enqueue(message["deviceInfo"]["devEui"], encode(result)) //, lat, lon));
+        enqueue(message["deviceInfo"]["devEui"], encode(result), lat, lon));
     } catch (error) {
       console.log(error);
     }
