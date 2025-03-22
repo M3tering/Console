@@ -30,7 +30,7 @@ app.post("/", async (req: Request, res: Response) => {
 });
 
 app.delete("/delete-meter", async (req: Request, res: Response) => {
-  let publicKey = req.query?.publicKey;
+  let publicKey = decodeURIComponent(req.query?.publicKey?.toString() as string);
   if (publicKey)
     await db.del(publicKey.toString());
   else {

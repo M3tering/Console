@@ -7,7 +7,13 @@ import { JsonRpcProvider, Contract } from "ethers";
 const hbs = create({
   defaultLayout: "main",
   extname: "hbs",
+  helpers: {
+    encodeURIComponent: function (value: string) {
+      return encodeURIComponent(value);
+    }
+  }
 });
+
 
 // EXPRESS APP CONFIG
 export const app: Express = express();

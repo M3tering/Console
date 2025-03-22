@@ -150,7 +150,7 @@
                   <td>
                     <img
                       alt="M3ter"
-                      src="https://m3ters.ichristwin.com/api/m3ter-head/{{publicKey}}"
+                      src="https://m3ters.ichristwin.com/api/m3ter-head/{{encodeURIComponent publicKey}}"
                       class="nes-avatar"
                     />
                     <span> #{{tokenId}}</span>
@@ -166,7 +166,7 @@
                   </td>
                   <td>
                       <button
-                        onclick="deleteMeter(`{{publicKey}}`)"
+                        onclick="deleteMeter(`{{encodeURIComponent publicKey}}`)"
                         class="nes-btn is-error"
                       >
                         <i class="nes-icon close is-small"></i>
