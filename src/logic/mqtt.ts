@@ -30,9 +30,10 @@ export function handleUplinks() {
         Buffer.from(message["data"], "base64").toString()
       );
       console.log(payload);
-      const m3ter = JSON.parse(await db.get(payload.pop()));
-      const result = await interact(m3ter.contractId, payload);
-
+      const publicKey = await db.get(payload.pop())
+      const m3ter = JSON.parse(publicKey); // pop public key from payload
+      const result = await interact(m3ter.id, m3ter.latestNonce, payload);
+      await db.put(publicKey, JSON.stringify({ ...m3ter, latestNonce: result?.nonce || m3ter.latestNonce }));
       let [lat, lon] = getGPS();
       if (result)
         enqueue(message["deviceInfo"]["devEui"], encode(result, lat, lon));
