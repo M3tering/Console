@@ -140,7 +140,7 @@
             <thead class="nes-container is-centered">
               <tr>
                 <th>TokenId</th>
-                <th>Warp Contract</th>
+                <th>Public Key</th>
                 <th></th>
               </tr>
             </thead>
@@ -156,13 +156,9 @@
                     <span> #{{tokenId}}</span>
                   </td>
                   <td>
-                    <a
-                      target="browser"
-                      onclick="clickButton(); toggleApp('m3ters', false); toggleApp('browser', true)"
-                      href="https://viewblock.io/arweave/contract/{{contractId}}"
-                    >
-                      {{contractId}}
-                    </a>
+                    <span>
+                      {{publicKey}}
+                    </span>
                   </td>
                   <td>
                       <button
