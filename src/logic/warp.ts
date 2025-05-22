@@ -34,7 +34,7 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
       dataItemOpts: {
         tags: [
           // { name: "Contract-Label", value: contractLabel },
-          // { name: "Contract-Use", value: "M3tering Protocol" },
+          { name: "Contract-Use", value: "M3tering Protocol" },
           // { name: "Content-Type", value: "application/json" },
           // { name: "M3ter-ID", value: m3terId },
         ]
