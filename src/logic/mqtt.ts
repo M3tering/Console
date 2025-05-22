@@ -30,6 +30,7 @@ export function handleUplinks() {
       const payload = JSON.parse(
         Buffer.from(message["data"], "base64").toString()
       );
+      console.log("payload", payload);
       const publicKey = payload[2]
       const m3terDoc = await db.get(publicKey ?? "")
       console.log("m3terDoc", m3terDoc);
