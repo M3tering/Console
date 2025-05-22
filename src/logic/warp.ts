@@ -33,9 +33,9 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
       fileSizeFactory: () => byteLength,
       dataItemOpts: {
         tags: [
-          { name: "Contract-Label", value: contractLabel },
-          { name: "Contract-Use", value: "M3tering Protocol" },
-          { name: "Content-Type", value: "application/json" },
+          // { name: "Contract-Label", value: contractLabel },
+          // { name: "Contract-Use", value: "M3tering Protocol" },
+          // { name: "Content-Type", value: "application/json" },
           // { name: "M3ter-ID", value: m3terId },
         ]
       }
