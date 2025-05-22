@@ -18,7 +18,7 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
   const input = { payload, function: "meter" };
   const contractLabel = process.env.CONTRACT_LABEL || "M3ters";
   const tags = [
-    { name: "Input", value: JSON.stringify(input) },
+    { name: "Input", value: input.toString() },
     { name: "Contract-Label", value: contractLabel },
     { name: "Contract-Use", value: "M3tering Protocol" },
     { name: "Content-Type", value: "application/json" },
@@ -31,8 +31,11 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
     await turbo.uploadFile({
       fileStreamFactory: () => Readable.from(Buffer.from(JSON.stringify(input), "utf8")),
       fileSizeFactory: () => byteLength,
-      dataItemOpts: { tags },
+      // dataItemOpts: { tags },
     });
+
+  
+  console.log(id, owner);
     
 
   const deviceNonce: number = JSON.parse(payload[0])[0];
@@ -47,3 +50,5 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
   return null;
 }
 
+
+interact("1", 1, { "0": "1", "1": "1", "2": [1, 2, 3] })

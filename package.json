@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "ts-node src/index.ts",
+    "interact": "ts-node src/logic/warp.ts",
     "watch": "nodemon --watch 'src/**'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
