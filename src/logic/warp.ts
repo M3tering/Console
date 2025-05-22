@@ -4,7 +4,7 @@ import { TurboFactory } from "@ardrive/turbo-sdk";
 import { Readable } from "stream";
 import Arweave from "arweave";
 
-export async function interact(m3terId: string, lastNonce: number, payload: Payload) {
+export async function interact(m3terId: string, lastNonce: number, payload: any) {
 
   const arweave = Arweave.init({
     host: "arweave.net",
@@ -17,15 +17,9 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
 
   const input = { payload, function: "meter" };
   const contractLabel = process.env.CONTRACT_LABEL || "M3ters";
-  const tags = [
-    { name: "Input", value: input.toString() },
-    { name: "Contract-Label", value: contractLabel },
-    { name: "Contract-Use", value: "M3tering Protocol" },
-    { name: "Content-Type", value: "application/json" },
-    { name: "M3ter-ID", value: m3terId },
-  ];
 
   const byteLength = Buffer.byteLength(JSON.stringify(input), "utf8");
+
   console.log("data size:", byteLength);
   const { id, owner, dataCaches, fastFinalityIndexes } =
     await turbo.uploadFile({
@@ -33,7 +27,8 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
       fileSizeFactory: () => byteLength,
       dataItemOpts: {
         tags: [
-          // { name: "Contract-Label", value: contractLabel },
+          { name: "Input", value: JSON.stringify(input) },
+          { name: "Contract-Label", value: contractLabel },
           { name: "Contract-Use", value: "M3tering Protocol" },
           { name: "Content-Type", value: "application/json" },
           { name: "M3ter-ID", value: m3terId },
@@ -42,8 +37,7 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
     });
 
 
-  console.log(id, owner);
-
+  // console.log(id, owner);
 
   const deviceNonce: number = JSON.parse(payload[0])[0];
   const nonceIsCardinal = lastNonce + 1 === deviceNonce
