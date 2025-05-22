@@ -49,6 +49,3 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
 
   return null;
 }
-
-
-interact("1", 1, { "0": "1", "1": "1", "2": [1, 2, 3] })
