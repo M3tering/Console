@@ -6,14 +6,14 @@ import Arweave from "arweave";
 
 export async function interact(m3terId: string, lastNonce: number, payload: Payload) {
 
-   const arweave = Arweave.init({
-      host: "arweave.net",
-      protocol: "https",
-      port: 443,
-    });
+  const arweave = Arweave.init({
+    host: "arweave.net",
+    protocol: "https",
+    port: 443,
+  });
 
-    const key = await arweave.wallets.generate();
-    const turbo = TurboFactory.authenticated({ privateKey: key });
+  const key = await arweave.wallets.generate();
+  const turbo = TurboFactory.authenticated({ privateKey: key });
 
   const input = { payload, function: "meter" };
   const contractLabel = process.env.CONTRACT_LABEL || "M3ters";
@@ -31,12 +31,19 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
     await turbo.uploadFile({
       fileStreamFactory: () => Readable.from(Buffer.from(JSON.stringify(input), "utf8")),
       fileSizeFactory: () => byteLength,
-      // dataItemOpts: { tags },
+      dataItemOpts: {
+        tags: [
+          { name: "Contract-Label", value: contractLabel },
+          { name: "Contract-Use", value: "M3tering Protocol" },
+          { name: "Content-Type", value: "application/json" },
+          { name: "M3ter-ID", value: m3terId },
+        ]
+      }
     });
 
-  
+
   console.log(id, owner);
-    
+
 
   const deviceNonce: number = JSON.parse(payload[0])[0];
   const nonceIsCardinal = lastNonce + 1 === deviceNonce
@@ -45,7 +52,7 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
     return { is_on: true } as State;
   } else if (deviceNonce <= lastNonce) {
     return { nonce: lastNonce + 1, is_on: true } as State;
-  } 
+  }
 
   return null;
 }
