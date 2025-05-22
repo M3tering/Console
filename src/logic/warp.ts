@@ -18,7 +18,7 @@ export async function interact(m3terId: string, lastNonce: number, payload: Payl
   const input = { payload, function: "meter" };
   const contractLabel = process.env.CONTRACT_LABEL || "M3ters";
   const tags = [
-    { name: "Input", value: input.toString() },
+    { name: "Input", value: JSON.stringify(input) },
     { name: "Contract-Label", value: contractLabel },
     { name: "Contract-Use", value: "M3tering Protocol" },
     { name: "Content-Type", value: "application/json" },
