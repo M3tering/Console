@@ -3,13 +3,11 @@ import "dotenv/config";
 import { Payload, StreamrMessage } from "../types";
 import { saveGossipMessage } from "../store/sqlite";
 
-const { APP_NAME, STREAMR_PRIVATE_KEY } = process.env;
+const { STREAM_ID, STREAMR_PRIVATE_KEY } = process.env;
 
-if (!APP_NAME || !STREAMR_PRIVATE_KEY) {
-  throw new Error("Missing STREAMR_PRIVATE_KEY or APP_NAME in env");
+if (!STREAM_ID || !STREAMR_PRIVATE_KEY) {
+  throw new Error("Missing STREAMR_PRIVATE_KEY or STREAM_ID in env");
 }
-
-const STREAM_ID = `/${APP_NAME}/v1/data`;
 
 // Initialize the client with an Ethereum account
 const streamr = new StreamrClient({
@@ -20,7 +18,7 @@ const streamr = new StreamrClient({
 });
 
 async function ensureStream() {
-  const stream = await streamr.getOrCreateStream({ id: STREAM_ID });
+  const stream = await streamr.getOrCreateStream({ id: STREAM_ID as string });
   return stream;
 }
 
@@ -39,7 +37,12 @@ streamr.subscribe(STREAM_ID, (data: unknown) => {
   console.log("📥 Received message:", data);
 
   // Type guard to ensure data is a StreamrMessage
-  if (data && typeof data === 'object' && 'payload' in data && 'timestamp' in data) {
+  if (
+    data &&
+    typeof data === "object" &&
+    "payload" in data &&
+    "timestamp" in data
+  ) {
     saveGossipMessage(data as StreamrMessage);
   } else {
     console.warn("⚠️ Received invalid message format:", data);
