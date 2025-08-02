@@ -3,8 +3,10 @@ import { encodeBase64 } from "ethers";
 import { handleUplinks } from "./logic/mqtt";
 import { Request, Response } from "express";
 import { app, db, m3ter, protocol } from "./logic/context";
+import { initializeGossipTable } from "./store/sqlite";
 
 handleUplinks();
+initializeGossipTable();
 
 app.get("/", async (req: Request, res: Response) => {
   let m3ters: object[] = [];
@@ -30,14 +32,14 @@ app.post("/", async (req: Request, res: Response) => {
 });
 
 app.delete("/delete-meter", async (req: Request, res: Response) => {
-  let publicKey = decodeURIComponent(req.query?.publicKey?.toString() as string);
-  if (publicKey)
-    await db.del(publicKey.toString());
+  let publicKey = decodeURIComponent(
+    req.query?.publicKey?.toString() as string
+  );
+  if (publicKey) await db.del(publicKey.toString());
   else {
-    res.status(400).send({message: "public key not specified"});
+    res.status(400).send({ message: "public key not specified" });
     return;
   }
   console.log("[server]: Server handled DELETE request at `/delete-meter`");
-  res.status(200).send({message: "deleted meter"});
+  res.status(200).send({ message: "deleted meter" });
 });
-
