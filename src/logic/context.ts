@@ -1,4 +1,3 @@
-import { Level } from "level";
 import { create } from "express-handlebars";
 import express, { Express } from "express";
 import { JsonRpcProvider, Contract } from "ethers";
@@ -42,6 +41,3 @@ export const protocol = new Contract(
   ["function contractByToken(uint256) view returns (string)"],
   provider
 );
-
-// LEVEL DB CONFIG
-export const db = new Level("db", { valueEncoding: "json" });

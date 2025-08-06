@@ -12,8 +12,3 @@ export interface State {
 }
 
 export type Payload = [string, string, string]; // [metricsStr, signature, publicKey]
-
-export interface StreamrMessage {
-  payload: Payload;
-  timestamp: number;
-}

@@ -3,7 +3,7 @@ import { enqueue } from "./grpc";
 import { interact } from "./warp";
 import { encode } from "./encode";
 import { getGPS } from "./gps";
-import { db } from "./context";
+import { getMeterByPublicKey } from "../store/sqlite";
 
 export function handleUplinks() {
   const client = connect({
@@ -30,7 +30,14 @@ export function handleUplinks() {
         Buffer.from(message["data"], "base64").toString()
       );
       console.log(payload);
-      const m3ter = JSON.parse(await db.get(payload.pop()));
+      const publicKey = payload.pop();
+      const m3ter = getMeterByPublicKey(publicKey);
+      
+      if (!m3ter) {
+        console.error("❌ Meter not found for public key:", publicKey);
+        return;
+      }
+      
       const result = await interact(m3ter.contractId, payload);
 
       let [lat, lon] = getGPS();
