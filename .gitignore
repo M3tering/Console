@@ -1,4 +1,4 @@
-
+*.db
 src/db
 .idea
 
