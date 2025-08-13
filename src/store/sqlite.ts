@@ -60,6 +60,7 @@ function initializeTransactionsTable() {
             latitude REAL,
             receivedAt INTEGER,
             verified BOOLEAN DEFAULT FALSE,
+            raw TEXT,
 
             UNIQUE(nonce, identifier)
         )
@@ -106,8 +107,8 @@ function prepareQueries() {
 
   // transaction queries
   createTransactionQuery = db.prepare(`
-    INSERT INTO transactions (nonce, energy, signature, voltage, identifier, longitude, latitude, verified, receivedAt)
-    VALUES (@nonce, @energy, @signature, @voltage, @identifier, @longitude, @latitude, @verified, @receivedAt)
+    INSERT INTO transactions (nonce, energy, signature, voltage, identifier, longitude, latitude, verified, receivedAt, raw)
+    VALUES (@nonce, @energy, @signature, @voltage, @identifier, @longitude, @latitude, @verified, @receivedAt, @raw)
   `);
 
   getUnverifiedTransactionRecordsQuery = db.prepare(`

@@ -1,10 +1,14 @@
 import { connect } from "mqtt";
 import { enqueue } from "./grpc";
-import { interact } from "./warp";
-import { encode } from "./encode";
+import { interact } from "./arweave";
+import { encode, encodeTransaction } from "./encode";
 import { getGPS } from "./gps";
-import { db } from "./context";
-import { Payload } from "../types";
+import {
+  getMeterByPublicKey,
+  insertTransaction,
+  updateMeterNonce,
+} from "../store/sqlite";
+import { Payload, TransactionRecord } from "../types";
 
 export function handleUplinks() {
   const client = connect({
@@ -31,13 +35,55 @@ export function handleUplinks() {
         Buffer.from(message["data"], "base64").toString()
       );
       console.log("payload", payload);
-      const publicKey = payload[2]
-      const m3terDoc = await db.get(publicKey ?? "")
-      console.log("m3terDoc", m3terDoc);
-      const m3ter = JSON.parse(m3terDoc);
-      const result = await interact(m3ter.tokenId, m3ter.latestNonce, payload);
-      await db.put(publicKey, JSON.stringify({ ...m3ter, latestNonce: result?.nonce || m3ter.latestNonce }));
+      const publicKey = payload[2];
+      const m3ter = getMeterByPublicKey(publicKey ?? "");
+
+      if (!m3ter) {
+        console.error("❌ Meter not found for public key:", publicKey);
+        return;
+      }
+
       let [lat, lon] = getGPS();
+      const [nonce, voltage, , energy] = JSON.parse(payload[0]);
+      const signature = payload[1];
+
+      const transactionData = {
+        nonce: m3ter.latestNonce || 0,
+        energy,
+        signature,
+        voltage,
+        deviceId: publicKey,
+        longitude: lon,
+        latitude: lat,
+      };
+
+      // encode transaction into standard format
+      // format: nonce | energy | signature | voltage | device_id | longitude | latitude
+      const transactionAsBytes = encodeTransaction(transactionData);
+
+      const result = await interact(
+        m3ter.contractId,
+        m3ter.latestNonce || 0,
+        payload,
+        transactionAsBytes
+      );
+
+      // Update the meter's latest nonce if the interaction was successful
+      // and device nonce is correct
+      if (nonce === m3ter.latestNonce! + 1) {
+        updateMeterNonce(publicKey, result.nonce);
+
+        // save transaction to sqlite
+        const transactionRecord = {
+          ...transactionData,
+          identifier: publicKey,
+          receivedAt: Date.now(),
+          raw: Buffer.from(transactionAsBytes).toString("hex"),
+        } as TransactionRecord;
+
+        insertTransaction(transactionRecord);
+      }
+
       if (result)
         enqueue(message["deviceInfo"]["devEui"], encode(result, lat, lon));
     } catch (error) {
@@ -45,22 +91,3 @@ export function handleUplinks() {
     }
   });
 }
-
-// const call_interact = async () => {
-//   const payload = [
-//     "[2, 213.7, 0.38, 0.007420]",
-//     "9C7lPdznR9pymAIvjDPmm/mVX/uUTemapJRb8yzGKvG8or43u6V97oDPcW7ZP9HeHRZrGEf1iIkyLixAVdWsDg==",
-//     "C/VyOqGu8Q8Y92BgRh92ZpPZnSAxQ8GRhJGKDxsyn6A="
-//   ]
-//   const publicKey = payload[2]
-//   const m3terDoc = await db.get(publicKey ?? "")
-//   console.log("m3terDoc", m3terDoc);
-//   const m3ter = JSON.parse(m3terDoc); // pop public key from payload
-//   const result = await interact(m3ter.tokenId, m3ter.latestNonce, payload);
-//   await db.put(publicKey, JSON.stringify({ ...m3ter, latestNonce: result?.nonce || m3ter.latestNonce }));
-// }
-
-// call_interact()
-//   .then(() => {
-//     console.log("Interact function executed successfully");
-//   })

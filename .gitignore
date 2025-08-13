@@ -1,3 +1,4 @@
+test-database.ts
 *.db
 src/db
 .idea
