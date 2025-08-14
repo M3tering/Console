@@ -29,11 +29,9 @@ export async function interact(
   // tags payload
   // timestamp
   // meter number
-  // contract id
   // current
   // energy
   // nonce
-  // publickey
   // signature
   // voltage
   const [nonce, voltage, current, energy] = JSON.parse(payload[0]);
@@ -53,11 +51,9 @@ export async function interact(
         { name: "M3ter-ID", value: m3terId },
         { name: "Timestamp", value: Date.now().toString() },
         { name: "Meter-Number", value: m3terId },
-        { name: "Contract-ID", value: m3terId },
         { name: "Current", value: current.toString() },
         { name: "Energy", value: energy.toString() },
         { name: "Nonce", value: nonce.toString() },
-        { name: "Public-Key", value: publicKey },
         { name: "Signature", value: signature },
         { name: "Voltage", value: voltage.toString() },
       ],
