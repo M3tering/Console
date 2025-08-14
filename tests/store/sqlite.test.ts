@@ -1,3 +1,4 @@
+import { raw } from "body-parser";
 import setupDatabase, {
   saveMeter,
   getMeterByPublicKey,
@@ -93,6 +94,7 @@ it("should insert transaction", () => {
     longitude: 123.456,
     latitude: 78.91,
     receivedAt: Date.now(),
+    raw: ""
   };
   insertTransaction(transactionData);
 
@@ -129,6 +131,7 @@ it("should delete verified transactions", () => {
     latitude: 78.91,
     verified: true,
     receivedAt: Date.now(),
+    raw: ""
   };
   insertTransaction(transactionData);
 
