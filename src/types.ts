@@ -20,6 +20,12 @@ export interface TransactionRecord {
   raw?: string | null; // Raw transaction data in hex format
 }
 
+// Payload sent to the prover
+export interface BatchTransactionPayload {
+  [key: string]: string[] /* mapping meterId to transaction payload */;
+}
+[];
+
 export interface State {
   app_eui: number;
   app_key: number;

@@ -8,7 +8,8 @@ import {
   insertTransaction,
   updateMeterNonce,
 } from "../store/sqlite";
-import { Payload, TransactionRecord } from "../types";
+import { TransactionRecord } from "../types";
+import { getProverURL, sendPendingTransactionsToProver } from "./verify";
 
 export function handleUplinks() {
   const client = connect({
@@ -39,7 +40,7 @@ export function handleUplinks() {
       const m3ter = getMeterByPublicKey(publicKey ?? "");
 
       if (!m3ter) {
-        console.error("❌ Meter not found for public key:", publicKey);
+        console.error("Meter not found for public key:", publicKey);
         return;
       }
 
@@ -68,20 +69,30 @@ export function handleUplinks() {
         transactionAsBytes
       );
 
-      // Update the meter's latest nonce if the interaction was successful
-      // and device nonce is correct
+      // if the interaction was successful and device nonce is correct
+      // send transaction to prover
+      // save transaction to sqlite database
       if (nonce === m3ter.latestNonce! + 1) {
-        updateMeterNonce(publicKey, result.nonce);
+        try {
+          // send pending transactions to prover node
+          const proverURL = await getProverURL();
 
-        // save transaction to sqlite
-        const transactionRecord = {
-          ...transactionData,
-          identifier: publicKey,
-          receivedAt: Date.now(),
-          raw: Buffer.from(transactionAsBytes).toString("hex"),
-        } as TransactionRecord;
+          sendPendingTransactionsToProver(proverURL!);
+        } catch {
+          console.error("Failed to send pending transactions to prover");
+        } finally {
+          updateMeterNonce(publicKey, result.nonce);
 
-        insertTransaction(transactionRecord);
+          // save transaction to sqlite
+          const transactionRecord = {
+            ...transactionData,
+            identifier: publicKey,
+            receivedAt: Date.now(),
+            raw: Buffer.from(transactionAsBytes).toString("hex"),
+          } as TransactionRecord;
+
+          insertTransaction(transactionRecord);
+        }
       }
 
       if (result)

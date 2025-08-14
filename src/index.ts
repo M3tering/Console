@@ -8,16 +8,13 @@ import setupDatabase, {
   saveMeter,
   deleteMeterByPublicKey,
 } from "./store/sqlite";
-import {
-  scheduleVerificationJobs,
-  runVerificationJobsManually,
-} from "./jobs/sync";
+import {getProverURL, sendPendingTransactionsToProver} from "./logic/verify";
+
 
 handleUplinks();
 
 // Initialize database tables and jobs
 setupDatabase();
-scheduleVerificationJobs();
 
 app.get("/", async (req: Request, res: Response) => {
   const m3ters = getAllMeterRecords();
@@ -65,7 +62,9 @@ app.delete("/delete-meter", async (req: Request, res: Response) => {
 // API endpoint to manually trigger verification jobs for testing
 app.post("/run-verification-jobs", async (req: Request, res: Response) => {
   try {
-    await runVerificationJobsManually();
+    const proverURL = req.query.prover?.toString() ?? await getProverURL();
+    await sendPendingTransactionsToProver(proverURL!);
+    
     res.status(200).send({ message: "verification jobs completed" });
     console.log(
       "[server]: Server handled POST request at `/run-verification-jobs`"

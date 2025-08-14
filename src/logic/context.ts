@@ -9,10 +9,9 @@ const hbs = create({
   helpers: {
     encodeURIComponent: function (value: string) {
       return encodeURIComponent(value);
-    }
-  }
+    },
+  },
 });
-
 
 // EXPRESS APP CONFIG
 export const app: Express = express();
@@ -31,13 +30,20 @@ app.listen(port, () => {
 
 // ETHERS JS CONTRACT CONFIG
 const provider = new JsonRpcProvider(process.env.GNOSIS_RPC);
+const mainnetProvider = new JsonRpcProvider(process.env.MAINNET_RPC);
+
 export const m3ter = new Contract(
   "0x39fb420Bd583cCC8Afd1A1eAce2907fe300ABD02",
   ["function keyByToken(uint256) view returns (bytes32)"],
-  provider 
+  provider
 );
 export const protocol = new Contract(
   "0x2b3997D82C836bd33C89e20fBaEF96CA99F1B24A",
   ["function contractByToken(uint256) view returns (string)"],
   provider
+);
+export const rollup = new Contract(
+  "0xYourRollupContractAddress", // TODO: Replace with actual rollup contract address
+  ["function nonce(uint256 tokenId) external view returns (bytes6)"],
+  mainnetProvider
 );
