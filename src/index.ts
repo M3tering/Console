@@ -8,8 +8,6 @@ import setupDatabase, {
   saveMeter,
   deleteMeterByPublicKey,
 } from "./store/sqlite";
-import {getProverURL, sendPendingTransactionsToProver} from "./logic/verify";
-
 
 handleUplinks();
 
@@ -57,20 +55,4 @@ app.delete("/delete-meter", async (req: Request, res: Response) => {
   }
   console.log("[server]: Server handled DELETE request at `/delete-meter`");
   res.status(200).send({ message: "deleted meter" });
-});
-
-// API endpoint to manually trigger verification jobs for testing
-app.post("/run-verification-jobs", async (req: Request, res: Response) => {
-  try {
-    const proverURL = req.query.prover?.toString() ?? await getProverURL();
-    await sendPendingTransactionsToProver(proverURL!);
-    
-    res.status(200).send({ message: "verification jobs completed" });
-    console.log(
-      "[server]: Server handled POST request at `/run-verification-jobs`"
-    );
-  } catch (err) {
-    console.error(err);
-    res.status(500).send({ message: "verification jobs failed" });
-  }
 });
