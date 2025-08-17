@@ -1,15 +1,28 @@
-import { State, Payload } from "../types";
-
 import { TurboFactory } from "@ardrive/turbo-sdk";
 import { Readable } from "stream";
 import Arweave from "arweave";
+import { decodePayload } from "./decode";
+import type { M3terPayload } from "../types";
 
 export async function interact(
   m3terId: string,
-  lastNonce: number,
-  payload: any,
-  transactionAsBytes: number[]
+  payload: M3terPayload
 ) {
+  // encode transaction into standard format (payload[0])
+  // format: nonce | energy | signature | voltage | device_id | longitude | latitude
+  const transactionHex = payload[0];
+
+  const { nonce, energy, signature, extensions } =
+    decodePayload(transactionHex);
+  let voltage, identifier, longitude, latitude;
+
+  if (extensions !== null && typeof extensions === "object") {
+    voltage = extensions.voltage ?? null;
+    identifier = extensions.deviceId ?? null;
+    longitude = extensions.longitude ?? null;
+    latitude = extensions.latitude ?? null;
+  }
+
   const arweave = Arweave.init({
     host: "arweave.net",
     protocol: "https",
@@ -19,28 +32,20 @@ export async function interact(
   const key = await arweave.wallets.generate();
   const turbo = TurboFactory.authenticated({ privateKey: key });
 
-  const transactionBytesAsHex = Buffer.from(transactionAsBytes).toString("hex");
-
-  const input = transactionBytesAsHex;
+  const input = transactionHex;
   const contractLabel = process.env.CONTRACT_LABEL || "M3ters";
 
-  const byteLength = Buffer.byteLength(transactionBytesAsHex, "utf8");
+  const byteLength = Buffer.byteLength(transactionHex, "utf8");
 
   // tags payload
   // timestamp
   // meter number
-  // current
   // energy
   // nonce
   // signature
   // voltage
-  const [nonce, voltage, current, energy] = JSON.parse(payload[0]);
-  const signature = payload[1];
-  const publicKey = payload[2];
-
-  await turbo.uploadFile({
-    fileStreamFactory: () =>
-      Readable.from(Buffer.from(transactionBytesAsHex, "utf8")),
+  return await turbo.uploadFile({
+    fileStreamFactory: () => Readable.from(Buffer.from(transactionHex, "utf8")),
     fileSizeFactory: () => byteLength,
     dataItemOpts: {
       tags: [
@@ -51,21 +56,11 @@ export async function interact(
         { name: "M3ter-ID", value: m3terId },
         { name: "Timestamp", value: Date.now().toString() },
         { name: "Meter-Number", value: m3terId },
-        { name: "Current", value: current.toString() },
         { name: "Energy", value: energy.toString() },
         { name: "Nonce", value: nonce.toString() },
         { name: "Signature", value: signature },
-        { name: "Voltage", value: voltage.toString() },
+        { name: "Voltage", value: voltage?.toString() ?? "" },
       ],
     },
   });
-
-  const deviceNonce: number = JSON.parse(payload[0])[0];
-  const nonceIsCardinal = lastNonce + 1 === deviceNonce;
-
-  if (nonceIsCardinal) {
-    return { is_on: true } as State;
-  }
-
-  return { nonce: lastNonce + 1, is_on: true } as State;
 }

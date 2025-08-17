@@ -38,8 +38,19 @@ export interface State {
   public_key: string;
   token_id: number;
 }
-export interface Payload {
-  0: string;
+export interface M3terPayload {
+  0: string; // encoded format: nonce | energy | signature | voltage | device_id | longitude | latitude
   1: string;
-  2: number[];
+}
+
+export interface DecodedPayload {
+  nonce: number;
+  energy: number;
+  signature: string;
+  extensions: {
+    voltage?: number;
+    deviceId?: string;
+    longitude?: number;
+    latitude?: number;
+  } | null;
 }

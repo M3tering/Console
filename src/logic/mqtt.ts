@@ -1,15 +1,15 @@
 import { connect } from "mqtt";
 import { enqueue } from "./grpc";
 import { interact } from "./arweave";
-import { encode, encodeTransaction } from "./encode";
-import { getGPS } from "./gps";
+import { encode } from "./encode";
 import {
   getMeterByPublicKey,
   insertTransaction,
   updateMeterNonce,
 } from "../store/sqlite";
-import { TransactionRecord } from "../types";
+import { State, TransactionRecord } from "../types";
 import { getProverURL, sendPendingTransactionsToProver } from "./verify";
+import { decodePayload } from "./decode";
 
 export function handleUplinks() {
   const client = connect({
@@ -36,7 +36,10 @@ export function handleUplinks() {
         Buffer.from(message["data"], "base64").toString()
       );
       console.log("payload", payload);
-      const publicKey = payload[2];
+      // encode transaction into standard format (payload[0])
+      // format: nonce | energy | signature | voltage | device_id | longitude | latitude
+      const transactionHex = payload[0];
+      const publicKey = payload[1];
       const m3ter = getMeterByPublicKey(publicKey ?? "");
 
       if (!m3ter) {
@@ -44,9 +47,16 @@ export function handleUplinks() {
         return;
       }
 
-      let [lat, lon] = getGPS();
-      const [nonce, voltage, , energy] = JSON.parse(payload[0]);
-      const signature = payload[1];
+      const { nonce, energy, signature, extensions } =
+        decodePayload(transactionHex);
+      let voltage, identifier, longitude, latitude;
+
+      if (extensions !== null && typeof extensions === "object") {
+        voltage = extensions.voltage ?? null;
+        identifier = extensions.deviceId ?? null;
+        longitude = extensions.longitude ?? null;
+        latitude = extensions.latitude ?? null;
+      }
 
       const transactionData = {
         nonce: m3ter.latestNonce || 0,
@@ -54,25 +64,18 @@ export function handleUplinks() {
         signature,
         voltage,
         deviceId: publicKey,
-        longitude: lon,
-        latitude: lat,
+        longitude,
+        latitude,
       };
 
-      // encode transaction into standard format
-      // format: nonce | energy | signature | voltage | device_id | longitude | latitude
-      const transactionAsBytes = encodeTransaction(transactionData);
+      // if device nonce is correct
+      const expectedNonce = m3ter.latestNonce ? m3ter.latestNonce + 1 : 0;
+      if (nonce === expectedNonce) {
+        // Upload to arweave
+        await interact(m3ter.contractId, payload);
 
-      const result = await interact(
-        m3ter.contractId,
-        m3ter.latestNonce || 0,
-        payload,
-        transactionAsBytes
-      );
-
-      // if the interaction was successful and device nonce is correct
-      // send transaction to prover
-      // save transaction to sqlite database
-      if (nonce === m3ter.latestNonce! + 1) {
+        // send transaction to prover
+        // save transaction to sqlite database
         try {
           // send pending transactions to prover node
           const proverURL = await getProverURL();
@@ -81,22 +84,28 @@ export function handleUplinks() {
         } catch {
           console.error("Failed to send pending transactions to prover");
         } finally {
-          updateMeterNonce(publicKey, result.nonce);
+          updateMeterNonce(publicKey, expectedNonce);
 
           // save transaction to sqlite
           const transactionRecord = {
             ...transactionData,
             identifier: publicKey,
             receivedAt: Date.now(),
-            raw: Buffer.from(transactionAsBytes).toString("hex"),
+            raw: transactionHex,
           } as TransactionRecord;
 
           insertTransaction(transactionRecord);
         }
       }
 
-      if (result)
-        enqueue(message["deviceInfo"]["devEui"], encode(result, lat, lon));
+      enqueue(
+        message["deviceInfo"]["devEui"],
+        encode(
+          { nonce: expectedNonce, is_on: true } as State,
+          latitude ?? 0,
+          longitude ?? 0
+        )
+      );
     } catch (error) {
       console.log(error);
     }
