@@ -1,8 +1,6 @@
 import { TransactionRecord, BatchTransactionPayload } from "./types";
 
-export function buildBatchPayload(
-  transactions: TransactionRecord[]
-): BatchTransactionPayload {
+export function buildBatchPayload(transactions: TransactionRecord[]): BatchTransactionPayload {
   const payload: BatchTransactionPayload = {};
 
   for (const tx of transactions) {

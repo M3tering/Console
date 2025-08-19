@@ -2,29 +2,22 @@
 export interface MeterRecord {
   publicKey: string;
   tokenId: number;
-  contractId: string;
-  latestNonce?: number; // Optional field for tracking latest nonce
+  latestNonce: number; // Optional field for tracking latest nonce
 }
 
 // transaction database record
 export interface TransactionRecord {
   nonce: number;
-  energy: number;
-  signature: string;
-  voltage?: number;
-  identifier?: string;
-  verified?: boolean | 0 | 1; // Optional field to indicate if the transaction is verified
-  receivedAt?: number;
-  longitude: number;
-  latitude: number;
-  raw?: string | null; // Raw transaction data in hex format
+  identifier: string;
+  verified: boolean | 0 | 1; // Optional field to indicate if the transaction is verified
+  receivedAt: number;
+  raw: string; // Raw transaction data in hex format
 }
 
 // Payload sent to the prover
 export interface BatchTransactionPayload {
-  [key: string]: string[] /* mapping meterId to transaction payload */;
+  [key: string]: string[] /* mapping meterId to list of raw transaction payloads */;
 }
-[];
 
 export interface State {
   app_eui: number;
@@ -38,6 +31,7 @@ export interface State {
   public_key: string;
   token_id: number;
 }
+
 export interface M3terPayload {
   0: string; // encoded format: nonce | energy | signature | voltage | device_id | longitude | latitude
   1: string;
@@ -52,5 +46,5 @@ export interface DecodedPayload {
     deviceId?: string;
     longitude?: number;
     latitude?: number;
-  } | null;
+  };
 }

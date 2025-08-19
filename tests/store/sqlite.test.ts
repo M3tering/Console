@@ -32,7 +32,6 @@ it("should insert meter", () => {
   const meterData = {
     publicKey: "test_public_key",
     tokenId: 1,
-    contractId: "test_contract_id",
     latestNonce: 0,
   };
   saveMeter(meterData);
@@ -45,7 +44,6 @@ it("should get meter by public key", () => {
   const meterData = {
     publicKey: "test_public_key",
     tokenId: 1,
-    contractId: "test_contract_id",
     latestNonce: 0,
   };
   saveMeter(meterData);
@@ -58,7 +56,6 @@ it("should delete meter", () => {
   const meterData = {
     publicKey: "test_public_key",
     tokenId: 1,
-    contractId: "test_contract_id",
     latestNonce: 0,
   };
   saveMeter(meterData);
@@ -72,7 +69,6 @@ it("should update meter nonce", () => {
   const meterData = {
     publicKey: "test_public_key",
     tokenId: 1,
-    contractId: "test_contract_id",
     latestNonce: 0,
   };
   saveMeter(meterData);
@@ -87,14 +83,10 @@ it("should update meter nonce", () => {
 it("should insert transaction", () => {
   const transactionData = {
     nonce: 1,
-    energy: 2.222,
-    signature: "signature",
-    voltage: 220,
-    identifier: "test_identifier",
-    longitude: 123.456,
-    latitude: 78.91,
+    identifier: "0", // meter token ID
     receivedAt: Date.now(),
-    raw: ""
+    raw: "",
+    verified: false,
   };
   insertTransaction(transactionData);
 
@@ -106,12 +98,7 @@ it("should insert transaction", () => {
 it("should mark transaction as verified", () => {
   const transactionData = {
     nonce: 1,
-    energy: 2.222,
-    signature: "signature",
-    voltage: 220,
-    identifier: "test_identifier",
-    longitude: 123.456,
-    latitude: 78.91,
+    identifier: 0, // meter token ID
     receivedAt: Date.now(),
   };
 
@@ -123,15 +110,10 @@ it("should mark transaction as verified", () => {
 it("should delete verified transactions", () => {
   const transactionData = {
     nonce: 1,
-    energy: 2.222,
-    signature: "signature",
-    voltage: 220,
-    identifier: "test_identifier",
-    longitude: 123.456,
-    latitude: 78.91,
+    identifier: "0", // meter token ID
     verified: true,
     receivedAt: Date.now(),
-    raw: ""
+    raw: "",
   };
   insertTransaction(transactionData);
 

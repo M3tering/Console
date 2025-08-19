@@ -45,11 +45,6 @@ export function decodePayload(hex: string) {
     nonce,
     energy: energyKWh,
     signature,
-    extensions: Object.keys(ext).length ? ext : null,
+    extensions: ext,
   };
 }
-
-// Example usage:
-const hex =
-  "000000000061919cbc1b88ebcf09830c89958803d100735ba94a9d037e5ce56da4d1caf891aca3b98b72bc9d0ebaa36248dd894081f022bd32d210b523ab655395f64a65586d5f01";
-console.log(decodePayload(hex));

@@ -23,14 +23,12 @@ app.get("/", async (req: Request, res: Response) => {
 app.post("/", async (req: Request, res: Response) => {
   try {
     const tokenId = (await req.body).tokenId;
-    const contractId = await protocol.contractByToken(tokenId);
     const _publicKey = await m3ter.keyByToken(tokenId);
     const publicKey = encodeBase64(_publicKey).toString();
     saveMeter({
       publicKey,
       tokenId,
-      contractId,
-      latestNonce: 0,
+      latestNonce: -1, // Initialize latestNonce to -1 so we can track the first valid nonce (0)
     });
   } catch (err) {
     console.error(err);
@@ -40,9 +38,7 @@ app.post("/", async (req: Request, res: Response) => {
 });
 
 app.delete("/delete-meter", async (req: Request, res: Response) => {
-  let publicKey = decodeURIComponent(
-    req.query?.publicKey?.toString() as string
-  );
+  let publicKey = decodeURIComponent(req.query?.publicKey?.toString() as string);
   if (publicKey) {
     const deleted = deleteMeterByPublicKey(publicKey.toString());
     if (!deleted) {

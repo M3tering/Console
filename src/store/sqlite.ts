@@ -25,7 +25,7 @@ let deleteVerifiedTransactionRecordsQuery: DatabaseStatementType;
  * @param databaseName name of the database file
  */
 export default function setupDatabase(databaseName = "m3tering.db") {
-  db = new Database(databaseName, {  });
+  db = new Database(databaseName, {});
 
   initializeMetersTable();
   initializeTransactionsTable();
@@ -52,12 +52,7 @@ function initializeTransactionsTable() {
   return db.exec(`
         CREATE TABLE IF NOT EXISTS transactions (
             nonce INTEGER PRIMARY KEY,
-            energy REAL,
-            signature TEXT,
-            voltage REAL,
             identifier TEXT,
-            longitude REAL,
-            latitude REAL,
             receivedAt INTEGER,
             verified BOOLEAN DEFAULT FALSE,
             raw TEXT,
@@ -75,8 +70,7 @@ function initializeMetersTable() {
         CREATE TABLE IF NOT EXISTS meters (
             publicKey TEXT PRIMARY KEY,
             tokenId INTEGER NOT NULL,
-            contractId TEXT NOT NULL,
-            latestNonce INTEGER DEFAULT 0
+            latestNonce INTEGER DEFAULT -1
         )
     `);
 }
@@ -85,16 +79,16 @@ function initializeMetersTable() {
 function prepareQueries() {
   // meter queries
   insertMeterQuery = db.prepare(`
-    INSERT OR REPLACE INTO meters (publicKey, tokenId, contractId, latestNonce)
-    VALUES (@publicKey, @tokenId, @contractId, @latestNonce)
+    INSERT OR REPLACE INTO meters (publicKey, tokenId, latestNonce)
+    VALUES (@publicKey, @tokenId, @latestNonce)
   `);
 
   getMeterByPublicKeyQuery = db.prepare(`
-    SELECT publicKey, tokenId, contractId, latestNonce FROM meters WHERE publicKey = ?
+    SELECT publicKey, tokenId, latestNonce FROM meters WHERE publicKey = ?
   `);
 
   getAllMetersQuery = db.prepare(`
-    SELECT publicKey, tokenId, contractId, latestNonce FROM meters
+    SELECT publicKey, tokenId, latestNonce FROM meters
   `);
 
   deleteMeterByPublicKeyQuery = db.prepare(`
@@ -107,8 +101,8 @@ function prepareQueries() {
 
   // transaction queries
   createTransactionQuery = db.prepare(`
-    INSERT INTO transactions (nonce, energy, signature, voltage, identifier, longitude, latitude, verified, receivedAt, raw)
-    VALUES (@nonce, @energy, @signature, @voltage, @identifier, @longitude, @latitude, @verified, @receivedAt, @raw)
+    INSERT INTO transactions (nonce, identifier, verified, receivedAt, raw)
+    VALUES (@nonce, @identifier, @verified, @receivedAt, @raw)
   `);
 
   getUnverifiedTransactionRecordsQuery = db.prepare(`
@@ -130,7 +124,6 @@ export function saveMeter(meterData: MeterRecord): void {
     insertMeterQuery.run({
       publicKey: meterData.publicKey,
       tokenId: meterData.tokenId,
-      contractId: meterData.contractId,
       latestNonce: meterData.latestNonce || 0,
     });
   } catch (err: any) {

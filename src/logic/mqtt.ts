@@ -2,11 +2,7 @@ import { connect } from "mqtt";
 import { enqueue } from "./grpc";
 import { interact } from "./arweave";
 import { encode } from "./encode";
-import {
-  getMeterByPublicKey,
-  insertTransaction,
-  updateMeterNonce,
-} from "../store/sqlite";
+import { getMeterByPublicKey, insertTransaction, updateMeterNonce } from "../store/sqlite";
 import { State, TransactionRecord } from "../types";
 import { getProverURL, sendPendingTransactionsToProver } from "./verify";
 import { decodePayload } from "./decode";
@@ -21,20 +17,15 @@ export function handleUplinks() {
   });
 
   client.on("connect", () => {
-    client.subscribe(
-      `application/${process.env.APPLICATION_ID}/device/+/event/up`,
-      () => {
-        console.log("\nConnected & Subscribed\n");
-      }
-    );
+    client.subscribe(`application/${process.env.APPLICATION_ID}/device/+/event/up`, () => {
+      console.log("\nConnected & Subscribed\n");
+    });
   });
 
   client.on("message", async (_, blob) => {
     try {
       const message = JSON.parse(blob.toString());
-      const payload = JSON.parse(
-        Buffer.from(message["data"], "base64").toString()
-      );
+      const payload = JSON.parse(Buffer.from(message["data"], "base64").toString());
       console.log("payload", payload);
       // encode transaction into standard format (payload[0])
       // format: nonce | energy | signature | voltage | device_id | longitude | latitude
@@ -47,63 +38,42 @@ export function handleUplinks() {
         return;
       }
 
-      const { nonce, energy, signature, extensions } =
-        decodePayload(transactionHex);
-      let voltage, identifier, longitude, latitude;
-
-      if (extensions !== null && typeof extensions === "object") {
-        voltage = extensions.voltage ?? null;
-        identifier = extensions.deviceId ?? null;
-        longitude = extensions.longitude ?? null;
-        latitude = extensions.latitude ?? null;
-      }
-
-      const transactionData = {
-        nonce: m3ter.latestNonce || 0,
-        energy,
-        signature,
-        voltage,
-        deviceId: publicKey,
-        longitude,
-        latitude,
-      };
+      const decoded = decodePayload(transactionHex);
 
       // if device nonce is correct
-      const expectedNonce = m3ter.latestNonce ? m3ter.latestNonce + 1 : 0;
-      if (nonce === expectedNonce) {
+      const expectedNonce = m3ter.latestNonce + 1;
+      let state;
+      if (decoded.nonce === expectedNonce) {
+        state = { is_on: true };
         // Upload to arweave
-        await interact(m3ter.contractId, payload);
+        await interact(m3ter.tokenId, payload, decoded);
 
-        // send transaction to prover
-        // save transaction to sqlite database
+        // save transaction to local store
+        const transactionRecord = {
+          nonce: decoded.nonce,
+          verified: false,
+          identifier: m3ter.tokenId.toString(),
+          receivedAt: Date.now(),
+          raw: transactionHex,
+        } as TransactionRecord;
+        insertTransaction(transactionRecord);
+        updateMeterNonce(publicKey, expectedNonce);
+
         try {
           // send pending transactions to prover node
           const proverURL = await getProverURL();
-
           sendPendingTransactionsToProver(proverURL!);
-        } catch {
-          console.error("Failed to send pending transactions to prover");
-        } finally {
-          updateMeterNonce(publicKey, expectedNonce);
-
-          // save transaction to sqlite
-          const transactionRecord = {
-            ...transactionData,
-            identifier: publicKey,
-            receivedAt: Date.now(),
-            raw: transactionHex,
-          } as TransactionRecord;
-
-          insertTransaction(transactionRecord);
+        } catch (error) {
+          console.error("Error sending pending transactions to prover:", error);
         }
       }
 
       enqueue(
         message["deviceInfo"]["devEui"],
         encode(
-          { nonce: expectedNonce, is_on: true } as State,
-          latitude ?? 0,
-          longitude ?? 0
+          (state ? state : { nonce: expectedNonce, is_on: true }) as State,
+          decoded.extensions.latitude ?? 0,
+          decoded.extensions.longitude ?? 0
         )
       );
     } catch (error) {
