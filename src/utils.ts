@@ -1,18 +1,8 @@
 import { TransactionRecord, BatchTransactionPayload } from "./types";
 
-export function buildBatchPayload(transactions: TransactionRecord[]): BatchTransactionPayload {
-  const payload: BatchTransactionPayload = {};
-
-  for (const tx of transactions) {
-    if (!tx.identifier) {
-      continue;
-    }
-
-    if (!payload[tx.identifier]) {
-      payload[tx.identifier] = [];
-    }
-    payload[tx.identifier].push(tx.raw!);
-  }
-
-  return payload;
+export function buildBatchPayload(transactions: TransactionRecord[]): BatchTransactionPayload[] {
+  return transactions.map((transaction) => ({
+    meter_id: transaction.identifier,
+    message: transaction.raw,
+  }));
 }

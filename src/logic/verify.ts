@@ -61,7 +61,7 @@ export function chooseProverNode(nodes: ProverNode[]): ProverNode | null {
  */
 export async function sendTransactionsToProver(
   proverURL: string,
-  transactionData: BatchTransactionPayload
+  transactionData: BatchTransactionPayload[]
 ): Promise<boolean> {
   try {
     const response = await fetch(`${proverURL}/prove`, {

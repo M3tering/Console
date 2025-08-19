@@ -16,7 +16,8 @@ export interface TransactionRecord {
 
 // Payload sent to the prover
 export interface BatchTransactionPayload {
-  [key: string]: string[] /* mapping meterId to list of raw transaction payloads */;
+  meter_id: string;
+  message: string;
 }
 
 export interface State {
