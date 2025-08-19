@@ -64,7 +64,7 @@ export async function sendTransactionsToProver(
   transactionData: BatchTransactionPayload[]
 ): Promise<boolean> {
   try {
-    const response = await fetch(`${proverURL}/prove`, {
+    const response = await fetch(`${proverURL}/batch-payloads`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
