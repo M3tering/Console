@@ -1,8 +1,7 @@
 import "dotenv/config";
-import { encodeBase64 } from "ethers";
 import { handleUplinks } from "./logic/mqtt";
 import { Request, Response } from "express";
-import { app, m3ter, protocol } from "./logic/context";
+import { app, m3ter } from "./logic/context";
 import setupDatabase, {
   getAllMeterRecords,
   saveMeter,
@@ -23,12 +22,11 @@ app.get("/", async (req: Request, res: Response) => {
 app.post("/", async (req: Request, res: Response) => {
   try {
     const tokenId = (await req.body).tokenId;
-    const _publicKey = await m3ter.keyByToken(tokenId);
-    const publicKey = encodeBase64(_publicKey).toString();
+    const publicKey = await m3ter.publicKey(tokenId);
     saveMeter({
       publicKey,
       tokenId,
-      latestNonce: -1, // Initialize latestNonce to -1 so we can track the first valid nonce (0)
+      latestNonce: 0, // Initialize latestNonce to 0
     });
   } catch (err) {
     console.error(err);

@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "ts-node src/index.ts",
+    "dev": "nodemon --exec ts-node src/index.ts",
     "interact": "ts-node src/logic/mqtt.ts",
     "watch": "nodemon --watch 'src/**'",
     "test": "tsc --noEmit && jest"

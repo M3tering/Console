@@ -29,21 +29,16 @@ app.listen(port, () => {
 });
 
 // ETHERS JS CONTRACT CONFIG
-const provider = new JsonRpcProvider(process.env.GNOSIS_RPC);
-const mainnetProvider = new JsonRpcProvider(process.env.MAINNET_RPC);
+const provider = new JsonRpcProvider(process.env.MAINNET_RPC);
 
 export const m3ter = new Contract(
-  "0x39fb420Bd583cCC8Afd1A1eAce2907fe300ABD02",
-  ["function keyByToken(uint256) view returns (bytes32)"],
+  "0x40a36C0eF29A49D1B1c1fA45fab63762f8FC423F",
+  ["function publicKey(uint256) view returns (bytes32)"],
   provider
 );
-export const protocol = new Contract(
-  "0x2b3997D82C836bd33C89e20fBaEF96CA99F1B24A",
-  ["function contractByToken(uint256) view returns (string)"],
-  provider
-);
+
 export const rollup = new Contract(
-  "0xYourRollupContractAddress", // TODO: Replace with actual rollup contract address
+  "0x6E31632D6A7Af8d30766AA9E216c49F5AAb846c2", // TODO: Replace with actual rollup contract address
   ["function nonce(uint256 tokenId) external view returns (bytes6)"],
-  mainnetProvider
+  provider
 );

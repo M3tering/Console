@@ -62,27 +62,28 @@ export function chooseProverNode(nodes: ProverNode[]): ProverNode | null {
 export async function sendTransactionsToProver(
   proverURL: string,
   transactionData: BatchTransactionPayload[]
-): Promise<boolean> {
+): Promise<Response | null> {
   try {
     const response = await fetch(`${proverURL}/batch-payloads`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ ...transactionData }),
+      body: JSON.stringify(transactionData),
     });
+
+    console.log("[info] received", response.status, "from the prover");
+    console.log("prover response", await response.text());
 
     if (!response.ok) {
       throw new Error(`Prover responded with status: ${response.status}`);
     }
-
-    const result = await response.json();
-
-    console.log("Transactions sent to prover:");
-    return result.success;
+    const json = await response.json();
+    console.log("[info] Transactions sent to prover:", json);
+    return response;
   } catch (err: any) {
     console.error("Failed to send transactions to prover:", err.message);
-    return false;
+    return null;
   }
 }
 
@@ -138,7 +139,5 @@ export async function sendPendingTransactionsToProver(proverURL: string) {
 
   const requestPayload = buildBatchPayload(pendingTransactions);
 
-  await sendTransactionsToProver(proverURL, requestPayload);
-
-  return;
+  return await sendTransactionsToProver(proverURL, requestPayload);
 }

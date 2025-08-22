@@ -1,20 +1,19 @@
 import fs from "fs";
 import Database from "better-sqlite3";
-import type {
-  Database as DatabaseType,
-  Statement as DatabaseStatementType,
-} from "better-sqlite3";
+import type { Database as DatabaseType, Statement as DatabaseStatementType } from "better-sqlite3";
 import { MeterRecord, TransactionRecord } from "../types";
 
 // meter queries
 let db: DatabaseType;
 let insertMeterQuery: DatabaseStatementType;
 let getMeterByPublicKeyQuery: DatabaseStatementType;
+let getMeterByTokenIdQuery: DatabaseStatementType;
 let getAllMetersQuery: DatabaseStatementType;
 let deleteMeterByPublicKeyQuery: DatabaseStatementType;
 let updateMeterNonceQuery: DatabaseStatementType;
 // transaction queries
 let createTransactionQuery: DatabaseStatementType;
+let getTransactionByNonceQuery: DatabaseStatementType;
 let getUnverifiedTransactionRecordsQuery: DatabaseStatementType;
 let markTransactionAsVerifiedQuery: DatabaseStatementType;
 let deleteVerifiedTransactionRecordsQuery: DatabaseStatementType;
@@ -27,8 +26,8 @@ let deleteVerifiedTransactionRecordsQuery: DatabaseStatementType;
 export default function setupDatabase(databaseName = "m3tering.db") {
   db = new Database(databaseName, {});
 
-  initializeMetersTable();
   initializeTransactionsTable();
+  initializeMetersTable();
   prepareQueries();
 }
 
@@ -51,7 +50,7 @@ export function deleteDatabase(databaseName = "m3tering.db") {
 function initializeTransactionsTable() {
   return db.exec(`
         CREATE TABLE IF NOT EXISTS transactions (
-            nonce INTEGER PRIMARY KEY,
+            nonce INTEGER,
             identifier TEXT,
             receivedAt INTEGER,
             verified BOOLEAN DEFAULT FALSE,
@@ -68,8 +67,8 @@ function initializeTransactionsTable() {
 function initializeMetersTable() {
   return db.exec(`
         CREATE TABLE IF NOT EXISTS meters (
-            publicKey TEXT PRIMARY KEY,
-            tokenId INTEGER NOT NULL,
+            publicKey TEXT,
+            tokenId INTEGER,
             latestNonce INTEGER DEFAULT -1
         )
     `);
@@ -85,6 +84,10 @@ function prepareQueries() {
 
   getMeterByPublicKeyQuery = db.prepare(`
     SELECT publicKey, tokenId, latestNonce FROM meters WHERE publicKey = ?
+  `);
+
+  getMeterByTokenIdQuery = db.prepare(`
+    SELECT publicKey, tokenId, latestNonce FROM meters WHERE tokenId = ?
   `);
 
   getAllMetersQuery = db.prepare(`
@@ -105,6 +108,10 @@ function prepareQueries() {
     VALUES (@nonce, @identifier, @verified, @receivedAt, @raw)
   `);
 
+  getTransactionByNonceQuery = db.prepare(`
+    SELECT * FROM transactions WHERE nonce = ? AND identifier = ?
+  `);
+
   getUnverifiedTransactionRecordsQuery = db.prepare(`
     SELECT * FROM transactions WHERE verified = FALSE
   `);
@@ -121,10 +128,12 @@ function prepareQueries() {
 // Meter management functions
 export function saveMeter(meterData: MeterRecord): void {
   try {
+    console.log("saving m3ter data", meterData);
+
     insertMeterQuery.run({
       publicKey: meterData.publicKey,
       tokenId: meterData.tokenId,
-      latestNonce: meterData.latestNonce || 0,
+      latestNonce: meterData.latestNonce,
     });
   } catch (err: any) {
     console.error("Failed to save meter:", err);
@@ -134,9 +143,17 @@ export function saveMeter(meterData: MeterRecord): void {
 
 export function getMeterByPublicKey(publicKey: string): MeterRecord | null {
   try {
-    const result = getMeterByPublicKeyQuery.get(publicKey) as
-      | MeterRecord
-      | undefined;
+    const result = getMeterByPublicKeyQuery.get(publicKey) as MeterRecord | undefined;
+    return result || null;
+  } catch (err: any) {
+    console.error("Failed to get meter:", err);
+    return null;
+  }
+}
+
+export function getMeterByTokenId(tokenId: string): MeterRecord | null {
+  try {
+    const result = getMeterByTokenIdQuery.get(tokenId) as MeterRecord | undefined;
     return result || null;
   } catch (err: any) {
     console.error("Failed to get meter:", err);
@@ -185,6 +202,12 @@ export function updateMeterNonce(publicKey: string, nonce: number): boolean {
 // Transaction insertion function
 export function insertTransaction(transactionData: TransactionRecord): void {
   try {
+    const existingTransaction = getTransactionByNonceQuery.get(transactionData.nonce, transactionData.identifier) as TransactionRecord | undefined;
+
+    if (existingTransaction) {
+      throw new Error(`Transaction with nonce ${transactionData.nonce} already exists`);
+    }
+    
     transactionData.verified = +Boolean(transactionData.verified) as 0 | 1; // Ensure verified is set
     createTransactionQuery.run(transactionData);
   } catch (err: any) {
@@ -193,11 +216,20 @@ export function insertTransaction(transactionData: TransactionRecord): void {
   }
 }
 
+export function getTransactionByNonce(nonce: number): TransactionRecord | null {
+  try {
+    const result = getTransactionByNonceQuery.get(nonce) as TransactionRecord | undefined;
+    return result || null;
+  } catch (err: any) {
+    console.error("Failed to get transaction by nonce:", err);
+    return null;
+  }
+}
+
 // Transaction verification functions
 export function getUnverifiedTransactionRecords(): TransactionRecord[] {
   try {
-    const results =
-      getUnverifiedTransactionRecordsQuery.all() as TransactionRecord[];
+    const results = getUnverifiedTransactionRecordsQuery.all() as TransactionRecord[];
     return results;
   } catch (err: any) {
     console.error("Failed to get unverified transactions:", err);
