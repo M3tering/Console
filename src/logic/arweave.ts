@@ -34,10 +34,14 @@ export async function interact(
         { name: "Contract-Use", value: "M3tering Protocol" },
         { name: "Content-Type", value: "text/plain" },
         { name: "M3ter-ID", value: m3terId.toString() },
-        { name: "payload", value: JSON.stringify(decoded) },
         { name: "Timestamp", value: Date.now().toString() },
-        { name: "Message", value: transactionHex.substring(0, 16) }, // nonce and energy bytes
-        { name: "Signature", value: transactionHex.substring(16, 144) }, // signature bytes
+        { name: "Nonce", value: decoded.nonce.toString() },
+        { name: "Energy", value: decoded.energy.toString() },
+        { name: "Signature", value: decoded.signature },
+        { name: "Voltage", value: decoded.extensions?.voltage?.toString() ?? "" },
+        { name: "Device-ID", value: decoded.extensions?.deviceId?.toString() ?? "" },
+        { name: "Longitude", value: decoded.extensions?.longitude?.toString() ?? "" },
+        { name: "Latitude", value: decoded.extensions?.latitude?.toString() ?? "" }
       ],
     },
   });
