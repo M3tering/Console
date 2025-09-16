@@ -1,4 +1,3 @@
-import { Level } from "level";
 import { create } from "express-handlebars";
 import express, { Express } from "express";
 import { JsonRpcProvider, Contract } from "ethers";
@@ -10,10 +9,9 @@ const hbs = create({
   helpers: {
     encodeURIComponent: function (value: string) {
       return encodeURIComponent(value);
-    }
-  }
+    },
+  },
 });
-
 
 // EXPRESS APP CONFIG
 export const app: Express = express();
@@ -31,17 +29,16 @@ app.listen(port, () => {
 });
 
 // ETHERS JS CONTRACT CONFIG
-const provider = new JsonRpcProvider(process.env.GNOSIS_RPC);
+const provider = new JsonRpcProvider(process.env.MAINNET_RPC);
+
 export const m3ter = new Contract(
-  "0x39fb420Bd583cCC8Afd1A1eAce2907fe300ABD02",
-  ["function keyByToken(uint256) view returns (bytes32)"],
-  provider
-);
-export const protocol = new Contract(
-  "0x2b3997D82C836bd33C89e20fBaEF96CA99F1B24A",
-  ["function contractByToken(uint256) view returns (string)"],
+  "0x40a36C0eF29A49D1B1c1fA45fab63762f8FC423F",
+  ["function publicKey(uint256) view returns (bytes32)"],
   provider
 );
 
-// LEVEL DB CONFIG
-export const db = new Level("db", { valueEncoding: "json" });
+export const rollup = new Contract(
+  "0x6E31632D6A7Af8d30766AA9E216c49F5AAb846c2", // TODO: Replace with actual rollup contract address
+  ["function nonce(uint256 tokenId) external view returns (bytes6)"],
+  provider
+);

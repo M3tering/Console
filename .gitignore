@@ -1,5 +1,14 @@
+#test scripts
+emulate.ts
+test-database.ts
 
+# Database files
+*.db
 src/db
+
+# data files
+transactions.json
+
 .idea
 
 # Logs
