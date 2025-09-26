@@ -13,7 +13,7 @@
   "author": "Godwin",
   "license": "MIT",
   "dependencies": {
-    "@ardrive/turbo-sdk": "^1.25.0",
+    "@ardrive/turbo-sdk": "^1.30.0",
     "@chirpstack/chirpstack-api": "^4.7.0",
     "@grpc/grpc-js": "^1.10.3",
     "arweave": "^1.15.7",
