@@ -3,7 +3,7 @@ import { rollup } from "./context";
 import { getUnverifiedTransactionRecords } from "../store/sqlite";
 import { buildBatchPayload } from "../utils";
 
-const PREFERRED_PROVER_NODE = process.env.PREFERRED_PROVER_NODE || "https://prover.m3tering.com";
+const PREFERRED_PROVER_NODE = process.env.PREFERRED_PROVER_NODE || "https://prover.m3ter.ing";
 
 // Prover node structure
 export interface ProverNode {

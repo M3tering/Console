@@ -3,10 +3,10 @@ import { Readable } from "stream";
 import Arweave from "arweave";
 import type { DecodedPayload, M3terPayload } from "../types";
 
-export async function interact(m3terId: number, payload: M3terPayload, decoded: DecodedPayload) {
+export async function interact(m3terId: number, decoded: DecodedPayload) {
   // encode transaction into standard format (payload[0])
   // format: nonce | energy | signature | voltage | device_id | longitude | latitude
-  const transactionHex = payload[0];
+  const transactionHex = decoded.buf;
 
   const arweave = Arweave.init({
     host: "arweave.net",
@@ -20,10 +20,10 @@ export async function interact(m3terId: number, payload: M3terPayload, decoded: 
 
   const contractLabel = process.env.CONTRACT_LABEL || "M3ters";
 
-  const byteLength = Buffer.byteLength(transactionHex, "utf8");
+  const byteLength = transactionHex.length;
 
   return await turbo.uploadFile({
-    fileStreamFactory: () => Readable.from(transactionHex, { encoding: "utf8" }),
+    fileStreamFactory: () => Readable.from([transactionHex.toString("hex")], { encoding: "utf8" }),
     fileSizeFactory: () => byteLength,
     dataItemOpts: {
       paidBy: await arweave.wallets.jwkToAddress(key),

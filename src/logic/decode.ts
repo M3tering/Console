@@ -1,8 +1,6 @@
 import type { DecodedPayload } from "../types";
 
-export function decodePayload(hex: string) {
-  const buf = Buffer.from(hex, "hex");
-
+export function decodePayload(buf: Buffer) {
   if (buf.length < 72) {
     throw new Error("Payload too short. Must be at least 72 bytes");
   }
@@ -46,5 +44,6 @@ export function decodePayload(hex: string) {
     energy: energyKWh,
     signature,
     extensions: ext,
+    buf,
   };
 }
