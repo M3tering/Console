@@ -22,6 +22,15 @@ export function handleUplinks() {
     });
   });
 
+  client.on("error", (err) => {
+    console.error("Connection error: ", err);
+    client.end();
+  });
+
+  client.on("reconnect", () => {
+    console.log("Reconnecting...");
+  });
+
   client.on("message", async (_, blob) => {
     return await handleMessage(blob);
   });
