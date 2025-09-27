@@ -42,7 +42,7 @@ async function handleMessage(blob: Buffer) {
 
     console.log("[info] Received uplink from device:", JSON.stringify(message));
 
-    const payload = Buffer.from(message["data"], "hex");
+    const payload = Buffer.from(message["data"], "base64");
     // encode transaction into standard format (payload is hex string)
     // format: nonce | energy | signature | voltage | device_id | longitude | latitude
     const transactionHex = payload;
@@ -58,8 +58,7 @@ async function handleMessage(blob: Buffer) {
     const m3ter = getMeterByPublicKey(publicKey ?? "");
 
     if (!m3ter) {
-      console.error("Meter not found for public key:", publicKey);
-      return;
+      throw new Error("Meter not found for public key: " + publicKey);
     }
 
     console.log(
