@@ -22,6 +22,15 @@ export function handleUplinks() {
     });
   });
 
+  client.on("error", (err) => {
+    console.error("Connection error: ", err);
+    client.end();
+  });
+
+  client.on("reconnect", () => {
+    console.log("Reconnecting...");
+  });
+
   client.on("message", async (_, blob) => {
     return await handleMessage(blob);
   });
@@ -30,11 +39,22 @@ export function handleUplinks() {
 async function handleMessage(blob: Buffer) {
   try {
     const message = JSON.parse(blob.toString());
-    const payload = JSON.parse(Buffer.from(message["data"], "base64").toString());
-    // encode transaction into standard format (payload[0])
+
+    console.log("[info] Received uplink from device:", JSON.stringify(message));
+
+    const payload = Buffer.from(message["data"], "hex");
+    // encode transaction into standard format (payload is hex string)
     // format: nonce | energy | signature | voltage | device_id | longitude | latitude
-    const transactionHex = payload[0];
-    const publicKey = payload[1];
+    const transactionHex = payload;
+    const decoded = decodePayload(transactionHex);
+    const publicKey = decoded.extensions.deviceId;
+
+    console.log("[info] Decoded payload:", decoded);
+
+    if (!publicKey) {
+      throw new Error("Invalid Public Key");
+    }
+
     const m3ter = getMeterByPublicKey(publicKey ?? "");
 
     if (!m3ter) {
@@ -42,17 +62,27 @@ async function handleMessage(blob: Buffer) {
       return;
     }
 
-    console.log("[info] Received blob for meter", m3ter?.tokenId, "nonce", m3ter?.latestNonce + 1);
-
-    const decoded = decodePayload(transactionHex);
+    console.log(
+      "[info] Received blob for meter",
+      m3ter?.tokenId,
+      "expected nonce:",
+      m3ter?.latestNonce + 1,
+      "got:",
+      decoded.nonce
+    );
 
     // if device nonce is correct
     const expectedNonce = m3ter.latestNonce + 1;
+
     let state;
     if (decoded.nonce === expectedNonce) {
       state = { is_on: true };
+
+      console.log("[info] Nonce is valid:", decoded.nonce);
       // Upload to arweave
-      await interact(m3ter.tokenId, payload, decoded);
+      await interact(m3ter.tokenId, decoded);
+
+      console.log("[info] Uploaded transaction to Arweave for meter", m3ter.tokenId);
 
       // save transaction to local store
       const transactionRecord = {
@@ -60,16 +90,20 @@ async function handleMessage(blob: Buffer) {
         verified: false,
         identifier: m3ter.tokenId.toString(),
         receivedAt: Date.now(),
-        raw: transactionHex,
+        raw: transactionHex.toString("hex"),
       } as TransactionRecord;
 
       try {
         insertTransaction(transactionRecord);
+
+        console.log("[info] Inserted transaction record:", transactionRecord);
       } catch (error) {
         console.error("Error inserting transaction:", error);
       }
 
       updateMeterNonce(publicKey, expectedNonce);
+
+      console.log("[info] Updated meter nonce to:", expectedNonce);
 
       try {
         // send pending transactions to prover node

@@ -48,4 +48,5 @@ export interface DecodedPayload {
     longitude?: number;
     latitude?: number;
   };
+  buf: Buffer;
 }
