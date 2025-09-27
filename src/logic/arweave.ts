@@ -1,7 +1,7 @@
 import { ArweaveSigner, TurboFactory } from "@ardrive/turbo-sdk";
 import { Readable } from "stream";
 import Arweave from "arweave";
-import type { DecodedPayload, M3terPayload } from "../types";
+import type { DecodedPayload } from "../types";
 
 export async function interact(m3terId: number, decoded: DecodedPayload) {
   // encode transaction into standard format (payload[0])

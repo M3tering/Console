@@ -30,12 +30,17 @@ export function handleUplinks() {
 async function handleMessage(blob: Buffer) {
   try {
     const message = JSON.parse(blob.toString());
+
+    console.log("[info] Received uplink from device:", JSON.stringify(message));
+
     const payload = Buffer.from(message["data"], "hex");
     // encode transaction into standard format (payload is hex string)
     // format: nonce | energy | signature | voltage | device_id | longitude | latitude
     const transactionHex = payload;
     const decoded = decodePayload(transactionHex);
     const publicKey = decoded.extensions.deviceId;
+
+    console.log("[info] Decoded payload:", decoded);
 
     if (!publicKey) {
       throw new Error("Invalid Public Key");
@@ -48,15 +53,27 @@ async function handleMessage(blob: Buffer) {
       return;
     }
 
-    console.log("[info] Received blob for meter", m3ter?.tokenId, "nonce", m3ter?.latestNonce + 1);
+    console.log(
+      "[info] Received blob for meter",
+      m3ter?.tokenId,
+      "expected nonce:",
+      m3ter?.latestNonce + 1,
+      "got:",
+      decoded.nonce
+    );
 
     // if device nonce is correct
     const expectedNonce = m3ter.latestNonce + 1;
+
     let state;
     if (decoded.nonce === expectedNonce) {
       state = { is_on: true };
+
+      console.log("[info] Nonce is valid:", decoded.nonce);
       // Upload to arweave
       await interact(m3ter.tokenId, decoded);
+
+      console.log("[info] Uploaded transaction to Arweave for meter", m3ter.tokenId);
 
       // save transaction to local store
       const transactionRecord = {
@@ -69,11 +86,15 @@ async function handleMessage(blob: Buffer) {
 
       try {
         insertTransaction(transactionRecord);
+
+        console.log("[info] Inserted transaction record:", transactionRecord);
       } catch (error) {
         console.error("Error inserting transaction:", error);
       }
 
       updateMeterNonce(publicKey, expectedNonce);
+
+      console.log("[info] Updated meter nonce to:", expectedNonce);
 
       try {
         // send pending transactions to prover node
