@@ -5,14 +5,17 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "ts-node src/index.ts",
+    "interact": "ts-node src/logic/mqtt.ts",
     "watch": "nodemon --watch 'src/**'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Godwin",
   "license": "MIT",
   "dependencies": {
+    "@ardrive/turbo-sdk": "^1.25.0",
     "@chirpstack/chirpstack-api": "^4.7.0",
     "@grpc/grpc-js": "^1.10.3",
+    "arweave": "^1.15.7",
     "body-parser": "^1.20.2",
     "dotenv": "^16.4.5",
     "ethers": "^6.11.1",

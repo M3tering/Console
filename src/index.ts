@@ -18,10 +18,9 @@ app.get("/", async (req: Request, res: Response) => {
 app.post("/", async (req: Request, res: Response) => {
   try {
     const tokenId = (await req.body).tokenId;
-    const contractId = await protocol.contractByToken(tokenId);
     const _publicKey = await m3ter.keyByToken(tokenId);
     const publicKey = encodeBase64(_publicKey).toString();
-    await db.put(publicKey, JSON.stringify({ publicKey, tokenId, contractId }));
+    await db.put(publicKey, JSON.stringify({ publicKey, tokenId, latestNonce: 0 }));
   } catch (err) {
     console.error(err);
   }
