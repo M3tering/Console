@@ -13,8 +13,6 @@ handleUplinks();
 // Initialize database tables and jobs
 setupDatabase();
 
-console.log("[server]: Server is starting...", process.env); // todo: remove
-
 app.get("/", async (req: Request, res: Response) => {
   const m3ters = getAllMeterRecords();
   res.render("index", { m3ters });

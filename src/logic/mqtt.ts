@@ -55,7 +55,7 @@ async function handleMessage(blob: Buffer) {
       throw new Error("Invalid Public Key");
     }
 
-    const m3ter = getMeterByPublicKey(publicKey ?? "");
+    const m3ter = getMeterByPublicKey(`0x${publicKey}`) ?? null;
 
     if (!m3ter) {
       throw new Error("Meter not found for public key: " + publicKey);
