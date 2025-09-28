@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { handleUplinks } from "./logic/mqtt";
 import { Request, Response } from "express";
-import { app, m3ter } from "./logic/context";
+import { app, m3ter, rollup } from "./logic/context";
 import setupDatabase, {
   getAllMeterRecords,
   saveMeter,
@@ -25,10 +25,11 @@ app.post("/", async (req: Request, res: Response) => {
   try {
     const tokenId = (await req.body).tokenId;
     const publicKey = await m3ter.publicKey(tokenId);
+    const latestNonce = await rollup.nonce(tokenId);
     saveMeter({
       publicKey,
       tokenId,
-      latestNonce: 0, // Initialize latestNonce to 0
+      latestNonce: Number(latestNonce),
     });
   } catch (err) {
     console.error(err);
