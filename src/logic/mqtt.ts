@@ -2,7 +2,16 @@ import { connect } from "mqtt";
 import { enqueue } from "./grpc";
 import { interact } from "./arweave";
 import { encode } from "./encode";
-import { getMeterByPublicKey, insertTransaction, updateMeterNonce } from "../store/sqlite";
+import { m3ter as m3terContract, rollup as rollupContract } from "./context";
+import {
+  getAllMeterRecords,
+  getMeterByDevEui,
+  getMeterByPublicKey,
+  insertTransaction,
+  saveMeter,
+  updateMeterDevEui,
+  updateMeterNonce,
+} from "../store/sqlite";
 import { State, TransactionRecord } from "../types";
 import { getProverURL, sendPendingTransactionsToProver } from "./verify";
 import { decodePayload } from "./decode";
@@ -36,30 +45,63 @@ export function handleUplinks() {
   });
 }
 
-async function handleMessage(blob: Buffer) {
+export async function handleMessage(blob: Buffer) {
   try {
     const message = JSON.parse(blob.toString());
 
     console.log("[info] Received uplink from device:", JSON.stringify(message));
 
-    const payload = Buffer.from(message["data"], "hex");
+    const payload = Buffer.from(message["data"], "base64");
     // encode transaction into standard format (payload is hex string)
     // format: nonce | energy | signature | voltage | device_id | longitude | latitude
     const transactionHex = payload;
     const decoded = decodePayload(transactionHex);
-    const publicKey = decoded.extensions.deviceId;
+    let publicKey = decoded.extensions.deviceId;
 
     console.log("[info] Decoded payload:", decoded);
 
-    if (!publicKey) {
-      throw new Error("Invalid Public Key");
+    if (publicKey) {
+      // save public key with device EUI mapping if not already saved
+      const existingMeter = getMeterByPublicKey(`0x${publicKey}`);
+
+      if (!existingMeter) {
+        const tokenId = Number(await m3terContract.tokenID(`0x${publicKey}`));
+        if (tokenId === 0) {
+          throw new Error("Token ID not found for public key: " + publicKey);
+        }
+
+        const latestNonce = Number(await rollupContract.nonce(tokenId));
+
+        // save new meter with devEui
+        const newMeter = {
+          publicKey: `0x${publicKey}`,
+          devEui: message["deviceInfo"]["devEui"],
+          tokenId,
+          latestNonce,
+        };
+        saveMeter(newMeter);
+        console.log("[info] Saved new meter:", newMeter);
+      } else if (existingMeter && !existingMeter.devEui) {
+        // update existing meter with devEui if not already set
+        updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
+        console.log("[info] Updated meter with DevEui:", existingMeter.tokenId);
+      }
+    } else {
+      // try to find meter by DevEui
+      const devEui = message["deviceInfo"]["devEui"];
+      const meterByDevEui = getMeterByDevEui(devEui);
+
+      if (!meterByDevEui) {
+        throw new Error("Device EUI not associated with any meter: " + devEui);
+      }
+
+      publicKey = meterByDevEui.publicKey.replace("0x", "");
     }
 
-    const m3ter = getMeterByPublicKey(publicKey ?? "");
+    const m3ter = getMeterByPublicKey(`0x${publicKey}`) ?? null;
 
     if (!m3ter) {
-      console.error("Meter not found for public key:", publicKey);
-      return;
+      throw new Error("Meter not found for public key: " + publicKey);
     }
 
     console.log(
@@ -74,10 +116,7 @@ async function handleMessage(blob: Buffer) {
     // if device nonce is correct
     const expectedNonce = m3ter.latestNonce + 1;
 
-    let state;
     if (decoded.nonce === expectedNonce) {
-      state = { is_on: true };
-
       console.log("[info] Nonce is valid:", decoded.nonce);
       // Upload to arweave
       await interact(m3ter.tokenId, decoded);
@@ -118,13 +157,16 @@ async function handleMessage(blob: Buffer) {
       }
     }
 
+    const state =
+      decoded.nonce === m3ter.latestNonce + 1 || decoded.nonce === 0
+        ? { is_on: true }
+        : { nonce: m3ter.latestNonce, is_on: true };
+
+    console.log("[info] Enqueuing state:", state);
+
     enqueue(
       message["deviceInfo"]["devEui"],
-      encode(
-        (state ? state : { nonce: expectedNonce, is_on: true }) as State,
-        decoded.extensions.latitude ?? 0,
-        decoded.extensions.longitude ?? 0
-      )
+      encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0)
     );
   } catch (error) {
     console.log(error);

@@ -10,6 +10,8 @@ import setupDatabase, {
   deleteVerifiedTransactionRecords,
   insertTransaction,
   deleteDatabase,
+  getMeterByDevEui,
+  updateMeterDevEui,
 } from "../../src/store/sqlite";
 
 beforeEach(() => {
@@ -28,11 +30,12 @@ it("should have no meters and transactions", () => {
   expect(transactions).toHaveLength(0);
 });
 
-it("should insert meter", () => {
+it("should insert meter without devEui", () => {
   const meterData = {
     publicKey: "test_public_key",
     tokenId: 1,
     latestNonce: 0,
+    devEui: null,
   };
   saveMeter(meterData);
 
@@ -40,11 +43,26 @@ it("should insert meter", () => {
   expect(meters).toHaveLength(1);
 });
 
+it("should insert meter with devEui", () => {
+  const meterData = {
+    publicKey: "test_public_key",
+    tokenId: 1,
+    latestNonce: 0,
+    devEui: "test_dev_eui",
+  };
+  saveMeter(meterData);
+
+  const meters = getAllMeterRecords();
+  expect(meters).toHaveLength(1);
+  expect(meters[0].devEui).toBe("test_dev_eui");
+});
+
 it("should get meter by public key", () => {
   const meterData = {
     publicKey: "test_public_key",
     tokenId: 1,
     latestNonce: 0,
+    devEui: "test_dev_eui",
   };
   saveMeter(meterData);
 
@@ -52,11 +70,26 @@ it("should get meter by public key", () => {
   expect(retrievedMeter).toEqual(meterData);
 });
 
+it("should get meter by device EUI", () => {
+  const meterData = {
+    publicKey: "test_public_key",
+    tokenId: 1,
+    latestNonce: 0,
+    devEui: "test_dev_eui",
+  };
+  saveMeter(meterData);
+
+  const retrievedMeter = getMeterByDevEui(meterData.devEui);
+  expect(retrievedMeter).toEqual(meterData);
+});
+
+
 it("should delete meter", () => {
   const meterData = {
     publicKey: "test_public_key",
     tokenId: 1,
     latestNonce: 0,
+    devEui: "test_dev_eui",
   };
   saveMeter(meterData);
   const deleted = deleteMeterByPublicKey(meterData.publicKey);
@@ -70,6 +103,7 @@ it("should update meter nonce", () => {
     publicKey: "test_public_key",
     tokenId: 1,
     latestNonce: 0,
+    devEui: "test_dev_eui",
   };
   saveMeter(meterData);
 
@@ -78,6 +112,22 @@ it("should update meter nonce", () => {
 
   const updatedMeter = getMeterByPublicKey(meterData.publicKey);
   expect(updatedMeter?.latestNonce).toBe(5);
+});
+
+it("should update meter devEui", () => {
+  const meterData = {
+    publicKey: "test_public_key",
+    tokenId: 1,
+    latestNonce: 0,
+    devEui: "test_dev_eui",
+  };
+  saveMeter(meterData);
+
+  const updated = updateMeterDevEui(meterData.publicKey, "new_dev_eui");
+  expect(updated).toBe(true);
+
+  const updatedMeter = getMeterByPublicKey(meterData.publicKey);
+  expect(updatedMeter?.devEui).toBe("new_dev_eui");
 });
 
 it("should insert transaction", () => {
