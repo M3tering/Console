@@ -163,7 +163,7 @@ export async function handleMessage(blob: Buffer) {
     enqueue(
       message["deviceInfo"]["devEui"],
       encode(
-        (state ? state : { nonce: expectedNonce, is_on: true }) as State,
+        (state ? state : { nonce: m3ter.latestNonce, is_on: true }) as State,
         decoded.extensions.latitude ?? 0,
         decoded.extensions.longitude ?? 0
       )
