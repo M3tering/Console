@@ -35,7 +35,7 @@ const provider = new JsonRpcProvider(process.env.GNOSIS_RPC);
 export const m3ter = new Contract(
   "0x39fb420Bd583cCC8Afd1A1eAce2907fe300ABD02",
   ["function keyByToken(uint256) view returns (bytes32)"],
-  provider 
+  provider
 );
 export const protocol = new Contract(
   "0x2b3997D82C836bd33C89e20fBaEF96CA99F1B24A",

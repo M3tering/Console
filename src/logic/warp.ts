@@ -1,52 +1,48 @@
 import { State, Payload } from "../types";
+import { WarpFactory, Tag } from "warp-contracts";
+import { EthersExtension } from "m3tering-ethers";
+import { Ed25519Extension } from "m3tering-ed25519";
 
-import { TurboFactory } from "@ardrive/turbo-sdk";
-import { Readable } from "stream";
-import Arweave from "arweave";
+const warp = WarpFactory.forMainnet()
+  .use(new Ed25519Extension())
+  .use(new EthersExtension());
 
-export async function interact(m3terId: string, lastNonce: number, payload: any) {
-
-  const arweave = Arweave.init({
-    host: "arweave.net",
-    protocol: "https",
-    port: 443,
-  });
-
-  const key = await arweave.wallets.generate();
-  const turbo = TurboFactory.authenticated({ privateKey: key });
-
+export async function interact(contractId: string, payload: Payload) {
   const input = { payload, function: "meter" };
   const contractLabel = process.env.CONTRACT_LABEL || "M3ters";
+  const tags = [
+    { name: "Input", value: input.toString() } as Tag,
+    { name: "Contract-Label", value: contractLabel } as Tag,
+    { name: "Contract-Use", value: "M3tering Protocol" } as Tag,
+    { name: "Content-Type", value: "application/json" } as Tag,
+  ];
 
-  const byteLength = Buffer.byteLength(JSON.stringify(input), "utf8");
+  const contract = warp
+    .contract(contractId)
+    .connect(await warp.arweave.wallets.generate());
 
-  console.log("data size:", byteLength);
-  const { id, owner, dataCaches, fastFinalityIndexes } =
-    await turbo.uploadFile({
-      fileStreamFactory: () => Readable.from(Buffer.from(JSON.stringify(input), "utf8")),
-      fileSizeFactory: () => byteLength,
-      dataItemOpts: {
-        tags: [
-          { name: "Input", value: JSON.stringify(input) },
-          { name: "Contract-Label", value: contractLabel },
-          { name: "Contract-Use", value: "M3tering Protocol" },
-          { name: "Content-Type", value: "application/json" },
-          { name: "M3ter-ID", value: m3terId },
-        ]
-      }
-    });
+  const result = await contract.dryWrite(
+    input,
+    undefined,
+    tags
+  );
 
-
-  // console.log(id, owner);
+  const state = result.state as State;
 
   const deviceNonce: number = JSON.parse(payload[0])[0];
-  const nonceIsCardinal = lastNonce + 1 === deviceNonce
+  const nonce: number = deviceNonce > state.nonce ? deviceNonce + 1 : state.nonce + 1;
 
-  if (deviceNonce > lastNonce && !nonceIsCardinal) {
-    return { is_on: true } as State;
-  } else if (deviceNonce <= lastNonce) {
-    return { nonce: lastNonce + 1, is_on: true } as State;
+  if (result.type === "ok" && "is_on" in state) {
+    await contract.writeInteraction(
+      input,
+      { tags, inputFormatAsData: true }
+    );
+    return { is_on: state.is_on } as State;
+    
+  } else if (deviceNonce === 0 && "is_on" in state) {
+    return { nonce, is_on: state.is_on } as State;
+  } else {
+    return { is_on: false } as State;
   }
-
   return null;
 }
