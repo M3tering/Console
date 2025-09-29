@@ -4,6 +4,7 @@ import { interact } from "./arweave";
 import { encode } from "./encode";
 import { m3ter as m3terContract, rollup as rollupContract } from "./context";
 import {
+  getAllMeterRecords,
   getMeterByDevEui,
   getMeterByPublicKey,
   insertTransaction,
@@ -78,6 +79,7 @@ export async function handleMessage(blob: Buffer) {
           latestNonce,
         };
         console.log("[info] Saving new meter:", newMeter);
+        console.log("all meters: ", getAllMeterRecords());
       } else if (existingMeter && !existingMeter.devEui) {
         // update existing meter with devEui if not already set
         updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
