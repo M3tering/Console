@@ -116,10 +116,7 @@ export async function handleMessage(blob: Buffer) {
     // if device nonce is correct
     const expectedNonce = m3ter.latestNonce + 1;
 
-    let state;
     if (decoded.nonce === expectedNonce) {
-      state = { is_on: true };
-
       console.log("[info] Nonce is valid:", decoded.nonce);
       // Upload to arweave
       await interact(m3ter.tokenId, decoded);
@@ -160,13 +157,16 @@ export async function handleMessage(blob: Buffer) {
       }
     }
 
+    const state =
+      decoded.nonce === m3ter.latestNonce + 1 || decoded.nonce === 0
+        ? { is_on: true }
+        : { nonce: m3ter.latestNonce, is_on: true };
+
+    console.log("[info] Enqueuing state:", state);
+
     enqueue(
       message["deviceInfo"]["devEui"],
-      encode(
-        (state ? state : { nonce: m3ter.latestNonce, is_on: true }) as State,
-        decoded.extensions.latitude ?? 0,
-        decoded.extensions.longitude ?? 0
-      )
+      encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0)
     );
   } catch (error) {
     console.log(error);
