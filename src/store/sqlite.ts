@@ -70,7 +70,7 @@ function initializeMetersTable() {
   return db.exec(`
         CREATE TABLE IF NOT EXISTS meters (
             publicKey TEXT,
-            devEui TEXT NULL,
+            devEui TEXT,
             tokenId INTEGER,
             latestNonce INTEGER DEFAULT -1,
 
@@ -147,6 +147,7 @@ export function saveMeter(meterData: MeterRecord): void {
       publicKey: meterData.publicKey,
       tokenId: meterData.tokenId,
       latestNonce: meterData.latestNonce,
+      devEui: meterData.devEui ?? null,
     });
   } catch (err: any) {
     console.error("Failed to save meter:", err);

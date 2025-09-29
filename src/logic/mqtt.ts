@@ -43,7 +43,7 @@ export function handleUplinks() {
   });
 }
 
-async function handleMessage(blob: Buffer) {
+export async function handleMessage(blob: Buffer) {
   try {
     const message = JSON.parse(blob.toString());
 
