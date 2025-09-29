@@ -8,6 +8,7 @@ import {
   getMeterByDevEui,
   getMeterByPublicKey,
   insertTransaction,
+  saveMeter,
   updateMeterDevEui,
   updateMeterNonce,
 } from "../store/sqlite";
@@ -78,8 +79,8 @@ export async function handleMessage(blob: Buffer) {
           tokenId,
           latestNonce,
         };
-        console.log("[info] Saving new meter:", newMeter);
-        console.log("all meters: ", getAllMeterRecords());
+        saveMeter(newMeter);
+        console.log("[info] Saved new meter:", newMeter);
       } else if (existingMeter && !existingMeter.devEui) {
         // update existing meter with devEui if not already set
         updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
