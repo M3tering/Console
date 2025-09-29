@@ -1,6 +1,7 @@
 // Meter interface for database operations
 export interface MeterRecord {
   publicKey: string;
+  devEui?: string;
   tokenId: number;
   latestNonce: number; // Optional field for tracking latest nonce
 }

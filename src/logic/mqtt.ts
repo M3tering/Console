@@ -2,7 +2,14 @@ import { connect } from "mqtt";
 import { enqueue } from "./grpc";
 import { interact } from "./arweave";
 import { encode } from "./encode";
-import { getMeterByPublicKey, insertTransaction, updateMeterNonce } from "../store/sqlite";
+import { m3ter as m3terContract, rollup as rollupContract } from "./context";
+import {
+  getMeterByDevEui,
+  getMeterByPublicKey,
+  insertTransaction,
+  updateMeterDevEui,
+  updateMeterNonce,
+} from "../store/sqlite";
 import { State, TransactionRecord } from "../types";
 import { getProverURL, sendPendingTransactionsToProver } from "./verify";
 import { decodePayload } from "./decode";
@@ -47,12 +54,45 @@ async function handleMessage(blob: Buffer) {
     // format: nonce | energy | signature | voltage | device_id | longitude | latitude
     const transactionHex = payload;
     const decoded = decodePayload(transactionHex);
-    const publicKey = decoded.extensions.deviceId;
+    let publicKey = decoded.extensions.deviceId;
 
     console.log("[info] Decoded payload:", decoded);
 
-    if (!publicKey) {
-      throw new Error("Invalid Public Key");
+    if (publicKey) {
+      // save public key with device EUI mapping if not already saved
+      const existingMeter = getMeterByPublicKey(`0x${publicKey}`);
+
+      if (!existingMeter) {
+        const tokenId = Number(await m3terContract.tokenID(`0x${publicKey}`));
+        if (tokenId === 0) {
+          throw new Error("Token ID not found for public key: " + publicKey);
+        }
+
+        const latestNonce = Number(await rollupContract.nonce(tokenId));
+
+        // save new meter with devEui
+        const newMeter = {
+          publicKey: `0x${publicKey}`,
+          devEui: message["deviceInfo"]["devEui"],
+          tokenId,
+          latestNonce,
+        };
+        console.log("[info] Saving new meter:", newMeter);
+      } else if (existingMeter && !existingMeter.devEui) {
+        // update existing meter with devEui if not already set
+        updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
+        console.log("[info] Updated meter with DevEui:", existingMeter.tokenId);
+      }
+    } else {
+      // try to find meter by DevEui
+      const devEui = message["deviceInfo"]["devEui"];
+      const meterByDevEui = getMeterByDevEui(devEui);
+
+      if (!meterByDevEui) {
+        throw new Error("Device EUI not associated with any meter: " + devEui);
+      }
+
+      publicKey = meterByDevEui.publicKey.replace("0x", "");
     }
 
     const m3ter = getMeterByPublicKey(`0x${publicKey}`) ?? null;

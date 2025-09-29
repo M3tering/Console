@@ -28,6 +28,7 @@ app.post("/", async (req: Request, res: Response) => {
       publicKey,
       tokenId,
       latestNonce: Number(latestNonce),
+      devEui: (await req.body).devEui ?? null,
     });
   } catch (err) {
     console.error(err);
