@@ -42,5 +42,19 @@ export async function interact(m3terId: number, decoded: DecodedPayload) {
         { name: "Latitude", value: decoded.extensions?.latitude?.toString() ?? "" },
       ],
     },
+    events: {
+      onUploadProgress: (progress) => {
+        console.log("[arweave] Upload progress:", progress);
+      },
+      onError: (error) => {
+        console.error("[arweave] Upload error:", error);
+      },
+      onSuccess(event) {
+        console.log("[arweave] Upload successful! Transaction ID:", event);
+      },
+      onUploadSuccess(event) {
+        console.log("[arweave] Upload completed! Transaction ID:", event);
+      },
+    },
   });
 }

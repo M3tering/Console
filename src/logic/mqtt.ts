@@ -128,6 +128,7 @@ export async function handleMessage(blob: Buffer) {
 
     if (decoded.nonce === expectedNonce) {
       console.log("[info] Nonce is valid:", decoded.nonce);
+
       // Upload to arweave
       await interact(m3ter.tokenId, decoded);
 
@@ -168,7 +169,7 @@ export async function handleMessage(blob: Buffer) {
     }
 
     const state =
-      decoded.nonce === m3ter.latestNonce + 1 || decoded.nonce === 0
+      decoded.nonce === m3ter.latestNonce + 1 || (decoded.nonce === 0 && m3ter.latestNonce === 0)
         ? { is_on: true }
         : { nonce: m3ter.latestNonce, is_on: true };
 
