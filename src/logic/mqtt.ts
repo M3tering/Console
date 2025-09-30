@@ -172,6 +172,14 @@ export async function handleMessage(blob: Buffer) {
         ? { is_on: true }
         : { nonce: m3ter.latestNonce, is_on: true };
 
+    // TODO: remove the following block after testing
+    // if transaction nonce is 0 and the latest nonce is 0
+    // update the latest nonce to 1, respond with 1
+    if (decoded.nonce === 0 && m3ter.latestNonce === 0) {
+      updateMeterNonce(publicKey, 1);
+      state.nonce = 1;
+    }
+
     console.log("[info] Enqueuing state:", state);
 
     enqueue(
