@@ -150,7 +150,7 @@ export async function handleMessage(blob: Buffer) {
         console.error("Error inserting transaction:", error);
       }
 
-      updateMeterNonce(publicKey, expectedNonce);
+      updateMeterNonce(`0x${publicKey}`, expectedNonce);
 
       console.log("[info] Updated meter nonce to:", expectedNonce);
 
@@ -176,7 +176,7 @@ export async function handleMessage(blob: Buffer) {
     // if transaction nonce is 0 and the latest nonce is 0
     // update the latest nonce to 1, respond with 1
     if (decoded.nonce === 0 && m3ter.latestNonce === 0) {
-      updateMeterNonce(publicKey, 1);
+      updateMeterNonce(`0x${publicKey}`, 1);
       state.nonce = 1;
     }
 
