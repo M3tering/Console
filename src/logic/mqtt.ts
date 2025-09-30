@@ -15,6 +15,7 @@ import {
 import { State, TransactionRecord } from "../types";
 import { getProverURL, sendPendingTransactionsToProver } from "./verify";
 import { decodePayload } from "./decode";
+import { verifyPayloadSignature } from "../utils";
 
 export function handleUplinks() {
   const client = connect({
@@ -57,10 +58,29 @@ export async function handleMessage(blob: Buffer) {
     const transactionHex = payload;
     const decoded = decodePayload(transactionHex);
     let publicKey = decoded.extensions.deviceId;
+    let payloadHadPublicKey = !!publicKey;
 
     console.log("[info] Decoded payload:", decoded);
 
-    if (publicKey) {
+    if (!publicKey) {
+      // try to find public key by DevEui
+      const devEui = message["deviceInfo"]["devEui"];
+      const meterByDevEui = getMeterByDevEui(devEui);
+
+      if (!meterByDevEui) {
+        throw new Error("Device EUI not associated with any meter: " + devEui);
+      }
+
+      publicKey = meterByDevEui.publicKey.replace("0x", "");
+    }
+
+    // verify transaction signature
+    const isValid = verifyPayloadSignature(transactionHex, Buffer.from(publicKey!, "hex"));
+    if (!isValid) {
+      throw new Error("Invalid transaction signature for meter with public key: " + publicKey);
+    }
+
+    if (payloadHadPublicKey) {
       // save public key with device EUI mapping if not already saved
       const existingMeter = getMeterByPublicKey(`0x${publicKey}`);
 
@@ -86,16 +106,6 @@ export async function handleMessage(blob: Buffer) {
         updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
         console.log("[info] Updated meter with DevEui:", existingMeter.tokenId);
       }
-    } else {
-      // try to find meter by DevEui
-      const devEui = message["deviceInfo"]["devEui"];
-      const meterByDevEui = getMeterByDevEui(devEui);
-
-      if (!meterByDevEui) {
-        throw new Error("Device EUI not associated with any meter: " + devEui);
-      }
-
-      publicKey = meterByDevEui.publicKey.replace("0x", "");
     }
 
     const m3ter = getMeterByPublicKey(`0x${publicKey}`) ?? null;
