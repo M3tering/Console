@@ -250,10 +250,14 @@ export function getAllTransactionRecords(): TransactionRecord[] {
   }
 }
 
-export function pruneTransactionsBefore(meterNumber: number, nonce: number) {
+export function pruneTransactionsBefore(nonce: number, meterNumber: number) {
   try {
-    const result = db.prepare(`DELETE FROM transactions WHERE nonce < ?`).run(nonce);
-    console.log(`Pruned ${result.changes} transactions with nonce < ${nonce}`);
+    const result = db
+      .prepare(`DELETE FROM transactions WHERE identifier = ? AND nonce < ?`)
+      .run(meterNumber, nonce);
+    console.log(
+      `Pruned ${result.changes} transactions for meter ${meterNumber} with nonce < ${nonce}`
+    );
   } catch (err: any) {
     console.error("Failed to prune transactions:", err);
   }

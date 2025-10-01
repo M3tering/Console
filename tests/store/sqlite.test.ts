@@ -10,6 +10,7 @@ import setupDatabase, {
   getMeterByDevEui,
   updateMeterDevEui,
   getAllTransactionRecords,
+  pruneTransactionsBefore,
 } from "../../src/store/sqlite";
 
 beforeEach(() => {
@@ -81,7 +82,6 @@ it("should get meter by device EUI", () => {
   expect(retrievedMeter).toEqual(meterData);
 });
 
-
 it("should delete meter", () => {
   const meterData = {
     publicKey: "test_public_key",
@@ -140,4 +140,29 @@ it("should insert transaction", () => {
   const transactions = getAllTransactionRecords();
   expect(transactions).toHaveLength(1);
   expect(transactions[0]).toEqual({ ...transactionData });
+});
+
+it("should prune transactions before a given nonce for a specific meter", () => {
+  const meterTokenId = 1;
+  const nonceToPrune = 5;
+
+  // Insert some transactions for the meter
+  for (let i = 0; i < 10; i++) {
+    insertTransaction({
+      nonce: i,
+      identifier: meterTokenId,
+      receivedAt: Date.now(),
+      raw: "",
+    });
+  }
+
+  let transactions = getAllTransactionRecords();
+  expect(transactions).toHaveLength(10);
+
+  // Prune transactions
+  pruneTransactionsBefore(nonceToPrune, meterTokenId);
+
+  transactions = getAllTransactionRecords();
+  expect(transactions).toHaveLength(5);
+  expect(transactions.every((tx) => tx.nonce >= nonceToPrune)).toBe(true);
 });
