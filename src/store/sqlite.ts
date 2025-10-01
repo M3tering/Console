@@ -159,7 +159,7 @@ export function getMeterByDevEui(devEui: string): MeterRecord | null {
   }
 }
 
-export function getMeterByTokenId(tokenId: string): MeterRecord | null {
+export function getMeterByTokenId(tokenId: number): MeterRecord | null {
   try {
     const result = getMeterByTokenIdQuery.get(tokenId) as MeterRecord | undefined;
     return result || null;
