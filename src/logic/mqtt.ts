@@ -190,6 +190,6 @@ export async function handleMessage(blob: Buffer) {
       encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0)
     );
   } catch (error) {
-    console.log(error);
+    console.error("❌ Error handling MQTT message:", error);
   }
 }
