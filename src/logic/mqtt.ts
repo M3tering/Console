@@ -80,6 +80,8 @@ export async function handleMessage(blob: Buffer) {
       throw new Error("Invalid transaction signature for meter with public key: " + publicKey);
     }
 
+    console.log("[info] Verified signature");
+
     if (payloadHadPublicKey) {
       // save public key with device EUI mapping if not already saved
       const existingMeter = getMeterByPublicKey(`0x${publicKey}`);

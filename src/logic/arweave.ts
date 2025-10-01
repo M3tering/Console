@@ -20,10 +20,10 @@ export async function interact(m3terId: number, decoded: DecodedPayload) {
 
   const contractLabel = process.env.CONTRACT_LABEL || "M3ters";
 
-  const byteLength = transactionHex.length;
+  const byteLength = Buffer.byteLength(transactionHex, "utf8");
 
   return await turbo.uploadFile({
-    fileStreamFactory: () => Readable.from([transactionHex.toString("hex")], { encoding: "utf8" }),
+    fileStreamFactory: () => Readable.from(transactionHex, { encoding: "utf8" }),
     fileSizeFactory: () => byteLength,
     dataItemOpts: {
       paidBy: await arweave.wallets.jwkToAddress(key),

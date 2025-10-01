@@ -139,5 +139,8 @@ export async function sendPendingTransactionsToProver(proverURL: string) {
 
   const requestPayload = buildBatchPayload(pendingTransactions);
 
+  console.log("[info] Sending", requestPayload.length, "transactions to prover at", proverURL);
+  console.log("[info] Request payload:", requestPayload);
+
   return await sendTransactionsToProver(proverURL, requestPayload);
 }
