@@ -50,7 +50,7 @@ function initializeTransactionsTable() {
   return db.exec(`
         CREATE TABLE IF NOT EXISTS transactions (
             nonce INTEGER,
-            identifier TEXT,
+            identifier INTEGER, -- Meter token ID
             receivedAt INTEGER,
             raw TEXT,
 
@@ -240,16 +240,6 @@ export function insertTransaction(transactionData: TransactionRecord): void {
   }
 }
 
-export function getTransactionByNonce(nonce: number): TransactionRecord | null {
-  try {
-    const result = getTransactionByNonceQuery.get(nonce) as TransactionRecord | undefined;
-    return result || null;
-  } catch (err: any) {
-    console.error("Failed to get transaction by nonce:", err);
-    return null;
-  }
-}
-
 export function getAllTransactionRecords(): TransactionRecord[] {
   try {
     const results = db.prepare(`SELECT * FROM transactions`).all() as TransactionRecord[];
@@ -257,5 +247,14 @@ export function getAllTransactionRecords(): TransactionRecord[] {
   } catch (err: any) {
     console.error("Failed to get all transactions:", err);
     return [];
+  }
+}
+
+export function pruneTransactionsBefore(meterNumber: number, nonce: number) {
+  try {
+    const result = db.prepare(`DELETE FROM transactions WHERE nonce < ?`).run(nonce);
+    console.log(`Pruned ${result.changes} transactions with nonce < ${nonce}`);
+  } catch (err: any) {
+    console.error("Failed to prune transactions:", err);
   }
 }

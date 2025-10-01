@@ -131,7 +131,7 @@ it("should update meter devEui", () => {
 it("should insert transaction", () => {
   const transactionData = {
     nonce: 1,
-    identifier: "0", // meter token ID
+    identifier: 0, // meter token ID
     receivedAt: Date.now(),
     raw: "",
   };

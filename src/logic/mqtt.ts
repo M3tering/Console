@@ -139,7 +139,7 @@ export async function handleMessage(blob: Buffer) {
       // save transaction to local store
       const transactionRecord = {
         nonce: decoded.nonce,
-        identifier: m3ter.tokenId.toString(),
+        identifier: m3ter.tokenId,
         receivedAt: Date.now(),
         raw: transactionHex.toString("hex"),
       } as TransactionRecord;
