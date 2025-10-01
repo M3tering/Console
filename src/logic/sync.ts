@@ -1,11 +1,11 @@
-import { getMeterByTokenId, pruneTransactionsBefore, updateMeterNonce } from "../store/sqlite";
+import { getMeterByPublicKey, getMeterByTokenId, pruneTransactionsBefore, updateMeterNonce } from "../store/sqlite";
 import { rollup as rollupContract } from "./context";
 
-export async function pruneAndSyncOnchain(meterNumber: number) {
-  const meter = getMeterByTokenId(meterNumber);
+export async function pruneAndSyncOnchain(meterIdentifier: number | string): Promise<number> {
+  const meter = typeof meterIdentifier === "number" ? getMeterByTokenId(meterIdentifier) : getMeterByPublicKey(meterIdentifier);
 
   if (!meter) {
-    throw new Error(`Meter with tokenId ${meterNumber} not found`);
+    throw new Error(`Meter with identifier ${meterIdentifier} not found`);
   }
 
   // Check the latest nonce on the blockchain
