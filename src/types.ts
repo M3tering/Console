@@ -10,7 +10,6 @@ export interface MeterRecord {
 export interface TransactionRecord {
   nonce: number;
   identifier: string;
-  verified: boolean | 0 | 1; // Optional field to indicate if the transaction is verified
   receivedAt: number;
   raw: string; // Raw transaction data in hex format
 }

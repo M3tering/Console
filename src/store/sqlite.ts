@@ -16,9 +16,6 @@ let updateMeterDevEuiQuery: DatabaseStatementType;
 // transaction queries
 let createTransactionQuery: DatabaseStatementType;
 let getTransactionByNonceQuery: DatabaseStatementType;
-let getUnverifiedTransactionRecordsQuery: DatabaseStatementType;
-let markTransactionAsVerifiedQuery: DatabaseStatementType;
-let deleteVerifiedTransactionRecordsQuery: DatabaseStatementType;
 
 /**
  * setup database
@@ -55,7 +52,6 @@ function initializeTransactionsTable() {
             nonce INTEGER,
             identifier TEXT,
             receivedAt INTEGER,
-            verified BOOLEAN DEFAULT FALSE,
             raw TEXT,
 
             UNIQUE(nonce, identifier)
@@ -117,24 +113,12 @@ function prepareQueries() {
 
   // transaction queries
   createTransactionQuery = db.prepare(`
-    INSERT INTO transactions (nonce, identifier, verified, receivedAt, raw)
-    VALUES (@nonce, @identifier, @verified, @receivedAt, @raw)
+    INSERT INTO transactions (nonce, identifier, receivedAt, raw)
+    VALUES (@nonce, @identifier, @receivedAt, @raw)
   `);
 
   getTransactionByNonceQuery = db.prepare(`
     SELECT * FROM transactions WHERE nonce = ? AND identifier = ?
-  `);
-
-  getUnverifiedTransactionRecordsQuery = db.prepare(`
-    SELECT * FROM transactions WHERE verified = FALSE
-  `);
-
-  markTransactionAsVerifiedQuery = db.prepare(`
-    UPDATE transactions SET verified = TRUE WHERE nonce = ?
-  `);
-
-  deleteVerifiedTransactionRecordsQuery = db.prepare(`
-    DELETE FROM transactions WHERE verified = TRUE
   `);
 }
 
@@ -249,7 +233,6 @@ export function insertTransaction(transactionData: TransactionRecord): void {
       throw new Error(`Transaction with nonce ${transactionData.nonce} already exists`);
     }
 
-    transactionData.verified = +Boolean(transactionData.verified) as 0 | 1; // Ensure verified is set
     createTransactionQuery.run(transactionData);
   } catch (err: any) {
     console.error("Failed to insert transaction:", err);
@@ -267,40 +250,12 @@ export function getTransactionByNonce(nonce: number): TransactionRecord | null {
   }
 }
 
-// Transaction verification functions
-export function getUnverifiedTransactionRecords(): TransactionRecord[] {
+export function getAllTransactionRecords(): TransactionRecord[] {
   try {
-    const results = getUnverifiedTransactionRecordsQuery.all() as TransactionRecord[];
+    const results = db.prepare(`SELECT * FROM transactions`).all() as TransactionRecord[];
     return results;
   } catch (err: any) {
-    console.error("Failed to get unverified transactions:", err);
+    console.error("Failed to get all transactions:", err);
     return [];
-  }
-}
-
-export function markTransactionAsVerified(nonce: number): boolean {
-  try {
-    const result = markTransactionAsVerifiedQuery.run(nonce);
-    const updated = result.changes > 0;
-    if (!updated) {
-      console.log("Transaction not found for verification:", {
-        nonce,
-      });
-    }
-    return updated;
-  } catch (err: any) {
-    console.error("Failed to mark transaction as verified:", err);
-    return false;
-  }
-}
-
-export function deleteVerifiedTransactionRecords(): number {
-  try {
-    const result = deleteVerifiedTransactionRecordsQuery.run();
-    const deletedCount = result.changes;
-    return deletedCount;
-  } catch (err: any) {
-    console.error("Failed to delete verified transactions:", err);
-    return 0;
   }
 }
