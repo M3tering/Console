@@ -2,6 +2,7 @@
 emulate.ts
 test-database.ts
 script.*.ts
+script.*.js
 
 # Database files
 *.db

@@ -1,7 +1,7 @@
 import { BatchTransactionPayload, TransactionRecord } from "../types";
 import { rollup } from "./context";
-import { getUnverifiedTransactionRecords } from "../store/sqlite";
 import { buildBatchPayload } from "../utils";
+import { getAllTransactionRecords } from "../store/sqlite";
 
 const PREFERRED_PROVER_NODE = process.env.PREFERRED_PROVER_NODE || "https://prover.m3ter.ing";
 
@@ -130,7 +130,7 @@ export async function getProverURL(): Promise<string | null> {
 }
 
 export async function sendPendingTransactionsToProver(proverURL: string) {
-  const pendingTransactions = getUnverifiedTransactionRecords();
+  const pendingTransactions = getAllTransactionRecords();
 
   if (!proverURL) {
     console.error("No active prover node available");
@@ -138,6 +138,9 @@ export async function sendPendingTransactionsToProver(proverURL: string) {
   }
 
   const requestPayload = buildBatchPayload(pendingTransactions);
+
+  console.log("[info] Sending", requestPayload.length, "transactions to prover at", proverURL);
+  console.log("[info] Request payload:", requestPayload);
 
   return await sendTransactionsToProver(proverURL, requestPayload);
 }

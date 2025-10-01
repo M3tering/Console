@@ -9,8 +9,7 @@ export interface MeterRecord {
 // transaction database record
 export interface TransactionRecord {
   nonce: number;
-  identifier: string;
-  verified: boolean | 0 | 1; // Optional field to indicate if the transaction is verified
+  identifier: number; // Meter token ID
   receivedAt: number;
   raw: string; // Raw transaction data in hex format
 }
@@ -32,11 +31,6 @@ export interface State {
   nonce: number;
   public_key: string;
   token_id: number;
-}
-
-export interface M3terPayload {
-  0: string; // encoded format: nonce | energy | signature | voltage | device_id | longitude | latitude
-  1: string;
 }
 
 export interface DecodedPayload {

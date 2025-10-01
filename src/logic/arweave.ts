@@ -20,10 +20,10 @@ export async function interact(m3terId: number, decoded: DecodedPayload) {
 
   const contractLabel = process.env.CONTRACT_LABEL || "M3ters";
 
-  const byteLength = transactionHex.length;
+  const byteLength = Buffer.byteLength(transactionHex.toString("hex"), "utf8");
 
   return await turbo.uploadFile({
-    fileStreamFactory: () => Readable.from([transactionHex.toString("hex")], { encoding: "utf8" }),
+    fileStreamFactory: () => Readable.from(transactionHex.toString("hex"), { encoding: "utf8" }),
     fileSizeFactory: () => byteLength,
     dataItemOpts: {
       paidBy: await arweave.wallets.jwkToAddress(key),
@@ -41,6 +41,20 @@ export async function interact(m3terId: number, decoded: DecodedPayload) {
         { name: "Longitude", value: decoded.extensions?.longitude?.toString() ?? "" },
         { name: "Latitude", value: decoded.extensions?.latitude?.toString() ?? "" },
       ],
+    },
+    events: {
+      onUploadProgress: (progress) => {
+        console.log("[arweave] Upload progress:", progress);
+      },
+      onError: (error) => {
+        console.error("[arweave] Upload error:", error);
+      },
+      onSuccess(event) {
+        console.log("[arweave] Upload successful! Transaction ID:", event);
+      },
+      onUploadSuccess(event) {
+        console.log("[arweave] Upload completed! Transaction ID:", event);
+      },
     },
   });
 }

@@ -15,6 +15,7 @@ import {
 import { State, TransactionRecord } from "../types";
 import { getProverURL, sendPendingTransactionsToProver } from "./verify";
 import { decodePayload } from "./decode";
+import { verifyPayloadSignature } from "../utils";
 
 export function handleUplinks() {
   const client = connect({
@@ -57,10 +58,31 @@ export async function handleMessage(blob: Buffer) {
     const transactionHex = payload;
     const decoded = decodePayload(transactionHex);
     let publicKey = decoded.extensions.deviceId;
+    let payloadHadPublicKey = !!publicKey;
 
     console.log("[info] Decoded payload:", decoded);
 
-    if (publicKey) {
+    if (!publicKey) {
+      // try to find public key by DevEui
+      const devEui = message["deviceInfo"]["devEui"];
+      const meterByDevEui = getMeterByDevEui(devEui);
+
+      if (!meterByDevEui) {
+        throw new Error("Device EUI not associated with any meter: " + devEui);
+      }
+
+      publicKey = meterByDevEui.publicKey.replace("0x", "");
+    }
+
+    // verify transaction signature
+    const isValid = verifyPayloadSignature(transactionHex, Buffer.from(publicKey!, "hex"));
+    if (!isValid) {
+      throw new Error("Invalid transaction signature for meter with public key: " + publicKey);
+    }
+
+    console.log("[info] Verified signature");
+
+    if (payloadHadPublicKey) {
       // save public key with device EUI mapping if not already saved
       const existingMeter = getMeterByPublicKey(`0x${publicKey}`);
 
@@ -86,16 +108,6 @@ export async function handleMessage(blob: Buffer) {
         updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
         console.log("[info] Updated meter with DevEui:", existingMeter.tokenId);
       }
-    } else {
-      // try to find meter by DevEui
-      const devEui = message["deviceInfo"]["devEui"];
-      const meterByDevEui = getMeterByDevEui(devEui);
-
-      if (!meterByDevEui) {
-        throw new Error("Device EUI not associated with any meter: " + devEui);
-      }
-
-      publicKey = meterByDevEui.publicKey.replace("0x", "");
     }
 
     const m3ter = getMeterByPublicKey(`0x${publicKey}`) ?? null;
@@ -118,6 +130,7 @@ export async function handleMessage(blob: Buffer) {
 
     if (decoded.nonce === expectedNonce) {
       console.log("[info] Nonce is valid:", decoded.nonce);
+
       // Upload to arweave
       await interact(m3ter.tokenId, decoded);
 
@@ -126,8 +139,7 @@ export async function handleMessage(blob: Buffer) {
       // save transaction to local store
       const transactionRecord = {
         nonce: decoded.nonce,
-        verified: false,
-        identifier: m3ter.tokenId.toString(),
+        identifier: m3ter.tokenId,
         receivedAt: Date.now(),
         raw: transactionHex.toString("hex"),
       } as TransactionRecord;
@@ -140,7 +152,7 @@ export async function handleMessage(blob: Buffer) {
         console.error("Error inserting transaction:", error);
       }
 
-      updateMeterNonce(publicKey, expectedNonce);
+      updateMeterNonce(`0x${publicKey}`, expectedNonce);
 
       console.log("[info] Updated meter nonce to:", expectedNonce);
 
@@ -158,9 +170,17 @@ export async function handleMessage(blob: Buffer) {
     }
 
     const state =
-      decoded.nonce === m3ter.latestNonce + 1 || decoded.nonce === 0
+      decoded.nonce === m3ter.latestNonce + 1 || (decoded.nonce === 0 && m3ter.latestNonce === 0)
         ? { is_on: true }
         : { nonce: m3ter.latestNonce, is_on: true };
+
+    // TODO: remove the following block after testing
+    // if transaction nonce is 0 and the latest nonce is 0
+    // update the latest nonce to 1, respond with 1
+    if (decoded.nonce === 0 && m3ter.latestNonce === 0) {
+      updateMeterNonce(`0x${publicKey}`, 1);
+      state.nonce = 1;
+    }
 
     console.log("[info] Enqueuing state:", state);
 
@@ -169,6 +189,6 @@ export async function handleMessage(blob: Buffer) {
       encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0)
     );
   } catch (error) {
-    console.log(error);
+    console.error("❌ Error handling MQTT message:", error);
   }
 }

@@ -5,13 +5,12 @@ import setupDatabase, {
   getAllMeterRecords,
   deleteMeterByPublicKey,
   updateMeterNonce,
-  getUnverifiedTransactionRecords,
-  markTransactionAsVerified,
-  deleteVerifiedTransactionRecords,
   insertTransaction,
   deleteDatabase,
   getMeterByDevEui,
   updateMeterDevEui,
+  getAllTransactionRecords,
+  pruneTransactionsBefore,
 } from "../../src/store/sqlite";
 
 beforeEach(() => {
@@ -25,7 +24,7 @@ afterEach(() => {
 
 it("should have no meters and transactions", () => {
   const meters = getAllMeterRecords();
-  const transactions = getUnverifiedTransactionRecords();
+  const transactions = getAllTransactionRecords();
   expect(meters).toHaveLength(0);
   expect(transactions).toHaveLength(0);
 });
@@ -83,7 +82,6 @@ it("should get meter by device EUI", () => {
   expect(retrievedMeter).toEqual(meterData);
 });
 
-
 it("should delete meter", () => {
   const meterData = {
     publicKey: "test_public_key",
@@ -133,43 +131,38 @@ it("should update meter devEui", () => {
 it("should insert transaction", () => {
   const transactionData = {
     nonce: 1,
-    identifier: "0", // meter token ID
-    receivedAt: Date.now(),
-    raw: "",
-    verified: false,
-  };
-  insertTransaction(transactionData);
-
-  const transactions = getUnverifiedTransactionRecords();
-  expect(transactions).toHaveLength(1);
-  expect(transactions[0]).toEqual({ ...transactionData, verified: 0 });
-});
-
-it("should mark transaction as verified", () => {
-  const transactionData = {
-    nonce: 1,
     identifier: 0, // meter token ID
     receivedAt: Date.now(),
-  };
-
-  markTransactionAsVerified(transactionData.nonce);
-  const verifiedTransactions = getUnverifiedTransactionRecords();
-  expect(verifiedTransactions).toHaveLength(0);
-});
-
-it("should delete verified transactions", () => {
-  const transactionData = {
-    nonce: 1,
-    identifier: "0", // meter token ID
-    verified: true,
-    receivedAt: Date.now(),
     raw: "",
   };
   insertTransaction(transactionData);
 
-  const deleted = deleteVerifiedTransactionRecords();
-  expect(deleted).toBe(1);
+  const transactions = getAllTransactionRecords();
+  expect(transactions).toHaveLength(1);
+  expect(transactions[0]).toEqual({ ...transactionData });
+});
 
-  const transactions = getUnverifiedTransactionRecords();
-  expect(transactions).toHaveLength(0);
+it("should prune transactions before a given nonce for a specific meter", () => {
+  const meterTokenId = 1;
+  const nonceToPrune = 5;
+
+  // Insert some transactions for the meter
+  for (let i = 0; i < 10; i++) {
+    insertTransaction({
+      nonce: i,
+      identifier: meterTokenId,
+      receivedAt: Date.now(),
+      raw: "",
+    });
+  }
+
+  let transactions = getAllTransactionRecords();
+  expect(transactions).toHaveLength(10);
+
+  // Prune transactions
+  pruneTransactionsBefore(nonceToPrune, meterTokenId);
+
+  transactions = getAllTransactionRecords();
+  expect(transactions).toHaveLength(5);
+  expect(transactions.every((tx) => tx.nonce >= nonceToPrune)).toBe(true);
 });
