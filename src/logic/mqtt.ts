@@ -16,6 +16,9 @@ import { State, TransactionRecord } from "../types";
 import { getProverURL, sendPendingTransactionsToProver } from "./verify";
 import { decodePayload } from "./decode";
 import { verifyPayloadSignature } from "../utils";
+import { pruneAndSyncOnchain } from "./sync";
+
+const SYNC_EPOCH = 100; // after 100 transactions, sync with blockchain
 
 export function handleUplinks() {
   const client = connect({
@@ -52,10 +55,9 @@ export async function handleMessage(blob: Buffer) {
 
     console.log("[info] Received uplink from device:", JSON.stringify(message));
 
-    const payload = Buffer.from(message["data"], "base64");
     // encode transaction into standard format (payload is hex string)
     // format: nonce | energy | signature | voltage | device_id | longitude | latitude
-    const transactionHex = payload;
+    const transactionHex = Buffer.from(message["data"], "base64");
     const decoded = decodePayload(transactionHex);
     let publicKey = decoded.extensions.deviceId;
     let payloadHadPublicKey = !!publicKey;
@@ -110,10 +112,23 @@ export async function handleMessage(blob: Buffer) {
       }
     }
 
-    const m3ter = getMeterByPublicKey(`0x${publicKey}`) ?? null;
+    let m3ter = getMeterByPublicKey(`0x${publicKey}`) ?? null;
 
     if (!m3ter) {
       throw new Error("Meter not found for public key: " + publicKey);
+    }
+
+    if (m3ter.latestNonce % SYNC_EPOCH === 0) {
+      // sync with blockchain every SYNC_EPOCH transactions
+      await pruneAndSyncOnchain(m3ter.tokenId);
+
+      console.log("[info] Synced meter with blockchain:", m3ter.tokenId);
+
+      m3ter = getMeterByPublicKey(`0x${publicKey}`) ?? null;
+
+      if (!m3ter) {
+        throw new Error("Meter not found after sync for public key: " + publicKey);
+      }
     }
 
     console.log(
