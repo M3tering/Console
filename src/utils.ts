@@ -15,7 +15,7 @@ export function verifyPayloadSignature(transaction: Buffer, rawPubKey: Buffer): 
 
     // Wrap raw key in SPKI DER
     const spkiPrefix = Buffer.from("302a300506032b6570032100", "hex");
-    const derKey = Buffer.concat([spkiPrefix, rawPubKey]);
+    const derKey = Buffer.concat([new Uint8Array(spkiPrefix), new Uint8Array(rawPubKey)]);
 
     const publicKey = createPublicKey({
       key: derKey,
@@ -24,8 +24,8 @@ export function verifyPayloadSignature(transaction: Buffer, rawPubKey: Buffer): 
     });
 
     // Verify
-    const ok = verify(null, message, publicKey, signature);
-    
+    const ok = verify(null, new Uint8Array(message), publicKey, new Uint8Array(signature));
+
     return ok;
   } catch (error) {
     console.error("Error verifying signature:", error);
