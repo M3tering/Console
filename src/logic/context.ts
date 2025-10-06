@@ -32,7 +32,7 @@ app.listen(port, () => {
 const provider = new JsonRpcProvider(process.env.MAINNET_RPC);
 
 export const m3ter = new Contract(
-  "0x7c6FEF064603B91bE9d739fE981c28Fd82a6D62b", // "0x40a36C0eF29A49D1B1c1fA45fab63762f8FC423F"
+  process.env.M3TER_CONTRACT_ADDRESS || "0x40a36C0eF29A49D1B1c1fA45fab63762f8FC423F",
   [
     "function publicKey(uint256) view returns (bytes32)",
     "function tokenID(bytes32) view returns (uint256)",
@@ -41,7 +41,7 @@ export const m3ter = new Contract(
 );
 
 export const rollup = new Contract(
-  "0x6E31632D6A7Af8d30766AA9E216c49F5AAb846c2", // TODO: Replace with actual rollup contract address
+  process.env.ROLLUP_CONTRACT_ADDRESS || "0xf8f2d4315DB5db38f3e5c45D0bCd59959c603d9b",
   ["function nonce(uint256 tokenId) external view returns (bytes6)"],
   provider
 );
