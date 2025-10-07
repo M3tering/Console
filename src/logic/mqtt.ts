@@ -90,9 +90,9 @@ export async function handleMessage(blob: Buffer) {
 
       if (!existingMeter) {
         const tokenId = 14; // Number(await m3terContract.tokenID(`0x${publicKey}`));
-        if (tokenId === 0) {
-          throw new Error("Token ID not found for public key: " + publicKey);
-        }
+        // if (tokenId === 0) {
+        //   throw new Error("Token ID not found for public key: " + publicKey);
+        // }
 
         const latestNonce = Number(await rollupContract.nonce(tokenId));
 
