@@ -96,6 +96,8 @@ export async function handleMessage(blob: Buffer) {
 
         const latestNonce = Number(await rollupContract.nonce(tokenId));
 
+        console.log("[info] Fetched tokenId and latestNonce from chain:", tokenId, latestNonce);
+
         // save new meter with devEui
         const newMeter = {
           publicKey: `0x${publicKey}`,
@@ -107,8 +109,15 @@ export async function handleMessage(blob: Buffer) {
         console.log("[info] Saved new meter:", newMeter);
       } else if (existingMeter && !existingMeter.devEui) {
         // update existing meter with devEui if not already set
+        console.log("[info] Updating meter with DevEui:", message["deviceInfo"]["devEui"]);
         updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
-        console.log("[info] Updated meter with DevEui:", existingMeter.tokenId);
+
+        // fetch and update latest nonce from chain
+        const latestNonce = Number(await rollupContract.nonce(existingMeter.tokenId));
+
+        console.log("[info] Fetched latestNonce from chain:", latestNonce);
+        
+        updateMeterNonce(`0x${publicKey}`, latestNonce);
       }
     }
 
