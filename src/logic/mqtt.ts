@@ -89,7 +89,7 @@ export async function handleMessage(blob: Buffer) {
       const existingMeter = getMeterByPublicKey(`0x${publicKey}`);
 
       if (!existingMeter) {
-        const tokenId = Number(await m3terContract.tokenID(`0x${publicKey}`));
+        const tokenId = 14; // Number(await m3terContract.tokenID(`0x${publicKey}`));
         if (tokenId === 0) {
           throw new Error("Token ID not found for public key: " + publicKey);
         }
@@ -116,7 +116,7 @@ export async function handleMessage(blob: Buffer) {
         const latestNonce = Number(await rollupContract.nonce(existingMeter.tokenId));
 
         console.log("[info] Fetched latestNonce from chain:", latestNonce);
-        
+
         updateMeterNonce(`0x${publicKey}`, latestNonce);
       }
     }
