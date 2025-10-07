@@ -140,23 +140,24 @@ export async function handleMessage(blob: Buffer) {
       }
     }
 
+    const expectedNonce = m3ter.latestNonce + 1;
+
     console.log(
       "[info] Received blob for meter",
       m3ter?.tokenId,
       "expected nonce:",
-      m3ter?.latestNonce + 1,
+      expectedNonce,
       "got:",
       decoded.nonce
     );
 
-    if (decoded.nonce !== m3ter.latestNonce + 1 && m3ter.latestNonce !== 0 ) { // TODO: remove exception for nonce 0 after testing
-      throw new Error(`Invalid nonce. Expected ${
-        m3ter.latestNonce + 1
-      }, got ${decoded.nonce}. Public key: ${publicKey}`);
+    if (decoded.nonce !== expectedNonce && decoded.nonce !== 0) {
+      throw new Error(
+        `Invalid nonce. Expected ${expectedNonce}, got ${decoded.nonce}. Public key: ${publicKey}`
+      );
     }
 
     // if device nonce is correct
-    const expectedNonce = m3ter.latestNonce + 1;
 
     if (decoded.nonce === expectedNonce) {
       console.log("[info] Nonce is valid:", decoded.nonce);
@@ -201,9 +202,7 @@ export async function handleMessage(blob: Buffer) {
     }
 
     const state =
-      decoded.nonce === m3ter.latestNonce + 1
-        ? { is_on: true }
-        : { nonce: m3ter.latestNonce, is_on: true };
+      decoded.nonce === expectedNonce ? { is_on: true } : { nonce: m3ter.latestNonce, is_on: true };
 
     // TODO: remove the following block after testing
     // if transaction nonce is 0 and the latest nonce is 0
