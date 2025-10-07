@@ -195,7 +195,11 @@ export async function handleMessage(blob: Buffer) {
         const response = await sendPendingTransactionsToProver(proverURL!);
 
         console.log("[info] done sending to prover");
-        console.log("[info] Prover response:", await response?.text());
+        try {
+          console.log("[info] Prover response:", await response?.json());
+        } catch (jsonError) {
+          console.log("[info] Prover response (text):", await response?.text());
+        }
       } catch (error) {
         console.error("Error sending pending transactions to prover:", error);
       }
