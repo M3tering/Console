@@ -206,7 +206,7 @@ export async function handleMessage(blob: Buffer) {
     }
 
     const state =
-      decoded.nonce === expectedNonce ? { is_on: true } : { nonce: m3ter.latestNonce, is_on: true };
+      decoded.nonce === expectedNonce ? { is_on: true } : { nonce: m3ter.latestNonce - 1, is_on: true };
 
     // TODO: remove the following block after testing
     // if transaction nonce is 0 and the latest nonce is 0
