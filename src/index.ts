@@ -20,19 +20,19 @@ app.get("/", async (req: Request, res: Response) => {
 });
 
 app.post("/", async (req: Request, res: Response) => {
-  try {
-    const tokenId = (await req.body).tokenId;
-    const publicKey = await m3ter.publicKey(tokenId);
-    const latestNonce = await rollup.nonce(tokenId);
-    saveMeter({
-      publicKey,
-      tokenId,
-      latestNonce: Number(latestNonce),
-      devEui: (await req.body).devEui ?? null,
-    });
-  } catch (err) {
-    console.error(err);
-  }
+  // try {
+  //   const tokenId = (await req.body).tokenId;
+  //   const publicKey = await m3ter.publicKey(tokenId);
+  //   const latestNonce = await rollup.nonce(tokenId);
+  //   saveMeter({
+  //     publicKey,
+  //     tokenId,
+  //     latestNonce: Number(latestNonce),
+  //     devEui: (await req.body).devEui ?? null,
+  //   });
+  // } catch (err) {
+  //   console.error(err);
+  // }
   res.redirect("/");
   console.log("[server]: Server handled POST request at `/`");
 });

@@ -107,7 +107,7 @@ export async function handleMessage(blob: Buffer) {
         };
         saveMeter(newMeter);
         console.log("[info] Saved new meter:", newMeter);
-      } else if (existingMeter && !existingMeter.devEui) {
+      } else {
         // update existing meter with devEui if not already set
         console.log("[info] Updating meter with DevEui:", message["deviceInfo"]["devEui"]);
         updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
@@ -149,6 +149,12 @@ export async function handleMessage(blob: Buffer) {
       decoded.nonce
     );
 
+    if (decoded.nonce !== m3ter.latestNonce + 1 && m3ter.latestNonce !== 0 ) { // TODO: remove exception for nonce 0 after testing
+      throw new Error(`Invalid nonce. Expected ${
+        m3ter.latestNonce + 1
+      }, got ${decoded.nonce}. Public key: ${publicKey}`);
+    }
+
     // if device nonce is correct
     const expectedNonce = m3ter.latestNonce + 1;
 
@@ -185,16 +191,17 @@ export async function handleMessage(blob: Buffer) {
         const proverURL = await getProverURL();
         console.log("[info] Sending pending transactions to prover:", proverURL);
 
-        await sendPendingTransactionsToProver(proverURL!);
+        const response = await sendPendingTransactionsToProver(proverURL!);
 
         console.log("[info] done sending to prover");
+        console.log("[info] Prover response:", await response?.text());
       } catch (error) {
         console.error("Error sending pending transactions to prover:", error);
       }
     }
 
     const state =
-      decoded.nonce === m3ter.latestNonce + 1 || (decoded.nonce === 0 && m3ter.latestNonce === 0)
+      decoded.nonce === m3ter.latestNonce + 1
         ? { is_on: true }
         : { nonce: m3ter.latestNonce, is_on: true };
 

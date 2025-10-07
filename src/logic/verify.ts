@@ -78,8 +78,6 @@ export async function sendTransactionsToProver(
     if (!response.ok) {
       throw new Error(`Prover responded with status: ${response.status}`);
     }
-    const json = await response.json();
-    console.log("[info] Transactions sent to prover:", json);
     return response;
   } catch (err: any) {
     console.error("Failed to send transactions to prover:", err.message);
@@ -140,7 +138,7 @@ export async function sendPendingTransactionsToProver(proverURL: string) {
   if (pendingTransactions.length > 0) {
     console.log("[info] Pending transactions:", pendingTransactions);
   }
-  
+
   console.log("[info] Sending", pendingTransactions.length, "transactions to prover at", proverURL);
 
   const requestPayload = buildBatchPayload(pendingTransactions);
