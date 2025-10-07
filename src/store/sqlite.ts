@@ -125,8 +125,6 @@ function prepareQueries() {
 // Meter management functions
 export function saveMeter(meterData: MeterRecord): void {
   try {
-    console.log("saving m3ter data", meterData);
-
     insertMeterQuery.run({
       publicKey: meterData.publicKey,
       tokenId: meterData.tokenId,

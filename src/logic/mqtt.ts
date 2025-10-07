@@ -90,11 +90,13 @@ export async function handleMessage(blob: Buffer) {
 
       if (!existingMeter) {
         const tokenId = Number(await m3terContract.tokenID(`0x${publicKey}`));
-        if (tokenId === 0) {
-          throw new Error("Token ID not found for public key: " + publicKey);
-        }
+        // if (tokenId === 0) {
+        //   throw new Error("Token ID not found for public key: " + publicKey);
+        // }
 
         const latestNonce = Number(await rollupContract.nonce(tokenId));
+
+        console.log("[info] Fetched tokenId and latestNonce from chain:", tokenId, latestNonce);
 
         // save new meter with devEui
         const newMeter = {
@@ -105,10 +107,17 @@ export async function handleMessage(blob: Buffer) {
         };
         saveMeter(newMeter);
         console.log("[info] Saved new meter:", newMeter);
-      } else if (existingMeter && !existingMeter.devEui) {
+      } else {
         // update existing meter with devEui if not already set
+        console.log("[info] Updating meter with DevEui:", message["deviceInfo"]["devEui"]);
         updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
-        console.log("[info] Updated meter with DevEui:", existingMeter.tokenId);
+
+        // fetch and update latest nonce from chain
+        const latestNonce = Number(await rollupContract.nonce(existingMeter.tokenId));
+
+        console.log("[info] Fetched latestNonce from chain:", latestNonce);
+
+        updateMeterNonce(`0x${publicKey}`, latestNonce);
       }
     }
 
@@ -131,17 +140,24 @@ export async function handleMessage(blob: Buffer) {
       }
     }
 
+    const expectedNonce = m3ter.latestNonce + 1;
+
     console.log(
       "[info] Received blob for meter",
       m3ter?.tokenId,
       "expected nonce:",
-      m3ter?.latestNonce + 1,
+      expectedNonce,
       "got:",
       decoded.nonce
     );
 
+    if (decoded.nonce !== expectedNonce && decoded.nonce !== 0) {
+      throw new Error(
+        `Invalid nonce. Expected ${expectedNonce}, got ${decoded.nonce}. Public key: ${publicKey}`
+      );
+    }
+
     // if device nonce is correct
-    const expectedNonce = m3ter.latestNonce + 1;
 
     if (decoded.nonce === expectedNonce) {
       console.log("[info] Nonce is valid:", decoded.nonce);
@@ -176,18 +192,21 @@ export async function handleMessage(blob: Buffer) {
         const proverURL = await getProverURL();
         console.log("[info] Sending pending transactions to prover:", proverURL);
 
-        await sendPendingTransactionsToProver(proverURL!);
+        const response = await sendPendingTransactionsToProver(proverURL!);
 
         console.log("[info] done sending to prover");
+        try {
+          console.log("[info] Prover response:", await response?.json());
+        } catch (jsonError) {
+          console.log("[info] Prover response (text):", await response?.text());
+        }
       } catch (error) {
         console.error("Error sending pending transactions to prover:", error);
       }
     }
 
     const state =
-      decoded.nonce === m3ter.latestNonce + 1 || (decoded.nonce === 0 && m3ter.latestNonce === 0)
-        ? { is_on: true }
-        : { nonce: m3ter.latestNonce, is_on: true };
+      decoded.nonce === expectedNonce ? { is_on: true } : { nonce: m3ter.latestNonce - 1, is_on: true };
 
     // TODO: remove the following block after testing
     // if transaction nonce is 0 and the latest nonce is 0
