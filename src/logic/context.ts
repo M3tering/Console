@@ -32,7 +32,7 @@ app.listen(port, () => {
 const provider = new JsonRpcProvider(process.env.MAINNET_RPC);
 
 export const m3ter = new Contract(
-  process.env.M3TER_CONTRACT_ADDRESS || "0x40a36C0eF29A49D1B1c1fA45fab63762f8FC423F",
+  process.env.M3TER_CONTRACT_ADDRESS || "0x9C547B649475f1bE81323AefdbcF209C17961D5E",
   [
     "function publicKey(uint256) view returns (bytes32)",
     "function tokenID(bytes32) view returns (uint256)",
