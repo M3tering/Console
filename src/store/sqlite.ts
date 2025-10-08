@@ -2,6 +2,7 @@ import fs from "fs";
 import Database from "better-sqlite3";
 import type { Database as DatabaseType, Statement as DatabaseStatementType } from "better-sqlite3";
 import { MeterRecord, TransactionRecord } from "../types";
+import { get } from "http";
 
 // meter queries
 let db: DatabaseType;
@@ -219,13 +220,25 @@ export function updateMeterDevEui(publicKey: string, devEui: string): boolean {
   }
 }
 
+export function getTransactionByNonce(nonce: number, identifier: number): TransactionRecord | null {
+  try {
+    const result = getTransactionByNonceQuery.get(nonce, identifier) as
+      | TransactionRecord
+      | undefined;
+    return result || null;
+  } catch (err: any) {
+    console.error("Failed to get transaction by nonce:", err);
+    return null;
+  }
+}
+
 // Transaction insertion function
 export function insertTransaction(transactionData: TransactionRecord): void {
   try {
-    const existingTransaction = getTransactionByNonceQuery.get(
+    const existingTransaction = getTransactionByNonce(
       transactionData.nonce,
       transactionData.identifier
-    ) as TransactionRecord | undefined;
+    );
 
     if (existingTransaction) {
       throw new Error(`Transaction with nonce ${transactionData.nonce} already exists`);
@@ -255,6 +268,19 @@ export function pruneTransactionsBefore(nonce: number, meterNumber: number) {
       .run(meterNumber, nonce);
     console.log(
       `Pruned ${result.changes} transactions for meter ${meterNumber} with nonce < ${nonce}`
+    );
+  } catch (err: any) {
+    console.error("Failed to prune transactions:", err);
+  }
+}
+
+export function pruneTransactionsAfter(nonce: number, meterNumber: number) {
+  try {
+    const result = db
+      .prepare(`DELETE FROM transactions WHERE identifier = ? AND nonce > ?`)
+      .run(meterNumber, nonce);
+    console.log(
+      `Pruned ${result.changes} transactions for meter ${meterNumber} with nonce > ${nonce}`
     );
   } catch (err: any) {
     console.error("Failed to prune transactions:", err);

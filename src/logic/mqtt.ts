@@ -16,7 +16,7 @@ import { State, TransactionRecord } from "../types";
 import { getProverURL, sendPendingTransactionsToProver } from "./verify";
 import { decodePayload } from "./decode";
 import { verifyPayloadSignature } from "../utils";
-import { pruneAndSyncOnchain } from "./sync";
+import { getLatestTransactionNonce, pruneAndSyncOnchain } from "./sync";
 
 const SYNC_EPOCH = 100; // after 100 transactions, sync with blockchain
 
@@ -95,9 +95,13 @@ export async function handleMessage(blob: Buffer) {
         //   throw new Error("Token ID not found for public key: " + publicKey);
         // }
 
-        const latestNonce = Number(await rollupContract.nonce(tokenId));
+        const latestNonce = await getLatestTransactionNonce(tokenId);
 
-        console.log("[info] Fetched tokenId and latestNonce from chain:", tokenId, latestNonce);
+        console.log(
+          "[info] Fetched tokenId and latestNonce from chain and local state:",
+          tokenId,
+          latestNonce
+        );
 
         // save new meter with devEui
         const newMeter = {
@@ -114,9 +118,9 @@ export async function handleMessage(blob: Buffer) {
         updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
 
         // fetch and update latest nonce from chain
-        const latestNonce = Number(await rollupContract.nonce(existingMeter.tokenId));
+        const latestNonce = await getLatestTransactionNonce(existingMeter.tokenId);
 
-        console.log("[info] Fetched latestNonce from chain:", latestNonce);
+        console.log("[info] Fetched latestNonce from chain and local state:", latestNonce);
 
         updateMeterNonce(`0x${publicKey}`, latestNonce);
       }
@@ -178,13 +182,7 @@ export async function handleMessage(blob: Buffer) {
         raw: transactionHex.toString("hex"),
       } as TransactionRecord;
 
-      try {
-        insertTransaction(transactionRecord);
-
-        console.log("[info] Inserted transaction record:", transactionRecord);
-      } catch (error) {
-        console.error("Error inserting transaction:", error);
-      }
+      insertTransaction(transactionRecord);
 
       updateMeterNonce(`0x${publicKey}`, expectedNonce);
 
