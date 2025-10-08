@@ -85,6 +85,7 @@ export async function handleMessage(blob: Buffer) {
     console.log("[info] Verified signature");
 
     if (payloadHadPublicKey) {
+      console.log("[info] Payload contained public key:", publicKey);
       // save public key with device EUI mapping if not already saved
       const existingMeter = getMeterByPublicKey(`0x${publicKey}`);
 
@@ -126,6 +127,8 @@ export async function handleMessage(blob: Buffer) {
     if (!m3ter) {
       throw new Error("Meter not found for public key: " + publicKey);
     }
+
+    console.log("[info] Found meter:", m3ter);
 
     if (m3ter.latestNonce % SYNC_EPOCH === 0) {
       // sync with blockchain every SYNC_EPOCH transactions
@@ -185,6 +188,8 @@ export async function handleMessage(blob: Buffer) {
 
       updateMeterNonce(`0x${publicKey}`, expectedNonce);
 
+      console.log("[debug] Current all meters:", getAllMeterRecords());
+
       console.log("[info] Updated meter nonce to:", expectedNonce);
 
       try {
@@ -206,7 +211,7 @@ export async function handleMessage(blob: Buffer) {
     }
 
     const state =
-      decoded.nonce === expectedNonce ? { is_on: true } : { nonce: m3ter.latestNonce - 1, is_on: true };
+      decoded.nonce === expectedNonce ? { is_on: true } : { nonce: m3ter.latestNonce, is_on: true };
 
     // TODO: remove the following block after testing
     // if transaction nonce is 0 and the latest nonce is 0
