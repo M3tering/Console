@@ -1,8 +1,18 @@
-import { getMeterByPublicKey, getMeterByTokenId, pruneTransactionsBefore, updateMeterNonce } from "../store/sqlite";
+import {
+  getMeterByPublicKey,
+  getMeterByTokenId,
+  getTransactionByNonce,
+  pruneTransactionsAfter,
+  pruneTransactionsBefore,
+  updateMeterNonce,
+} from "../store/sqlite";
 import { rollup as rollupContract } from "./context";
 
 export async function pruneAndSyncOnchain(meterIdentifier: number | string): Promise<number> {
-  const meter = typeof meterIdentifier === "number" ? getMeterByTokenId(meterIdentifier) : getMeterByPublicKey(meterIdentifier);
+  const meter =
+    typeof meterIdentifier === "number"
+      ? getMeterByTokenId(meterIdentifier)
+      : getMeterByPublicKey(meterIdentifier);
 
   if (!meter) {
     throw new Error(`Meter with identifier ${meterIdentifier} not found`);
@@ -21,4 +31,22 @@ export async function pruneAndSyncOnchain(meterIdentifier: number | string): Pro
   pruneTransactionsBefore(meter.tokenId, onchainNonce);
 
   return onchainNonce;
+}
+
+export async function getLatestTransactionNonce(meterIdentifier: number): Promise<number> {
+  // get latest nonce from chain
+  let latestNonce = Number(await rollupContract.nonce(meterIdentifier));
+
+  // check local state for the highest nonce we have
+  while (true) {
+    const existingTransaction = getTransactionByNonce(latestNonce + 1, meterIdentifier);
+    if (existingTransaction) {
+      latestNonce += 1;
+    } else {
+      pruneTransactionsAfter(latestNonce, meterIdentifier);
+      break;
+    }
+  }
+
+  return latestNonce;
 }
