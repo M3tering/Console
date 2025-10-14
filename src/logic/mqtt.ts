@@ -13,10 +13,15 @@ import {
   updateMeterNonce,
 } from "../store/sqlite";
 import { State, TransactionRecord } from "../types";
-import { getProverURL, sendPendingTransactionsToProver } from "./verify";
+import { getProverURL, sendPendingTransactionsToProver } from "./prover";
 import { decodePayload } from "./decode";
 import { verifyPayloadSignature } from "../utils";
-import { getLatestTransactionNonce, pruneAndSyncOnchain } from "./sync";
+import {
+  getLatestTransactionNonce,
+  pruneAndSyncOnchain,
+  getCrossChainRevenue,
+  getOwedFromPriceContext,
+} from "./sync";
 
 const SYNC_EPOCH = 100; // after 100 transactions, sync with blockchain
 let isProcessingMessage = false; // Lock to prevent concurrent message processing
@@ -214,9 +219,9 @@ export async function handleMessage(blob: Buffer) {
         console.error("Error sending pending transactions to prover:", error);
       }
     }
-
-    const state =
-      decoded.nonce === expectedNonce ? { is_on: true } : { nonce: m3ter.latestNonce, is_on: true };
+    const is_on =
+      (await getCrossChainRevenue(m3ter.tokenId)) >= (await getOwedFromPriceContext(m3ter.tokenId));
+    const state = decoded.nonce === expectedNonce ? { is_on } : { nonce: m3ter.latestNonce, is_on };
 
     // TODO: remove the following block after testing
     // if transaction nonce is 0 and the latest nonce is 0
