@@ -19,6 +19,7 @@ import { verifyPayloadSignature } from "../utils";
 import { getLatestTransactionNonce, pruneAndSyncOnchain } from "./sync";
 
 const SYNC_EPOCH = 100; // after 100 transactions, sync with blockchain
+let isProcessingMessage = false; // Lock to prevent concurrent message processing
 
 export function handleUplinks() {
   const client = connect({
@@ -50,6 +51,15 @@ export function handleUplinks() {
 }
 
 export async function handleMessage(blob: Buffer) {
+  // Check if another message is already being processed
+  if (isProcessingMessage) {
+    console.log("[warn] Message dropped - another message is already being processed");
+    return;
+  }
+
+  // Set lock
+  isProcessingMessage = true;
+
   try {
     const message = JSON.parse(blob.toString());
 
@@ -91,9 +101,6 @@ export async function handleMessage(blob: Buffer) {
 
       if (!existingMeter) {
         const tokenId = Number(await m3terContract.tokenID(`0x${publicKey}`));
-        // if (tokenId === 0) {
-        //   throw new Error("Token ID not found for public key: " + publicKey);
-        // }
 
         const latestNonce = await getLatestTransactionNonce(tokenId);
 
@@ -227,5 +234,8 @@ export async function handleMessage(blob: Buffer) {
     );
   } catch (error) {
     console.error("❌ Error handling MQTT message:", error);
+  } finally {
+    // Release lock
+    isProcessingMessage = false;
   }
 }
