@@ -47,7 +47,7 @@ export const rollup = new Contract(
 );
 
 export const ccipRevenueReader = new Contract(
-  process.env.CCIP_REVENUE_READER_ADDRESS || "0x1a1b02d8c67b0fDcf4E379855868DeB470E169cf",
+  process.env.CCIP_REVENUE_READER_ADDRESS || "0xD648cdF47e9534B2FCfb18C1E94CA9AAff07BA0E",
   [
     "function read(uint256 tokenId, address target, address verifier) public view returns (uint256)",
     "function readCallback(bytes[] memory data, bytes memory) external pure returns (uint256)",
@@ -58,7 +58,7 @@ export const ccipRevenueReader = new Contract(
 );
 
 export const priceContext = new Contract(
-  process.env.PRICE_CONTEXT_ADDRESS || "0x0000000000000000000000000000000000000000",
+  process.env.PRICE_CONTEXT_ADDRESS || "0xfe77DC466E1cA1Ce1553085921b33A25846d6819",
   ["function owed(uint256 tokenId) public view returns (uint256)"],
   provider
 );
