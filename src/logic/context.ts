@@ -58,7 +58,7 @@ export const ccipRevenueReader = new Contract(
 );
 
 export const priceContext = new Contract(
-  process.env.PRICE_CONTEXT_ADDRESS || "0x803ec9176182B863FD2cD69CF8bC68b1aB1C7b0A",
+  process.env.PRICE_CONTEXT_ADDRESS || "0xc6D5Ff8E80F4Ee511Db4bCf6a0BcEbF9f41aAA32",
   ["function owed(uint256 tokenId) public view returns (uint256)"],
   provider
 );
