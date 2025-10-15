@@ -23,12 +23,13 @@ import {
   getOwedFromPriceContext,
 } from "./sync";
 
+const CHIRPSTACK_HOST = process.env.CHIRPSTACK_HOST || getLocalIPv4();
 const SYNC_EPOCH = 100; // after 100 transactions, sync with blockchain
 let isProcessingMessage = false; // Lock to prevent concurrent message processing
 
 export function handleUplinks() {
   const client = connect({
-    host: process.env.CHIRPSTACK_HOST ?? getLocalIPv4(),
+    host: CHIRPSTACK_HOST,
     port: 1883,
     clean: true,
     connectTimeout: 9000,
@@ -37,7 +38,7 @@ export function handleUplinks() {
 
   client.on("connect", () => {
     client.subscribe(`application/${process.env.APPLICATION_ID}/device/+/event/up`, () => {
-      console.log("\nConnected & Subscribed\n");
+      console.log(`\nConnected & Subscribed to CHIRPSTACK_HOST: ${CHIRPSTACK_HOST}\n`);
     });
   });
 
