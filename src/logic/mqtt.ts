@@ -15,7 +15,7 @@ import {
 import { State, TransactionRecord } from "../types";
 import { getProverURL, sendPendingTransactionsToProver } from "./prover";
 import { decodePayload } from "./decode";
-import { verifyPayloadSignature } from "../utils";
+import { getLocalIPv4, verifyPayloadSignature } from "../utils";
 import {
   getLatestTransactionNonce,
   pruneAndSyncOnchain,
@@ -28,7 +28,7 @@ let isProcessingMessage = false; // Lock to prevent concurrent message processin
 
 export function handleUplinks() {
   const client = connect({
-    host: process.env.CHIRPSTACK_HOST,
+    host: process.env.CHIRPSTACK_HOST ?? getLocalIPv4(),
     port: 1883,
     clean: true,
     connectTimeout: 9000,
