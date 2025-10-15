@@ -13,16 +13,23 @@ import {
   updateMeterNonce,
 } from "../store/sqlite";
 import { State, TransactionRecord } from "../types";
-import { getProverURL, sendPendingTransactionsToProver } from "./verify";
+import { getProverURL, sendPendingTransactionsToProver } from "./prover";
 import { decodePayload } from "./decode";
-import { verifyPayloadSignature } from "../utils";
-import { getLatestTransactionNonce, pruneAndSyncOnchain } from "./sync";
+import { getLocalIPv4, verifyPayloadSignature } from "../utils";
+import {
+  getLatestTransactionNonce,
+  pruneAndSyncOnchain,
+  getCrossChainRevenue,
+  getOwedFromPriceContext,
+} from "./sync";
 
+const CHIRPSTACK_HOST = process.env.CHIRPSTACK_HOST || getLocalIPv4();
 const SYNC_EPOCH = 100; // after 100 transactions, sync with blockchain
+let isProcessingMessage = false; // Lock to prevent concurrent message processing
 
 export function handleUplinks() {
   const client = connect({
-    host: process.env.CHIRPSTACK_HOST,
+    host: CHIRPSTACK_HOST,
     port: 1883,
     clean: true,
     connectTimeout: 9000,
@@ -31,7 +38,7 @@ export function handleUplinks() {
 
   client.on("connect", () => {
     client.subscribe(`application/${process.env.APPLICATION_ID}/device/+/event/up`, () => {
-      console.log("\nConnected & Subscribed\n");
+      console.log(`\nConnected & Subscribed to CHIRPSTACK_HOST: ${CHIRPSTACK_HOST}\n`);
     });
   });
 
@@ -50,6 +57,15 @@ export function handleUplinks() {
 }
 
 export async function handleMessage(blob: Buffer) {
+  // Check if another message is already being processed
+  if (isProcessingMessage) {
+    console.log("[warn] Message dropped - another message is already being processed");
+    return;
+  }
+
+  // Set lock
+  isProcessingMessage = true;
+
   try {
     const message = JSON.parse(blob.toString());
 
@@ -91,9 +107,6 @@ export async function handleMessage(blob: Buffer) {
 
       if (!existingMeter) {
         const tokenId = Number(await m3terContract.tokenID(`0x${publicKey}`));
-        // if (tokenId === 0) {
-        //   throw new Error("Token ID not found for public key: " + publicKey);
-        // }
 
         const latestNonce = await getLatestTransactionNonce(tokenId);
 
@@ -207,9 +220,9 @@ export async function handleMessage(blob: Buffer) {
         console.error("Error sending pending transactions to prover:", error);
       }
     }
-
-    const state =
-      decoded.nonce === expectedNonce ? { is_on: true } : { nonce: m3ter.latestNonce, is_on: true };
+    const is_on =
+      (await getCrossChainRevenue(m3ter.tokenId)) >= (await getOwedFromPriceContext(m3ter.tokenId));
+    const state = decoded.nonce === expectedNonce ? { is_on } : { nonce: m3ter.latestNonce, is_on };
 
     // TODO: remove the following block after testing
     // if transaction nonce is 0 and the latest nonce is 0
@@ -227,5 +240,8 @@ export async function handleMessage(blob: Buffer) {
     );
   } catch (error) {
     console.error("❌ Error handling MQTT message:", error);
+  } finally {
+    // Release lock
+    isProcessingMessage = false;
   }
 }

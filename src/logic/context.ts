@@ -29,7 +29,7 @@ app.listen(port, () => {
 });
 
 // ETHERS JS CONTRACT CONFIG
-const provider = new JsonRpcProvider(process.env.MAINNET_RPC);
+export const provider = new JsonRpcProvider(process.env.MAINNET_RPC);
 
 export const m3ter = new Contract(
   process.env.M3TER_CONTRACT_ADDRESS || "0x9C547B649475f1bE81323AefdbcF209C17961D5E",
@@ -42,6 +42,23 @@ export const m3ter = new Contract(
 
 export const rollup = new Contract(
   process.env.ROLLUP_CONTRACT_ADDRESS || "0xf8f2d4315DB5db38f3e5c45D0bCd59959c603d9b",
-  ["function nonce(uint256 tokenId) external view returns (bytes6)"],
+  ["function nonce(uint256) external view returns (bytes6)"],
+  provider
+);
+
+export const ccipRevenueReader = new Contract(
+  process.env.CCIP_REVENUE_READER_ADDRESS || "0xD648cdF47e9534B2FCfb18C1E94CA9AAff07BA0E",
+  [
+    "function read(uint256 tokenId, address target, address verifier) public view returns (uint256)",
+    "function readCallback(bytes[] memory data, bytes memory) external pure returns (uint256)",
+    "function verifierCount() external view returns (uint256)",
+    "function verifiers(uint256) external view returns (string, address)",
+  ],
+  provider
+);
+
+export const priceContext = new Contract(
+  process.env.PRICE_CONTEXT_ADDRESS || "0xc6D5Ff8E80F4Ee511Db4bCf6a0BcEbF9f41aAA32",
+  ["function owed(uint256 tokenId) public view returns (uint256)"],
   provider
 );

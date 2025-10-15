@@ -1,5 +1,40 @@
 import { TransactionRecord, BatchTransactionPayload } from "./types";
 import { createPublicKey, verify } from "crypto";
+import os from "os";
+
+/**
+ * Retries a function up to 5 times with exponential backoff
+ * @param fn Function to retry
+ * @param maxRetries Maximum number of retries (default: 5)
+ * @param baseDelay Base delay in milliseconds (default: 1000)
+ * @returns Promise that resolves with the function result or rejects with the last error
+ */
+export async function retry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 5,
+  baseDelay: number = 1000
+): Promise<T> {
+  let lastError: Error;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+
+      if (attempt === maxRetries) {
+        throw lastError;
+      }
+
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.log(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`, error);
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError!;
+}
 
 export function buildBatchPayload(transactions: TransactionRecord[]): BatchTransactionPayload[] {
   return transactions.map((transaction) => ({
@@ -31,4 +66,19 @@ export function verifyPayloadSignature(transaction: Buffer, rawPubKey: Buffer): 
     console.error("Error verifying signature:", error);
     return false;
   }
+}
+
+export function getLocalIPv4() {
+  const nets = os.networkInterfaces();
+  console.log(nets);
+  for (const network of Object.values(nets)) {
+    if (network) {
+      for (const iface of network) {
+        if (iface.family === "IPv4" && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+  }
+  return "127.0.0.1";
 }
