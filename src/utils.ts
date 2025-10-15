@@ -70,6 +70,7 @@ export function verifyPayloadSignature(transaction: Buffer, rawPubKey: Buffer): 
 
 export function getLocalIPv4() {
   const nets = os.networkInterfaces();
+  console.log(nets);
   for (const network of Object.values(nets)) {
     if (network) {
       for (const iface of network) {
