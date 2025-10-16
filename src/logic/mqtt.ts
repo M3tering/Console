@@ -4,9 +4,11 @@ import { interact } from "./arweave";
 import { encode } from "./encode";
 import { m3ter as m3terContract, rollup as rollupContract } from "./context";
 import {
+  deleteMeterByPublicKey,
   getAllMeterRecords,
   getMeterByDevEui,
   getMeterByPublicKey,
+  getMeterByTokenId,
   insertTransaction,
   saveMeter,
   updateMeterDevEui,
@@ -123,6 +125,14 @@ export async function handleMessage(blob: Buffer) {
           tokenId,
           latestNonce,
         };
+
+        const existingMeter = getMeterByTokenId(tokenId);
+
+        // incase of the public key being updated
+        if (existingMeter && existingMeter.publicKey !== `0x${publicKey}`) {
+          deleteMeterByPublicKey(`0x${publicKey}`);
+        }
+
         saveMeter(newMeter);
         console.log("[info] Saved new meter:", newMeter);
       } else {
