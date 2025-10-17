@@ -1,4 +1,3 @@
-import { raw } from "body-parser";
 import setupDatabase, {
   saveMeter,
   getMeterByPublicKey,

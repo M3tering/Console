@@ -18,31 +18,25 @@
    API_TOKEN=...
    APPLICATION_ID=...
    CONTRACT_LABEL=M3ters
-   CHIRPSTACK_HOST=host.docker.internal
+   CHIRPSTACK_HOST=localhost
    MAINNET_RPC=https://sepolia.drpc.org
    PREFERRED_PROVER_NODE=http://34.244.149.153
    ```
 
-3. **Docker Build**
+3. **Docker Build and Run**
 
    ```bash
-   sudo docker build -t console .
-   # If error: sudo systemctl restart docker
+   sudo docker compose down
+   sudo docker compose up -d
    ```
 
-4. **Docker Run**
-   ```bash
-   sudo docker run -detach --restart unless-stopped --add-host=host.docker.internal:host-gateway console
-   ```
-
-## Docker Commands
+## Other Docker Commands
 
 - `sudo docker ps` - list running containers
 - `sudo docker ps -a` - list all containers  
-- `sudo docker stop <container_id>` - stop container
-- `sudo docker rm <container_id>` - remove container
-- `sudo docker logs <container_id>` - view logs
-- `sudo docker logs -f -t <container_id>` - follow logs with timestamps
+- `sudo docker compose down` - stop container
+- `sudo docker compose logs` - view logs
+- `sudo docker compose logs -tf` - follow logs with timestamps
 - `sudo docker system prune` - cleanup unused containers/images
 - `sudo docker system prune -a` - cleanup everything unused
 
