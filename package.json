@@ -4,7 +4,8 @@
   "description": "Service console for providers on the m3tering protocol",
   "main": "src/index.ts",
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "start": "node dist/src/index.js",
+    "build": "tsc -p tsconfig.json",
     "dev": "nodemon --exec ts-node src/index.ts",
     "interact": "ts-node src/logic/mqtt.ts",
     "watch": "nodemon --watch 'src/**'",
