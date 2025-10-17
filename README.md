@@ -34,10 +34,9 @@
 
 - `sudo docker ps` - list running containers
 - `sudo docker ps -a` - list all containers  
-- `sudo docker stop <container_id>` - stop container
-- `sudo docker rm <container_id>` - remove container
-- `sudo docker logs <container_id>` - view logs
-- `sudo docker logs -f -t <container_id>` - follow logs with timestamps
+- `sudo docker compose down` - stop container
+- `sudo docker compose logs` - view logs
+- `sudo docker compose logs -tf` - follow logs with timestamps
 - `sudo docker system prune` - cleanup unused containers/images
 - `sudo docker system prune -a` - cleanup everything unused
 
