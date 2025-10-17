@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 # Create working directory
 RUN mkdir -p /opt/app
-WORKDIR /opt/app.
+WORKDIR /opt/app
 
 # Copy and install dependencies
 COPY package.json package-lock.json ./
