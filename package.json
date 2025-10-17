@@ -1,17 +1,15 @@
 {
   "name": "m3tering-console",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Service console for providers on the m3tering protocol",
   "main": "src/index.ts",
   "scripts": {
-    "start": "node dist/src/index.js",
-    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "build": "tsc",
     "dev": "nodemon --exec ts-node src/index.ts",
-    "interact": "ts-node src/logic/mqtt.ts",
-    "watch": "nodemon --watch 'src/**'",
     "test": "tsc --noEmit && jest"
   },
-  "author": "Godwin",
+  "author": "Emmo00",
   "license": "MIT",
   "dependencies": {
     "@ardrive/turbo-sdk": "^1.30.0",
@@ -19,21 +17,14 @@
     "@grpc/grpc-js": "^1.10.3",
     "arweave": "^1.15.7",
     "better-sqlite3": "^12.2.0",
-    "body-parser": "^1.20.2",
     "dotenv": "^16.4.5",
     "ethers": "^6.11.1",
     "express": "^4.19.1",
     "express-handlebars": "^7.1.2",
     "handlebars": "^4.7.8",
-    "m3tering-ed25519": "^1.0.1",
-    "m3tering-ethers": "^1.0.1",
-    "mqtt": "^5.5.0",
-    "warp-contracts": "^1.4.41"
+    "mqtt": "^5.5.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.28.0",
-    "@babel/preset-env": "^7.28.0",
-    "@babel/preset-typescript": "^7.27.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^4.17.21",
     "@types/jest": "^30.0.0",
@@ -41,7 +32,6 @@
     "babel-jest": "^30.0.5",
     "jest": "^30.0.5",
     "nodemon": "^3.1.0",
-    "ts-node": "^10.9.2",
     "typescript": "^5.4.3"
   }
 }

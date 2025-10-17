@@ -18,21 +18,15 @@
    API_TOKEN=...
    APPLICATION_ID=...
    CONTRACT_LABEL=M3ters
-   CHIRPSTACK_HOST=host.docker.internal
+   CHIRPSTACK_HOST=localhost
    MAINNET_RPC=https://sepolia.drpc.org
    PREFERRED_PROVER_NODE=http://34.244.149.153
    ```
 
-3. **Docker Build**
+3. **Docker Build and Run**
 
    ```bash
-   sudo docker build -t console .
-   # If error: sudo systemctl restart docker
-   ```
-
-4. **Docker Run**
-   ```bash
-   sudo docker run -detach --restart unless-stopped --add-host=host.docker.internal:host-gateway console
+   sudo docker compose up -d
    ```
 
 ## Docker Commands
