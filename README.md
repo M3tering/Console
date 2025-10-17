@@ -26,10 +26,11 @@
 3. **Docker Build and Run**
 
    ```bash
+   sudo docker compose down
    sudo docker compose up -d
    ```
 
-## Docker Commands
+## Other Docker Commands
 
 - `sudo docker ps` - list running containers
 - `sudo docker ps -a` - list all containers  
