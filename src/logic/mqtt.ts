@@ -27,7 +27,7 @@ import {
 
 const CHIRPSTACK_HOST = process.env.CHIRPSTACK_HOST || getLocalIPv4();
 const SYNC_EPOCH = 100; // after 100 transactions, sync with blockchain
-let isProcessingMessage = false; // Lock to prevent concurrent message processing
+const deviceLocks = new Map<string, boolean>(); // Lock per devEUI to prevent concurrent message processing
 
 export function handleUplinks() {
   const client = connect({
@@ -59,17 +59,25 @@ export function handleUplinks() {
 }
 
 export async function handleMessage(blob: Buffer) {
-  // Check if another message is already being processed
-  if (isProcessingMessage) {
-    console.log("[warn] Message dropped - another message is already being processed");
-    return;
-  }
-
-  // Set lock
-  isProcessingMessage = true;
-
+  let devEui: string | undefined;
+  
   try {
     const message = JSON.parse(blob.toString());
+    devEui = message["deviceInfo"]["devEui"];
+    
+    if (!devEui) {
+      console.log("[warn] Message dropped - no devEui found in message");
+      return;
+    }
+
+    // Check if this specific device is already being processed
+    if (deviceLocks.get(devEui)) {
+      console.log(`[warn] Message dropped - device ${devEui} is already being processed`);
+      return;
+    }
+
+    // Set lock for this specific device
+    deviceLocks.set(devEui, true);
 
     console.log("[info] Received uplink from device:", JSON.stringify(message));
 
@@ -84,7 +92,6 @@ export async function handleMessage(blob: Buffer) {
 
     if (!publicKey) {
       // try to find public key by DevEui
-      const devEui = message["deviceInfo"]["devEui"];
       const meterByDevEui = getMeterByDevEui(devEui);
 
       if (!meterByDevEui) {
@@ -156,6 +163,24 @@ export async function handleMessage(blob: Buffer) {
     }
 
     console.log("[info] Found meter:", m3ter);
+
+    // If both latest nonce and received nonce are 0, enqueue 0 immediately
+    if (m3ter.latestNonce === 0 && decoded.nonce === 0) {
+      console.log("[info] Both latest nonce and received nonce are 0, enqueuing 0 immediately");
+      
+      const is_on =
+        (await getCrossChainRevenue(m3ter.tokenId)) >= (await getOwedFromPriceContext(m3ter.tokenId));
+      const state = { nonce: 0, is_on };
+
+      console.log("[info] Enqueuing state:", state);
+
+      enqueue(
+        message["deviceInfo"]["devEui"],
+        encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0)
+      );
+      
+      return; // Exit early without processing the transaction
+    }
 
     if (m3ter.latestNonce % SYNC_EPOCH === 0) {
       // sync with blockchain every SYNC_EPOCH transactions
@@ -234,14 +259,6 @@ export async function handleMessage(blob: Buffer) {
       (await getCrossChainRevenue(m3ter.tokenId)) >= (await getOwedFromPriceContext(m3ter.tokenId));
     const state = decoded.nonce === expectedNonce ? { is_on } : { nonce: m3ter.latestNonce, is_on };
 
-    // TODO: remove the following block after testing
-    // if transaction nonce is 0 and the latest nonce is 0
-    // update the latest nonce to 1, respond with 1
-    if (decoded.nonce === 0 && m3ter.latestNonce === 0) {
-      updateMeterNonce(`0x${publicKey}`, 1);
-      state.nonce = 1;
-    }
-
     console.log("[info] Enqueuing state:", state);
 
     enqueue(
@@ -251,7 +268,9 @@ export async function handleMessage(blob: Buffer) {
   } catch (error) {
     console.error("❌ Error handling MQTT message:", error);
   } finally {
-    // Release lock
-    isProcessingMessage = false;
+    // Release lock for this specific device
+    if (devEui) {
+      deviceLocks.delete(devEui);
+    }
   }
 }
