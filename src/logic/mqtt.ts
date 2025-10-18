@@ -24,10 +24,11 @@ import {
   getCrossChainRevenue,
   getOwedFromPriceContext,
 } from "./sync";
+import { createMeterLogger, MeterLogger } from "../utils/logger";
 
 const CHIRPSTACK_HOST = process.env.CHIRPSTACK_HOST || getLocalIPv4();
 const SYNC_EPOCH = 100; // after 100 transactions, sync with blockchain
-let isProcessingMessage = false; // Lock to prevent concurrent message processing
+const deviceLocks = new Map<string, boolean>(); // Lock per devEUI to prevent concurrent message processing
 
 export function handleUplinks() {
   const client = connect({
@@ -59,19 +60,31 @@ export function handleUplinks() {
 }
 
 export async function handleMessage(blob: Buffer) {
-  // Check if another message is already being processed
-  if (isProcessingMessage) {
-    console.log("[warn] Message dropped - another message is already being processed");
-    return;
-  }
-
-  // Set lock
-  isProcessingMessage = true;
-
+  let devEui: string | undefined;
+  let logger: MeterLogger = createMeterLogger({}); // Default logger for early errors
+  
   try {
     const message = JSON.parse(blob.toString());
+    devEui = message["deviceInfo"]["devEui"];
+    
+    // Initialize logger with devEui context
+    logger = createMeterLogger({ devEui });
+    
+    if (!devEui) {
+      console.log("[warn] Message dropped - no devEui found in message");
+      return;
+    }
 
-    console.log("[info] Received uplink from device:", JSON.stringify(message));
+    // Check if this specific device is already being processed
+    if (deviceLocks.get(devEui)) {
+      logger.warn(`Message dropped - device is already being processed`);
+      return;
+    }
+
+    // Set lock for this specific device
+    deviceLocks.set(devEui, true);
+
+    logger.info(`Received uplink from device: ${JSON.stringify(message)}`);
 
     // encode transaction into standard format (payload is hex string)
     // format: nonce | energy | signature | voltage | device_id | longitude | latitude
@@ -80,11 +93,10 @@ export async function handleMessage(blob: Buffer) {
     let publicKey = decoded.extensions.deviceId;
     let payloadHadPublicKey = !!publicKey;
 
-    console.log("[info] Decoded payload:", decoded);
+    logger.info(`Decoded payload: ${JSON.stringify(decoded)}`);
 
     if (!publicKey) {
       // try to find public key by DevEui
-      const devEui = message["deviceInfo"]["devEui"];
       const meterByDevEui = getMeterByDevEui(devEui);
 
       if (!meterByDevEui) {
@@ -100,10 +112,10 @@ export async function handleMessage(blob: Buffer) {
       throw new Error("Invalid transaction signature for meter with public key: " + publicKey);
     }
 
-    console.log("[info] Verified signature");
+    logger.info("Verified signature");
 
     if (payloadHadPublicKey) {
-      console.log("[info] Payload contained public key:", publicKey);
+      logger.info(`Payload contained public key: ${publicKey}`);
       // save public key with device EUI mapping if not already saved
       const existingMeter = getMeterByPublicKey(`0x${publicKey}`);
 
@@ -112,11 +124,10 @@ export async function handleMessage(blob: Buffer) {
 
         const latestNonce = await getLatestTransactionNonce(tokenId);
 
-        console.log(
-          "[info] Fetched tokenId and latestNonce from chain and local state:",
-          tokenId,
-          latestNonce
-        );
+        // Update logger with tokenId context now that we have it
+        logger = createMeterLogger({ devEui, tokenId, publicKey: `0x${publicKey}` });
+
+        logger.info(`Fetched tokenId and latestNonce from chain and local state: ${tokenId}, ${latestNonce}`);
 
         // save new meter with devEui
         const newMeter = {
@@ -134,16 +145,19 @@ export async function handleMessage(blob: Buffer) {
         }
 
         saveMeter(newMeter);
-        console.log("[info] Saved new meter:", newMeter);
+        logger.info(`Saved new meter: ${JSON.stringify(newMeter)}`);
       } else {
+        // Update logger with existing meter context
+        logger = createMeterLogger({ devEui, tokenId: existingMeter.tokenId, publicKey: `0x${publicKey}` });
+        
         // update existing meter with devEui if not already set
-        console.log("[info] Updating meter with DevEui:", message["deviceInfo"]["devEui"]);
+        logger.info(`Updating meter with DevEui: ${message["deviceInfo"]["devEui"]}`);
         updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
 
         // fetch and update latest nonce from chain
         const latestNonce = await getLatestTransactionNonce(existingMeter.tokenId);
 
-        console.log("[info] Fetched latestNonce from chain and local state:", latestNonce);
+        logger.info(`Fetched latestNonce from chain and local state: ${latestNonce}`);
 
         updateMeterNonce(`0x${publicKey}`, latestNonce);
       }
@@ -155,13 +169,34 @@ export async function handleMessage(blob: Buffer) {
       throw new Error("Meter not found for public key: " + publicKey);
     }
 
-    console.log("[info] Found meter:", m3ter);
+    // Update logger with complete meter context
+    logger = createMeterLogger({ devEui, tokenId: m3ter.tokenId, publicKey: `0x${publicKey}` });
+
+    logger.info(`Found meter: ${JSON.stringify(m3ter)}`);
+
+    // If both latest nonce and received nonce are 0, enqueue 0 immediately
+    if (m3ter.latestNonce === 0 && decoded.nonce === 0) {
+      logger.info("Both latest nonce and received nonce are 0, enqueuing 0 immediately");
+      
+      const is_on =
+        (await getCrossChainRevenue(m3ter.tokenId)) >= (await getOwedFromPriceContext(m3ter.tokenId));
+      const state = { nonce: 0, is_on };
+
+      logger.info(`Enqueuing state: ${JSON.stringify(state)}`);
+
+      enqueue(
+        message["deviceInfo"]["devEui"],
+        encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0)
+      );
+      
+      return; // Exit early without processing the transaction
+    }
 
     if (m3ter.latestNonce % SYNC_EPOCH === 0) {
       // sync with blockchain every SYNC_EPOCH transactions
       await pruneAndSyncOnchain(m3ter.tokenId);
 
-      console.log("[info] Synced meter with blockchain:", m3ter.tokenId);
+      logger.info(`Synced meter with blockchain: ${m3ter.tokenId}`);
 
       m3ter = getMeterByPublicKey(`0x${publicKey}`) ?? null;
 
@@ -172,14 +207,7 @@ export async function handleMessage(blob: Buffer) {
 
     const expectedNonce = m3ter.latestNonce + 1;
 
-    console.log(
-      "[info] Received blob for meter",
-      m3ter?.tokenId,
-      "expected nonce:",
-      expectedNonce,
-      "got:",
-      decoded.nonce
-    );
+    logger.info(`Received blob for meter ${m3ter?.tokenId}, expected nonce: ${expectedNonce}, got: ${decoded.nonce}`);
 
     if (decoded.nonce !== expectedNonce && decoded.nonce !== 0) {
       throw new Error(
@@ -190,12 +218,12 @@ export async function handleMessage(blob: Buffer) {
     // if device nonce is correct
 
     if (decoded.nonce === expectedNonce) {
-      console.log("[info] Nonce is valid:", decoded.nonce);
+      logger.info(`Nonce is valid: ${decoded.nonce}`);
 
       // Upload to arweave
       await interact(m3ter.tokenId, decoded);
 
-      console.log("[info] Uploaded transaction to Arweave for meter", m3ter.tokenId);
+      logger.info(`Uploaded transaction to Arweave for meter ${m3ter.tokenId}`);
 
       // save transaction to local store
       const transactionRecord = {
@@ -209,49 +237,43 @@ export async function handleMessage(blob: Buffer) {
 
       updateMeterNonce(`0x${publicKey}`, expectedNonce);
 
-      console.log("[debug] Current all meters:", getAllMeterRecords());
+      logger.debug(`Current all meters: ${JSON.stringify(getAllMeterRecords())}`);
 
-      console.log("[info] Updated meter nonce to:", expectedNonce);
+      logger.info(`Updated meter nonce to: ${expectedNonce}`);
 
       try {
         // send pending transactions to prover node
         const proverURL = await getProverURL();
-        console.log("[info] Sending pending transactions to prover:", proverURL);
+        logger.info(`Sending pending transactions to prover: ${proverURL}`);
 
         const response = await sendPendingTransactionsToProver(proverURL!);
 
-        console.log("[info] done sending to prover");
+        logger.info("done sending to prover");
         try {
-          console.log("[info] Prover response:", await response?.json());
+          logger.info(`Prover response: ${JSON.stringify(await response?.json())}`);
         } catch (jsonError) {
-          console.log("[info] Prover response (text):", await response?.text());
+          logger.info(`Prover response (text): ${await response?.text()}`);
         }
       } catch (error) {
-        console.error("Error sending pending transactions to prover:", error);
+        logger.error(`Error sending pending transactions to prover: ${error}`);
       }
     }
     const is_on =
       (await getCrossChainRevenue(m3ter.tokenId)) >= (await getOwedFromPriceContext(m3ter.tokenId));
     const state = decoded.nonce === expectedNonce ? { is_on } : { nonce: m3ter.latestNonce, is_on };
 
-    // TODO: remove the following block after testing
-    // if transaction nonce is 0 and the latest nonce is 0
-    // update the latest nonce to 1, respond with 1
-    if (decoded.nonce === 0 && m3ter.latestNonce === 0) {
-      updateMeterNonce(`0x${publicKey}`, 1);
-      state.nonce = 1;
-    }
-
-    console.log("[info] Enqueuing state:", state);
+    logger.info(`Enqueuing state: ${JSON.stringify(state)}`);
 
     enqueue(
       message["deviceInfo"]["devEui"],
       encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0)
     );
   } catch (error) {
-    console.error("❌ Error handling MQTT message:", error);
+    logger.error(`Error handling MQTT message: ${error}`);
   } finally {
-    // Release lock
-    isProcessingMessage = false;
+    // Release lock for this specific device
+    if (devEui) {
+      deviceLocks.delete(devEui);
+    }
   }
 }
