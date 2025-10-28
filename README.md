@@ -21,6 +21,8 @@
    CHIRPSTACK_HOST=localhost
    MAINNET_RPC=https://sepolia.drpc.org
    PREFERRED_PROVER_NODE=http://34.244.149.153
+   STREAMR_STREAM_ID="0x123.../foo/ba"
+   ETHEREUM_PRIVATE_KEY="..."
    ```
 
 3. **Docker Build and Run**
