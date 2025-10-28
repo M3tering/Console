@@ -6,6 +6,7 @@ import { m3ter as m3terContract, rollup as rollupContract } from "./context";
 import {
   deleteMeterByPublicKey,
   getAllMeterRecords,
+  getAllTransactionRecords,
   getMeterByDevEui,
   getMeterByPublicKey,
   getMeterByTokenId,
@@ -25,6 +26,7 @@ import {
   getOwedFromPriceContext,
 } from "./sync";
 import { createMeterLogger, MeterLogger } from "../utils/logger";
+import { publishPendingTransactionsToStreamr } from "./streamr";
 
 const CHIRPSTACK_HOST = process.env.CHIRPSTACK_HOST || getLocalIPv4();
 const SYNC_EPOCH = 100; // after 100 transactions, sync with blockchain
@@ -62,14 +64,14 @@ export function handleUplinks() {
 export async function handleMessage(blob: Buffer) {
   let devEui: string | undefined;
   let logger: MeterLogger = createMeterLogger({}); // Default logger for early errors
-  
+
   try {
     const message = JSON.parse(blob.toString());
     devEui = message["deviceInfo"]["devEui"];
-    
+
     // Initialize logger with devEui context
     logger = createMeterLogger({ devEui });
-    
+
     if (!devEui) {
       console.log("[warn] Message dropped - no devEui found in message");
       return;
@@ -127,7 +129,9 @@ export async function handleMessage(blob: Buffer) {
         // Update logger with tokenId context now that we have it
         logger = createMeterLogger({ devEui, tokenId, publicKey: `0x${publicKey}` });
 
-        logger.info(`Fetched tokenId and latestNonce from chain and local state: ${tokenId}, ${latestNonce}`);
+        logger.info(
+          `Fetched tokenId and latestNonce from chain and local state: ${tokenId}, ${latestNonce}`
+        );
 
         // save new meter with devEui
         const newMeter = {
@@ -148,8 +152,12 @@ export async function handleMessage(blob: Buffer) {
         logger.info(`Saved new meter: ${JSON.stringify(newMeter)}`);
       } else {
         // Update logger with existing meter context
-        logger = createMeterLogger({ devEui, tokenId: existingMeter.tokenId, publicKey: `0x${publicKey}` });
-        
+        logger = createMeterLogger({
+          devEui,
+          tokenId: existingMeter.tokenId,
+          publicKey: `0x${publicKey}`,
+        });
+
         // update existing meter with devEui if not already set
         logger.info(`Updating meter with DevEui: ${message["deviceInfo"]["devEui"]}`);
         updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
@@ -177,9 +185,10 @@ export async function handleMessage(blob: Buffer) {
     // If both latest nonce and received nonce are 0, enqueue 0 immediately
     if (m3ter.latestNonce === 0 && decoded.nonce === 0) {
       logger.info("Both latest nonce and received nonce are 0, enqueuing 0 immediately");
-      
+
       const is_on =
-        (await getCrossChainRevenue(m3ter.tokenId)) >= (await getOwedFromPriceContext(m3ter.tokenId));
+        (await getCrossChainRevenue(m3ter.tokenId)) >=
+        (await getOwedFromPriceContext(m3ter.tokenId));
       const state = { nonce: 0, is_on };
 
       logger.info(`Enqueuing state: ${JSON.stringify(state)}`);
@@ -188,7 +197,7 @@ export async function handleMessage(blob: Buffer) {
         message["deviceInfo"]["devEui"],
         encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0)
       );
-      
+
       return; // Exit early without processing the transaction
     }
 
@@ -207,7 +216,9 @@ export async function handleMessage(blob: Buffer) {
 
     const expectedNonce = m3ter.latestNonce + 1;
 
-    logger.info(`Received blob for meter ${m3ter?.tokenId}, expected nonce: ${expectedNonce}, got: ${decoded.nonce}`);
+    logger.info(
+      `Received blob for meter ${m3ter?.tokenId}, expected nonce: ${expectedNonce}, got: ${decoded.nonce}`
+    );
 
     if (decoded.nonce !== expectedNonce && decoded.nonce !== 0) {
       throw new Error(
@@ -241,12 +252,14 @@ export async function handleMessage(blob: Buffer) {
 
       logger.info(`Updated meter nonce to: ${expectedNonce}`);
 
+      const pendingTransactions = getAllTransactionRecords();
+
+      // send pending transactions to prover node
       try {
-        // send pending transactions to prover node
         const proverURL = await getProverURL();
         logger.info(`Sending pending transactions to prover: ${proverURL}`);
 
-        const response = await sendPendingTransactionsToProver(proverURL!);
+        const response = await sendPendingTransactionsToProver(proverURL!, pendingTransactions);
 
         logger.info("done sending to prover");
         try {
@@ -257,7 +270,16 @@ export async function handleMessage(blob: Buffer) {
       } catch (error) {
         logger.error(`Error sending pending transactions to prover: ${error}`);
       }
+
+      // send pending transactions to streamr
+      try {
+        logger.info(`Sending pending transactions to streamr`);
+        await publishPendingTransactionsToStreamr(pendingTransactions);
+      } catch (error) {
+        logger.error(`Error sending pending transactions to streamr: ${error}`);
+      }
     }
+
     const is_on =
       (await getCrossChainRevenue(m3ter.tokenId)) >= (await getOwedFromPriceContext(m3ter.tokenId));
     const state = decoded.nonce === expectedNonce ? { is_on } : { nonce: m3ter.latestNonce, is_on };

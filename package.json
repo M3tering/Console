@@ -15,6 +15,7 @@
     "@ardrive/turbo-sdk": "^1.30.0",
     "@chirpstack/chirpstack-api": "^4.7.0",
     "@grpc/grpc-js": "^1.10.3",
+    "@streamr/sdk": "^103.1.0",
     "arweave": "^1.15.7",
     "better-sqlite3": "^12.2.0",
     "dotenv": "^16.4.5",

@@ -127,9 +127,7 @@ export async function getProverURL(): Promise<string | null> {
   return PREFERRED_PROVER_NODE;
 }
 
-export async function sendPendingTransactionsToProver(proverURL: string) {
-  const pendingTransactions = getAllTransactionRecords();
-
+export async function sendPendingTransactionsToProver(proverURL: string, pendingTransactions: TransactionRecord[]) {
   if (!proverURL) {
     console.error("No active prover node available");
     return;
