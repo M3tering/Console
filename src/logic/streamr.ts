@@ -16,6 +16,12 @@ export const streamrClient = new StreamrClient({
 
 const stream = streamrClient.getStream(STREAMR_STREAM_ID);
 
+stream.then((stream) => {
+  console.log(`[Streamr] Connected to stream: ${stream.id}`);
+}).catch((error) => {
+  console.error("[Streamr] Error connecting to stream:", error);
+});
+
 async function getStream() {
   return await stream;
 }
