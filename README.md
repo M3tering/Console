@@ -1,5 +1,10 @@
 # M3tering Console Setup
 
+## Pre-setup
+
+- Make sure Public key is set on the M3ter contract
+- Make sure the Console has been granted publish permission on the Streamr stream
+
 ## Quick Setup
 
 1. **Clone/Update**
