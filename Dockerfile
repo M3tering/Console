@@ -3,7 +3,7 @@ FROM node:20-alpine
 # Create working directory
 WORKDIR /opt/app
 
-RUN apk add --no-cache alpine-sdk cmake python3 openssl-dev
+RUN apk add --no-cache cmake python3 openssl-dev py3-setuptools
 
 # Copy and install dependencies
 COPY package.json .
