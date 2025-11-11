@@ -7,6 +7,7 @@ import setupDatabase, {
   saveMeter,
   deleteMeterByPublicKey,
 } from "./store/sqlite";
+import "./logic/streamr";
 
 handleUplinks();
 
