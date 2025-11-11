@@ -3,7 +3,10 @@ FROM node:20-alpine
 # Create working directory
 WORKDIR /opt/app
 
-RUN apk add --no-cache cmake python3 openssl-dev py3-setuptools
+RUN apk add --no-cache cmake make g++ python3 openssl-dev py3-setuptools
+
+# Optional: clean old node_modules if re-building
+RUN rm -rf node_modules package-lock.json
 
 # Copy and install dependencies
 COPY package.json .
