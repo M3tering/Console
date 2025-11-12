@@ -15,7 +15,7 @@ COPY babel.config.js .
 COPY tsconfig.json .
 COPY .env .
 COPY src ./src
-RUN npm install
+RUN npm install --include=dev
 
 # Build project
 RUN npm run build
