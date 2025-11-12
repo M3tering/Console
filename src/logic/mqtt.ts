@@ -2,7 +2,7 @@ import { connect } from "mqtt";
 import { enqueue } from "./grpc";
 import { interact } from "./arweave";
 import { encode } from "./encode";
-import { m3ter as m3terContract, rollup as rollupContract } from "./context";
+import { m3ter as m3terContract } from "./context";
 import {
   deleteMeterByPublicKey,
   getAllMeterRecords,
@@ -18,7 +18,7 @@ import {
 import { State, TransactionRecord } from "../types";
 import { getProverURL, sendPendingTransactionsToProver } from "./prover";
 import { decodePayload } from "./decode";
-import { getLocalIPv4, verifyPayloadSignature } from "../utils";
+import { verifyPayloadSignature } from "../utils";
 import {
   getLatestTransactionNonce,
   pruneAndSyncOnchain,
@@ -28,7 +28,7 @@ import {
 import { createMeterLogger, MeterLogger } from "../utils/logger";
 import { publishPendingTransactionsToStreamr } from "./streamr";
 
-const CHIRPSTACK_HOST = process.env.CHIRPSTACK_HOST || getLocalIPv4();
+const CHIRPSTACK_HOST = process.env.CHIRPSTACK_HOST;
 const SYNC_EPOCH = 100; // after 100 transactions, sync with blockchain
 const deviceLocks = new Map<string, boolean>(); // Lock per devEUI to prevent concurrent message processing
 
@@ -50,6 +50,7 @@ export function handleUplinks() {
   client.on("error", (err) => {
     console.error("Connection error: ", err);
     client.end();
+    process.exit(1);
   });
 
   client.on("reconnect", () => {
@@ -159,8 +160,10 @@ export async function handleMessage(blob: Buffer) {
         });
 
         // update existing meter with devEui if not already set
-        logger.info(`Updating meter with DevEui: ${message["deviceInfo"]["devEui"]}`);
-        updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
+        if (!existingMeter.devEui || existingMeter.devEui !== message["deviceInfo"]["devEui"]) {
+          logger.info(`Updating meter with DevEui: ${message["deviceInfo"]["devEui"]}`);
+          updateMeterDevEui(`0x${publicKey}`, message["deviceInfo"]["devEui"]);
+        }
 
         // fetch and update latest nonce from chain
         const latestNonce = await getLatestTransactionNonce(existingMeter.tokenId);
@@ -227,7 +230,6 @@ export async function handleMessage(blob: Buffer) {
     }
 
     // if device nonce is correct
-
     if (decoded.nonce === expectedNonce) {
       logger.info(`Nonce is valid: ${decoded.nonce}`);
 
@@ -248,8 +250,6 @@ export async function handleMessage(blob: Buffer) {
 
       updateMeterNonce(`0x${publicKey}`, expectedNonce);
 
-      logger.debug(`Current all meters: ${JSON.stringify(getAllMeterRecords())}`);
-
       logger.info(`Updated meter nonce to: ${expectedNonce}`);
 
       const pendingTransactions = getAllTransactionRecords();
@@ -262,11 +262,7 @@ export async function handleMessage(blob: Buffer) {
         const response = await sendPendingTransactionsToProver(proverURL!, pendingTransactions);
 
         logger.info("done sending to prover");
-        try {
-          logger.info(`Prover response: ${JSON.stringify(await response?.json())}`);
-        } catch (jsonError) {
-          logger.info(`Prover response (text): ${await response?.text()}`);
-        }
+        logger.info(`Prover response (text): ${await response?.text()}`);
       } catch (error) {
         logger.error(`Error sending pending transactions to prover: ${error}`);
       }
