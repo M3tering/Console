@@ -1,18 +1,40 @@
 import "dotenv/config";
 import { handleUplinks } from "./logic/mqtt";
 import { Request, Response } from "express";
-import { app, m3ter, rollup } from "./logic/context";
+import { app } from "./logic/context";
 import setupDatabase, {
   getAllMeterRecords,
-  saveMeter,
   deleteMeterByPublicKey,
 } from "./store/sqlite";
+import { initializeVerifiersCache } from "./logic/sync";
 import "./logic/streamr";
 
-handleUplinks();
+// Async initialization function
+async function initializeApp() {
+  try {
+    console.log("[info] Starting application initialization...");
+    
+    // Initialize database tables and jobs
+    setupDatabase();
+    console.log("[info] Database setup completed");
 
-// Initialize database tables and jobs
-setupDatabase();
+    // Initialize verifiers cache on startup
+    await initializeVerifiersCache();
+    console.log("[info] Verifiers cache initialized successfully");
+    
+    // Start MQTT handling
+    handleUplinks();
+    console.log("[info] MQTT uplinks handler started");
+    
+    console.log("[info] Application initialization completed successfully");
+  } catch (error) {
+    console.error("[fatal] Failed to initialize application:", error);
+    process.exit(1);
+  }
+}
+
+// Start initialization
+initializeApp();
 
 app.get("/", async (req: Request, res: Response) => {
   const m3ters = getAllMeterRecords();
