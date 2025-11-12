@@ -5,7 +5,6 @@ import { encode } from "./encode";
 import { m3ter as m3terContract } from "./context";
 import {
   deleteMeterByPublicKey,
-  getAllMeterRecords,
   getAllTransactionRecords,
   getMeterByDevEui,
   getMeterByPublicKey,
@@ -83,6 +82,8 @@ export async function handleMessage(blob: Buffer) {
       logger.warn(`Message dropped - device is already being processed`);
       return;
     }
+
+    let is_on = true;
 
     // Set lock for this specific device
     deviceLocks.set(devEui, true);
@@ -189,9 +190,14 @@ export async function handleMessage(blob: Buffer) {
     if (m3ter.latestNonce === 0 && decoded.nonce === 0) {
       logger.info("Both latest nonce and received nonce are 0, enqueuing 0 immediately");
 
-      const is_on =
-        (await getCrossChainRevenue(m3ter.tokenId)) >=
-        (await getOwedFromPriceContext(m3ter.tokenId));
+      try {
+        is_on =
+          (await getCrossChainRevenue(m3ter.tokenId)) >=
+          (await getOwedFromPriceContext(m3ter.tokenId));
+      } catch (error) {
+        logger.error(`Error fetching cross chain revenue or owed amount: ${error}`);
+      }
+
       const state = { nonce: 0, is_on };
 
       logger.info(`Enqueuing state: ${JSON.stringify(state)}`);
@@ -276,8 +282,13 @@ export async function handleMessage(blob: Buffer) {
       }
     }
 
-    const is_on =
-      (await getCrossChainRevenue(m3ter.tokenId)) >= (await getOwedFromPriceContext(m3ter.tokenId));
+    try {
+      is_on =
+        (await getCrossChainRevenue(m3ter.tokenId)) >=
+        (await getOwedFromPriceContext(m3ter.tokenId));
+    } catch (error) {
+      logger.error(`Error fetching cross chain revenue or owed amount: ${error}`);
+    }
     const state = decoded.nonce === expectedNonce ? { is_on } : { nonce: m3ter.latestNonce, is_on };
 
     logger.info(`Enqueuing state: ${JSON.stringify(state)}`);
