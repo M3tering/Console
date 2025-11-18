@@ -1,5 +1,10 @@
 # M3tering Console Setup
 
+## Pre-setup
+
+- Make sure Public key is set on the M3ter contract
+- Make sure the Console has been granted publish permission on the Streamr stream
+
 ## Quick Setup
 
 1. **Clone/Update**
@@ -21,6 +26,8 @@
    CHIRPSTACK_HOST=localhost
    MAINNET_RPC=https://sepolia.drpc.org
    PREFERRED_PROVER_NODE=http://34.244.149.153
+   STREAMR_STREAM_ID="0x123.../foo/ba"
+   ETHEREUM_PRIVATE_KEY="..."
    ```
 
 3. **Docker Build and Run**

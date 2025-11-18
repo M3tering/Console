@@ -73,7 +73,6 @@ export async function sendTransactionsToProver(
     });
 
     console.log("[info] received", response.status, "from the prover");
-    console.log("prover response", await response.text());
 
     if (!response.ok) {
       throw new Error(`Prover responded with status: ${response.status}`);
@@ -127,18 +126,7 @@ export async function getProverURL(): Promise<string | null> {
   return PREFERRED_PROVER_NODE;
 }
 
-export async function sendPendingTransactionsToProver(proverURL: string) {
-  const pendingTransactions = getAllTransactionRecords();
-
-  if (!proverURL) {
-    console.error("No active prover node available");
-    return;
-  }
-
-  if (pendingTransactions.length > 0) {
-    console.log("[info] Pending transactions:", pendingTransactions);
-  }
-
+export async function sendPendingTransactionsToProver(proverURL: string, pendingTransactions: TransactionRecord[]) {
   console.log("[info] Sending", pendingTransactions.length, "transactions to prover at", proverURL);
 
   const requestPayload = buildBatchPayload(pendingTransactions);

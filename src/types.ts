@@ -45,3 +45,9 @@ export interface DecodedPayload {
   };
   buf: Buffer;
 }
+
+export interface VerifierInfo {
+  ensName: string;
+  targetAddress: string;
+  verifierAddress: string;
+}
