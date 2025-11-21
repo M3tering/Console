@@ -56,15 +56,10 @@ iframe {
 #terminal-container {
   background-color: #000000 !important;
   padding: 0 !important;
-  width: 100%;
-  min-height: 400px;
 }
 
 #xterm-terminal {
   padding: 10px;
-  width: calc(100% - 20px);
-  height: calc(100% - 20px);
-  min-height: 380px;
 }
 
 #terminal-status {
