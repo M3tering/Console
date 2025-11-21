@@ -3,6 +3,7 @@
 ## Pre-setup
 
 - Make sure Public key is set on the M3ter contract
+- Make sure the price for evergy as been set on the PriceContext contract
 - Make sure the Console has been granted publish permission on the Streamr stream
 
 ## Quick Setup
@@ -26,7 +27,7 @@
    CHIRPSTACK_HOST=localhost
    MAINNET_RPC=https://sepolia.drpc.org
    PREFERRED_PROVER_NODE=http://34.244.149.153
-   STREAMR_STREAM_ID="0x123.../foo/ba"
+   STREAMR_STREAM_ID="0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"
    ETHEREUM_PRIVATE_KEY="..."
    ```
 
