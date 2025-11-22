@@ -36,3 +36,38 @@ iframe {
 .hidden {
   display: none;
 }
+
+/* Terminal specific styles */
+#terminal-auth {
+  background-color: #212529 !important;
+}
+
+#terminal-auth h4 {
+  color: #ffffff;
+  margin-bottom: 15px;
+}
+
+#terminal-auth label {
+  color: #ffffff;
+  margin-bottom: 5px;
+  display: block;
+}
+
+#terminal-container {
+  background-color: #000000 !important;
+  padding: 0 !important;
+}
+
+#xterm-terminal {
+  padding: 10px;
+}
+
+#terminal-status {
+  background-color: #212529 !important;
+}
+
+#terminal-status p {
+  color: #ffffff;
+  margin: 10px 0;
+  font-size: 12px;
+}
