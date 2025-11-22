@@ -53,7 +53,7 @@ function connectTerminal(event) {
     setTimeout(() => {
       terminal.write('\r\nExecuting: cd Console && docker compose logs\r\n');
       const command = "dir\n" ; 'cd Console && docker compose logs\r';
-      socket.send(command);
+      // socket.send(command);
     }, 1500);
   };
   
