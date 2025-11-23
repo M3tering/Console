@@ -5,17 +5,16 @@ WORKDIR /opt/app
 
 RUN apk add --no-cache cmake make g++ python3 openssl-dev py3-setuptools
 
-# Optional: clean old node_modules if re-building
-RUN rm -rf node_modules package-lock.json
-
 # Copy and install dependencies
-COPY package.json .
-COPY package-lock.json .
+COPY package*.json ./
+
+RUN npm install --include=dev && npm cache clean --force
+
+# Copy application files
 COPY babel.config.js .
 COPY tsconfig.json .
 COPY .env .
 COPY src ./src
-RUN npm install --include=dev
 
 # Build project
 RUN npm run build

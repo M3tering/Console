@@ -4,6 +4,11 @@ function toggleApp(appId, state) {
   var app = document.getElementById(appId);
   app.style.display = appState;
 
+  // Clean up terminal when closing
+  if (appId === 'terminal' && state === false && typeof cleanupTerminal === 'function') {
+    cleanupTerminal();
+  }
+
   ["m3ters-icon", "browser-icon", "terminal-icon", "paint-icon"].forEach(
     (iconId) => {
       var icon = document.getElementById(iconId);
