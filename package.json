@@ -7,8 +7,7 @@
     "start": "node dist/index.js",
     "build": "tsc",
     "dev": "nodemon --exec ts-node src/index.ts",
-    "test": "tsc --noEmit && jest",
-    "rebuild": "npm rebuild"
+    "test": "tsc --noEmit && jest"
   },
   "author": "Emmo00",
   "license": "MIT",
