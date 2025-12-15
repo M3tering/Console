@@ -2,18 +2,15 @@ import "dotenv/config";
 import { handleUplinks } from "./logic/mqtt";
 import { Request, Response } from "express";
 import { app } from "./logic/context";
-import setupDatabase, {
-  getAllMeterRecords,
-  deleteMeterByPublicKey,
-} from "./store/sqlite";
+import setupDatabase, { getAllMeterRecords, deleteMeterByPublicKey } from "./store/sqlite";
 import { initializeVerifiersCache } from "./logic/sync";
-import "./logic/streamr";
+import { publishHeartbeatToStream } from "./logic/streamr";
 
 // Async initialization function
 async function initializeApp() {
   try {
     console.log("[info] Starting application initialization...");
-    
+
     // Initialize database tables and jobs
     setupDatabase();
     console.log("[info] Database setup completed");
@@ -21,11 +18,13 @@ async function initializeApp() {
     // Initialize verifiers cache on startup
     await initializeVerifiersCache();
     console.log("[info] Verifiers cache initialized successfully");
-    
+
     // Start MQTT handling
     handleUplinks();
     console.log("[info] MQTT uplinks handler started");
-    
+
+    await publishHeartbeatToStream();
+
     console.log("[info] Application initialization completed successfully");
   } catch (error) {
     console.error("[fatal] Failed to initialize application:", error);
@@ -40,24 +39,6 @@ app.get("/", async (req: Request, res: Response) => {
   const m3ters = getAllMeterRecords();
   res.render("index", { m3ters });
   console.log("[server]: Server handled GET request at `/`");
-});
-
-app.post("/", async (req: Request, res: Response) => {
-  // try {
-  //   const tokenId = (await req.body).tokenId;
-  //   const publicKey = await m3ter.publicKey(tokenId);
-  //   const latestNonce = await rollup.nonce(tokenId);
-  //   saveMeter({
-  //     publicKey,
-  //     tokenId,
-  //     latestNonce: Number(latestNonce),
-  //     devEui: (await req.body).devEui ?? null,
-  //   });
-  // } catch (err) {
-  //   console.error(err);
-  // }
-  res.redirect("/");
-  console.log("[server]: Server handled POST request at `/`");
 });
 
 app.delete("/delete-meter", async (req: Request, res: Response) => {
