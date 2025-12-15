@@ -193,7 +193,7 @@
           {{! Authentication Form }}
           <div class="nes-container is-dark" id="terminal-auth" style="margin-bottom: 10px;">
             <h4>Terminal Authentication</h4>
-            <form id="auth-form" onsubmit="connectTerminal(event)">
+            <form id="auth-form" onsubmit="clickButton(); connectTerminal(event);">
               <div class="nes-field" style="margin-bottom: 10px;">
                 <label for="username">Username:</label>
                 <input type="text" id="username" class="nes-input is-dark" value="ubuntu" required>
@@ -203,7 +203,7 @@
                 <input type="password" id="password" class="nes-input is-dark" value="Mauchly92618" required>
               </div>
               <button type="submit" class="nes-btn is-success">Connect</button>
-              <button type="button" class="nes-btn is-warning" onclick="disconnectTerminal()">Disconnect</button>
+              <button type="button" class="nes-btn is-warning" onclick="clickButton(); disconnectTerminal()">Disconnect</button>
             </form>
           </div>
           

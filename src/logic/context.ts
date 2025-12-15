@@ -84,7 +84,6 @@ wss.on("connection", (ws: WebSocket, request: http.IncomingMessage) => {
           // WebSocket -> SSH
           console.log("[ws/ssh]: Setting up WebSocket message handler");
           ws.on("message", (msg) => {
-            console.log("[ws]: Received message from WebSocket", msg.toString());
             // support JSON control messages for resize
             try {
               const parsed = JSON.parse(msg.toString());
