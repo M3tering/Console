@@ -2,6 +2,64 @@
 let terminal = null;
 let socket = null;
 let isConnected = false;
+let resizeObserver = null;
+
+// Initialize xterm with proper configuration and addons
+function initializeTerminal() {
+  if (terminal) return; // Already initialized
+  
+  const xtermContainer = document.getElementById('xterm-terminal');
+  
+  terminal = new Terminal({
+    cursorBlink: true,
+    cursorStyle: 'block',
+    scrollback: 1000,
+    fontSize: 12,
+    fontFamily: 'Courier New, monospace',
+    theme: {
+      background: '#212529',
+      foreground: '#ffffff',
+      cursor: '#ffffff',
+      selection: 'rgba(255, 255, 255, 0.3)'
+    },
+    allowTransparency: false,
+    rendererType: 'canvas',
+    lineHeight: 1.2
+  });
+  
+  terminal.open(xtermContainer);
+  
+  // Fit terminal to container dimensions
+  fitTerminal();
+  
+  // Set up resize observer to fit terminal when container size changes
+  resizeObserver = new ResizeObserver(() => {
+    if (terminal) {
+      fitTerminal();
+    }
+  });
+  
+  resizeObserver.observe(xtermContainer);
+}
+
+// Properly fit terminal to container
+function fitTerminal() {
+  if (!terminal) return;
+  
+  const container = document.getElementById('xterm-terminal');
+  if (!container) return;
+  
+  const { width, height } = container.getBoundingClientRect();
+  const charWidth = terminal._core._charWidth || 7;
+  const charHeight = terminal._core._charHeight || 14;
+  
+  const cols = Math.max(80, Math.floor(width / charWidth) - 2);
+  const rows = Math.max(24, Math.floor(height / charHeight) - 2);
+  
+  if (terminal.cols !== cols || terminal.rows !== rows) {
+    terminal.resize(cols, rows);
+  }
+}
 
 function connectTerminal(event) {
   event.preventDefault();
@@ -15,17 +73,9 @@ function connectTerminal(event) {
   // Show connecting status
   statusMessage.textContent = 'Connecting to terminal...';
   
-  // Initialize xterm terminal
-  if (!terminal) {
-    terminal = new Terminal({
-      cursorBlink: true,
-      theme: {
-        background: '#212529',
-        foreground: '#ffffff'
-      }
-    });
-    terminal.open(document.getElementById('xterm-terminal'));
-  }
+  // Initialize xterm terminal if not already done
+  initializeTerminal();
+  
   
   // Determine protocol
   const protocol = (location.protocol === 'https:') ? 'wss' : 'ws';
@@ -48,13 +98,6 @@ function connectTerminal(event) {
     
     // Send initial resize
     socket.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }));
-    
-    // Send the docker compose logs command after connection is established
-    setTimeout(() => {
-      terminal.write('\r\nExecuting: cd Console && docker compose logs\r\n');
-      const command = "dir\n" ; 'cd Console && docker compose logs\r';
-      // socket.send(command);
-    }, 1500);
   };
   
   socket.onmessage = (event) => {
@@ -103,7 +146,10 @@ function connectTerminal(event) {
   
   // Handle window resize
   window.addEventListener('resize', () => {
-    if (terminal && socket && socket.readyState === WebSocket.OPEN) {
+    if (terminal) {
+      fitTerminal();
+    }
+    if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }));
     }
   });
@@ -123,7 +169,7 @@ function disconnectTerminal() {
   statusMessage.textContent = 'Terminal disconnected';
   
   if (terminal) {
-    terminal.clear();
+    terminal.reset();
   }
   
   isConnected = false;
@@ -146,6 +192,10 @@ function showTerminalAuth() {
 
 // Clean up when terminal app is closed
 function cleanupTerminal() {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
   if (socket) {
     socket.close();
   }
