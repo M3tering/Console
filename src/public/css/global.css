@@ -83,6 +83,10 @@ iframe {
   height: 100% !important;
 }
 
+.xterm-screen {
+  height: 100% !important;
+}
+
 #terminal-status {
   background-color: #212529 !important;
 }
