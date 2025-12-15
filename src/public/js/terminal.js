@@ -54,7 +54,7 @@ function fitTerminal() {
   const charHeight = terminal._core._charHeight || 14;
   
   const cols = Math.max(80, Math.floor(width / charWidth) - 2);
-  const rows = Math.max(24, Math.floor(height / charHeight) - 2);
+  const rows = Math.max(24, Math.floor(height / charHeight) - 8);
   
   if (terminal.cols !== cols || terminal.rows !== rows) {
     terminal.resize(cols, rows);
