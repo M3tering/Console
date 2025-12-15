@@ -277,6 +277,7 @@ export async function handleMessage(blob: Buffer) {
       try {
         logger.info(`Sending pending transactions to streamr`);
         await publishPendingTransactionsToStreamr(pendingTransactions);
+        logger.info(`Successfully sent pending transactions to streamr`);
       } catch (error) {
         logger.error(`Error sending pending transactions to streamr: ${error}`);
       }

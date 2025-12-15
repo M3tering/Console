@@ -26,6 +26,15 @@ async function getStream() {
   return await stream;
 }
 
+export async function publishHeartbeatToStream() {
+  const stream = await getStream();
+  const heartbeatPayload = {
+    timestamp: new Date().toISOString(),
+  };
+  await stream.publish(heartbeatPayload);
+  console.log("[Streamr] Published heartbeat:", heartbeatPayload);
+}
+
 async function publishToStream(data: any) {
   const stream = await getStream();
   await stream.publish(data);
