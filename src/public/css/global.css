@@ -70,11 +70,13 @@ iframe {
   height: 100%;
   overflow: hidden;
   padding: 0;
+  padding-bottom: 50px;
 }
 
 .xterm {
   height: 100% !important;
   width: 100% !important;
+  padding-bottom: 50px !important;
 }
 
 .xterm-viewport {

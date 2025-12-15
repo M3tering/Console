@@ -53,7 +53,7 @@ wss.on("connection", (ws: WebSocket, request: http.IncomingMessage) => {
     .on("ready", () => {
       console.log("[ws/ssh]: SSH connection established");
       ssh.shell(
-        { term: "xterm-256", cols: parseInt(cols), rows: parseInt(rows) },
+        { term: "xterm", cols: parseInt(cols), rows: parseInt(rows) },
         (err, stream) => {
           if (err) {
             ws.send(`[ws/ssh]: SSH shell error: ${err.message}`);
