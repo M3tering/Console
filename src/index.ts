@@ -15,9 +15,10 @@ async function initializeApp() {
     setupDatabase();
     console.log("[info] Database setup completed");
 
-    // Initialize verifiers cache on startup
-    await initializeVerifiersCache();
-    console.log("[info] Verifiers cache initialized successfully");
+    // Initialize verifiers cache on startup 
+    // (disable ccip read initialization)
+    // await initializeVerifiersCache();
+    // console.log("[info] Verifiers cache initialized successfully");
 
     // Start MQTT handling
     handleUplinks();
