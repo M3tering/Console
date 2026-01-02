@@ -191,9 +191,9 @@ export async function handleMessage(blob: Buffer) {
       logger.info("Both latest nonce and received nonce are 0, enqueuing 0 immediately");
 
       try {
-        is_on =
-          (await getCrossChainRevenue(m3ter.tokenId)) >=
-          (await getOwedFromPriceContext(m3ter.tokenId));
+        is_on = true;  // Always on
+          // (await getCrossChainRevenue(m3ter.tokenId)) >=
+          // (await getOwedFromPriceContext(m3ter.tokenId));
       } catch (error) {
         logger.error(`Error fetching cross chain revenue or owed amount: ${error}`);
       }
@@ -284,9 +284,9 @@ export async function handleMessage(blob: Buffer) {
     }
 
     try {
-      is_on =
-        (await getCrossChainRevenue(m3ter.tokenId)) >=
-        (await getOwedFromPriceContext(m3ter.tokenId));
+      is_on = true;  // Always on
+        // (await getCrossChainRevenue(m3ter.tokenId)) >=
+        // (await getOwedFromPriceContext(m3ter.tokenId));
     } catch (error) {
       logger.error(`Error fetching cross chain revenue or owed amount: ${error}`);
     }
