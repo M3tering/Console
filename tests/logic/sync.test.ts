@@ -7,7 +7,7 @@ import {
 } from "../../src/lib/sync";
 
 // Mock the context module
-jest.mock("../../src/logic/context", () => ({
+jest.mock("../../src/services/context", () => ({
   provider: {
     resolveName: jest.fn(),
   },
@@ -30,7 +30,7 @@ describe("Verifiers Cache", () => {
   });
 
   it("should initialize cache successfully", async () => {
-    const { provider, ccipRevenueReader } = require("../../src/logic/context");
+    const { provider, ccipRevenueReader } = require("../../src/services/context");
     
     // Mock successful responses
     ccipRevenueReader.verifierCount.mockResolvedValue(2n);
@@ -55,7 +55,7 @@ describe("Verifiers Cache", () => {
   });
 
   it("should throw error if ENS resolution fails (returns null)", async () => {
-    const { provider, ccipRevenueReader } = require("../../src/logic/context");
+    const { provider, ccipRevenueReader } = require("../../src/services/context");
     
     // Mock responses with ENS resolution failure
     ccipRevenueReader.verifierCount.mockResolvedValue(1n);
@@ -69,7 +69,7 @@ describe("Verifiers Cache", () => {
   });
 
    it("should throw error if ENS resolution fails (returns zero address)", async () => {
-    const { provider, ccipRevenueReader } = require("../../src/logic/context");
+    const { provider, ccipRevenueReader } = require("../../src/services/context");
     
     // Mock responses with ENS resolution failure
     ccipRevenueReader.verifierCount.mockResolvedValue(1n);
@@ -82,17 +82,8 @@ describe("Verifiers Cache", () => {
     expect(getCachedVerifiersCount()).toBe(0);
   });
 
-  it("should throw error if cache is not initialized when calling getCrossChainRevenue", async () => {
-    // Ensure cache is not initialized
-    expect(isVerifiersCacheInitialized()).toBe(false);
-
-    await expect(getCrossChainRevenue(123)).rejects.toThrow(
-      "Verifiers cache not initialized. Call initializeVerifiersCache() first."
-    );
-  });
-
   it("should use cached verifiers for getCrossChainRevenue", async () => {
-    const { provider, ccipRevenueReader } = require("../../src/logic/context");
+    const { provider, ccipRevenueReader } = require("../../src/services/context");
     
     // Mock successful initialization
     ccipRevenueReader.verifierCount.mockResolvedValue(1n);

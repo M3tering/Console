@@ -79,11 +79,11 @@ export async function initializeVerifiersCache(): Promise<void> {
 /**
  * Get cached verifiers, throws error if cache is not initialized
  */
-function getCachedVerifiers(): VerifierInfo[] {
+async function getCachedVerifiers(): Promise<VerifierInfo[]> {
   if (!isCacheInitialized || !verifiersCache) {
-    throw new Error("Verifiers cache not initialized. Call initializeVerifiersCache() first.");
+    await initializeVerifiersCache();
   }
-  return verifiersCache;
+  return verifiersCache!;
 }
 
 /**
@@ -147,7 +147,7 @@ export async function getLatestTransactionNonce(meterIdentifier: number): Promis
 export async function getCrossChainRevenue(tokenId: number): Promise<number> {
   try {
     // Use cached verifiers instead of fetching them each time
-    const verifiers = getCachedVerifiers();
+    const verifiers = await getCachedVerifiers();
     
     let totalRevenue = 0;
 
