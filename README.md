@@ -54,3 +54,68 @@
 npm install
 npm run dev
 ```
+
+
+# Complete Hook Lifecycle for M3tering Console
+
+## Initialization Phase
+
+| Hook Name | Description | Parameters |
+|-----------|-------------|------------|
+| `onBeforeInit` | Called before any initialization begins | None |
+| `onDatabaseSetup` | Called after SQLite tables/jobs are initialized | None |
+| `onAfterInit` | Called after all initialization completes successfully | None |
+| `onInitError` | Called when an error occurs during initialization | `error: any` |
+
+## MQTT Connection Phase
+
+| Hook Name | Description | Parameters |
+|-----------|-------------|------------|
+| `onMqttConnect` | Called when MQTT client successfully connects to ChirpStack | `client: MqttClient` |
+| `onMqttSubscribed` | Called after subscribing to the device uplink topic | `client: MqttClient`, `topic: string` |
+| `onMqttError` | Called when an MQTT connection error occurs | `error: any`, `client: MqttClient` |
+| `onMqttReconnect` | Called when attempting to reconnect to the MQTT broker | `client: MqttClient` |
+
+## Message Ingestion Phase
+
+| Hook Name | Description | Parameters |
+|-----------|-------------|------------|
+| `onMessageReceived` | Called when a raw MQTT message is received (before parsing) | `blob: Buffer` |
+| `onMessageDropped` | Called when a message is dropped (e.g., device already locked) | `reason: string`, `devEui: string` |
+
+## Meter Discovery & Registration Phase
+
+| Hook Name | Description | Parameters |
+|-----------|-------------|------------|
+| `onMeterCreated` | Called after a new meter is saved to the database | `newMeter: MeterRecord` |
+
+## Nonce Synchronization Phase
+
+| Hook Name | Description | Parameters |
+|-----------|-------------|------------|
+| `onSyncEpochReached` | Called when the sync interval is reached for blockchain synchronization | None |
+
+## Downstream Distribution Phase
+
+| Hook Name | Description | Parameters |
+|-----------|-------------|------------|
+| `onTransactionDistribution` | Called before sending transactions to Arweave, prover node, Streamr, or other stores/loggers | `tokenId: number`, `decodedPayload: DecodedPayload`, `pendingTransactions: TransactionRecord[]` |
+
+## State Encoding & Device Response Phase
+
+| Hook Name | Description | Parameters |
+|-----------|-------------|------------|
+| `isOnStateCompute` | Called to determine the device's on/off state (returns boolean) | `m3terId: number` |
+| `onIsOnStateComputed` | Called after the on/off state has been computed | `m3terId: number`, `isOn: boolean` |
+| `onIsOnStateComputeError` | Called when an error occurs during state computation | `m3terId: number`, `error: any` |
+| `onStateEnqueued` | Called after the state is enqueued to gRPC for device response | `state: any`, `latitude: number`, `longitude: number` |
+
+## Error Handling & Cleanup Phase
+
+| Hook Name | Description | Parameters |
+|-----------|-------------|------------|
+| `onMessageError` | Called when any error occurs during message processing | `error: any` |
+| `onDeviceUnlocked` | Called when a device lock is released (regardless of outcome) | `devEui: string` |
+| `onMessageProcessingComplete` | Called when message processing finishes (success or error) | None |
+
+---
