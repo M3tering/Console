@@ -1,34 +1,36 @@
 import "dotenv/config";
-import { handleUplinks } from "./logic/mqtt";
+import { handleUplinks } from "./services/mqtt";
 import { Request, Response } from "express";
-import { app } from "./logic/context";
+import { app } from "./services/context";
+import { loadExtensionsFromConfig, runHook } from "./lib/utils";
 import setupDatabase, { getAllMeterRecords, deleteMeterByPublicKey } from "./store/sqlite";
-import { initializeVerifiersCache } from "./logic/sync";
-import { publishHeartbeatToStream } from "./logic/streamr";
 
 // Async initialization function
 async function initializeApp() {
   try {
     console.log("[info] Starting application initialization...");
 
+    // Load extensions from config
+    await loadExtensionsFromConfig();
+    console.log("[info] Extensions loaded successfully");
+
+    runHook("onBeforeInit");
+
     // Initialize database tables and jobs
     setupDatabase();
     console.log("[info] Database setup completed");
 
-    // Initialize verifiers cache on startup 
-    // (disable ccip read initialization)
-    // await initializeVerifiersCache();
-    // console.log("[info] Verifiers cache initialized successfully");
+    runHook("onDatabaseSetup")
 
     // Start MQTT handling
-    handleUplinks();
-    console.log("[info] MQTT uplinks handler started");
-
-    await publishHeartbeatToStream();
+    await handleUplinks();
 
     console.log("[info] Application initialization completed successfully");
+
+    runHook("onAfterInit");
   } catch (error) {
     console.error("[fatal] Failed to initialize application:", error);
+    runHook("onInitError", error);
     process.exit(1);
   }
 }

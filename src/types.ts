@@ -1,3 +1,45 @@
+import { MqttClient } from "mqtt/*";
+
+// Application configuration type (console.config.json)
+export type AppConfig = {
+  modules: string[];
+};
+
+// Hooks type for lifecycle events
+export type Hooks = {
+  onBeforeInit?: () => void | Promise<void>;
+  onDatabaseSetup?: () => void | Promise<void>;
+  onAfterInit?: () => void | Promise<void>;
+  onInitError?: (error: any) => void | Promise<void>;
+
+  onMqttConnect?: (client: MqttClient) => void | Promise<void>;
+  onMqttSubscribed?: (client: MqttClient, topic: string) => void | Promise<void>;
+  onMqttError?: (error: any, client: MqttClient) => void | Promise<void>;
+  onMqttReconnect?: (client: MqttClient) => void | Promise<void>;
+
+  onMessageReceived?: (blob: Buffer) => void | Promise<void>;
+  onMessageDropped?: (reason: string, devEui: string) => void | Promise<void>;
+
+  onMeterCreated?: (newMeter: MeterRecord) => void | Promise<void>;
+
+  onSyncEpochReached?: () => void | Promise<void>;
+
+  onTransactionDistribution?: (
+    tokenId: number,
+    decodedPayload: DecodedPayload,
+    pendingTransactions: TransactionRecord[]
+  ) => void | Promise<void>;
+
+  isOnStateCompute?: (m3terId: number) => boolean | Promise<boolean>;
+  onIsOnStateComputed?: (m3terId: number, isOn: boolean) => void | Promise<void>;
+  onIsOnStateComputeError?: (m3terId: number, error: any) => void | Promise<void>;
+  onStateEnqueued?: (state: any, latitude: number, longitude: number) => void | Promise<void>;
+
+  onMessageError?: (error: any) => void | Promise<void>;
+  onDeviceUnlocked?: (devEui: string) => void | Promise<void>;
+  onMessageProcessingComplete?: () => void | Promise<void>;
+};
+
 // Meter interface for database operations
 export interface MeterRecord {
   publicKey: string;

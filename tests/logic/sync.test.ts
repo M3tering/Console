@@ -4,7 +4,7 @@ import {
   isVerifiersCacheInitialized,
   getCachedVerifiersCount,
   getCrossChainRevenue,
-} from "../../src/logic/sync";
+} from "../../src/lib/sync";
 
 // Mock the context module
 jest.mock("../../src/logic/context", () => ({
@@ -19,7 +19,7 @@ jest.mock("../../src/logic/context", () => ({
 }));
 
 // Mock the retry utility
-jest.mock("../../src/utils", () => ({
+jest.mock("../../src/lib/utils", () => ({
   retry: jest.fn((fn) => fn()),
 }));
 

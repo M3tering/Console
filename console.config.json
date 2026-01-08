@@ -1,0 +1,8 @@
+{
+    "modules": [
+        "core/arweave",
+        "core/prover",
+        "core/streamr",
+        "core/is_on"
+    ]
+}
