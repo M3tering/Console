@@ -1,3 +1,6 @@
+# console configuration file
+console.config.json
+
 #test scripts
 emulate.ts
 test-database.ts
