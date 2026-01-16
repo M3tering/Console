@@ -88,12 +88,6 @@ npm run dev
 |-----------|-------------|------------|
 | `onMeterCreated` | Called after a new meter is saved to the database | `newMeter: MeterRecord` |
 
-## Nonce Synchronization Phase
-
-| Hook Name | Description | Parameters |
-|-----------|-------------|------------|
-| `onSyncEpochReached` | Called when the sync interval is reached for blockchain synchronization | None |
-
 ## Downstream Distribution Phase
 
 | Hook Name | Description | Parameters |

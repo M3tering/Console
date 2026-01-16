@@ -20,7 +20,7 @@ export function loadConfigurations(configPath: string = "console.config.json"): 
     const config: AppConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     return config;
   } catch (error) {
-    console.warn(`Could not load configuration from ${configPath}, using default configurations.`);
+    console.warn(`Could not load configuration from ${configPath}, using default configurations.` );
     return defaultConfigurations;
   }
 }

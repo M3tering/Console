@@ -224,7 +224,8 @@ export async function handleMessage(blob: Buffer) {
       logger.info(`Updated meter nonce to: ${expectedNonce}`);
 
       const pendingTransactions = getAllTransactionRecords();
-      runHook("onTransactionDistribution", m3ter.tokenId, decoded, pendingTransactions);
+      await runHook("onTransactionDistribution", m3ter.tokenId, decoded, pendingTransactions);
+    }
 
       try {
         is_on = await runHook("isOnStateCompute", m3ter.tokenId);
@@ -244,7 +245,6 @@ export async function handleMessage(blob: Buffer) {
         encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0)
       );
       runHook("onStateEnqueued", state, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0);
-    }
   } catch (error) {
     logger.error(`Error handling MQTT message: ${error}`);
     runHook("onMessageError", error);

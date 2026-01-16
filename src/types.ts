@@ -29,8 +29,6 @@ export type Hooks = {
 
   onMeterCreated?: (newMeter: MeterRecord) => void | Promise<void>;
 
-  onSyncEpochReached?: () => void | Promise<void>;
-
   onTransactionDistribution?: (
     tokenId: number,
     decodedPayload: DecodedPayload,
