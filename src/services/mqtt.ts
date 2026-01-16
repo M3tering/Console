@@ -20,7 +20,6 @@ import { getLatestTransactionNonce, pruneAndSyncOnchain, getCrossChainRevenue, g
 import { createMeterLogger } from "../utils/logger";
 
 const CHIRPSTACK_HOST = process.env.CHIRPSTACK_HOST;
-const SYNC_EPOCH = 100; // after 100 transactions, sync with blockchain
 const deviceLocks = new Map<string, boolean>(); // Lock per devEUI to prevent concurrent message processing
 
 export function handleUplinks(): Promise<boolean> {
@@ -198,21 +197,6 @@ export async function handleMessage(blob: Buffer) {
       );
 
       return; // Exit early without processing the transaction
-    }
-
-    if (m3ter.latestNonce % SYNC_EPOCH === 0) {
-      // sync with blockchain every SYNC_EPOCH transactions
-      await pruneAndSyncOnchain(m3ter.tokenId);
-
-      runHook("onSyncEpochReached");
-
-      logger.info(`Synced meter with blockchain: ${m3ter.tokenId}`);
-
-      m3ter = getMeterByPublicKey(`0x${publicKey}`) ?? null;
-
-      if (!m3ter) {
-        throw new Error("Meter not found after sync for public key: " + publicKey);
-      }
     }
 
     const expectedNonce = m3ter.latestNonce + 1;
