@@ -1,6 +1,8 @@
+import cron from "node-cron";
 import { StreamrClient } from "@streamr/sdk";
+import { getAllTransactionRecords } from "../../../store/sqlite";
 import { buildBatchPayload, retry } from "../../utils";
-import type { Hooks, TransactionRecord } from "../../../types";
+import type { BatchTransactionPayload, Hooks, TransactionRecord } from "../../../types";
 
 const { STREAMR_STREAM_ID, ETHEREUM_PRIVATE_KEY } = process.env;
 
@@ -9,33 +11,38 @@ if (!STREAMR_STREAM_ID || !ETHEREUM_PRIVATE_KEY) {
 }
 
 export default class implements Hooks {
-  async onTransactionDistribution(_: any, __: any, pendingTransactions: TransactionRecord[]) {
-    // send pending transactions to streamr
-    try {
-      console.info(`Sending pending transactions to streamr`);
+  async onAfterInit() {
+    // Schedule a cron job to publish pending transactions every hour
+    cron.schedule("0 * * * *", async () => {
+      console.log("Publishing pending transactions to Streamr...");
+      
+      const pendingTransactions = await this.getPendingTransactions();
+      if (pendingTransactions.length > 0) {
+        await retry(() => this.publishPendingTransactionsToStreamr(pendingTransactions), 3, 2000);
+      }
+    });
 
-     await retry(() => publishPendingTransactionsToStreamr(pendingTransactions), 3);
-
-      console.info(`Successfully sent pending transactions to streamr`);
-    } catch (error) {
-      console.error(`Error sending pending transactions to streamr: ${error}`);
-    }
+    return;
   }
-}
 
-async function publishPendingTransactionsToStreamr(pendingTransactions: TransactionRecord[]) {
-  const streamrClient = new StreamrClient({
-    auth: {
-      privateKey: ETHEREUM_PRIVATE_KEY!,
-    },
-  });
+  async getPendingTransactions(): Promise<TransactionRecord[]> {
+    return getAllTransactionRecords();
+  }
 
-  const stream = await streamrClient.getStream(STREAMR_STREAM_ID!);
+  async publishPendingTransactionsToStreamr(pendingTransactions: TransactionRecord[]) {
+    const streamrClient = new StreamrClient({
+      auth: {
+        privateKey: ETHEREUM_PRIVATE_KEY!,
+      },
+    });
 
-  const batchPayload = buildBatchPayload(pendingTransactions);
+    const stream = await streamrClient.getStream(STREAMR_STREAM_ID!);
 
-  await stream.publish(batchPayload);
+    const batchPayload = buildBatchPayload(pendingTransactions);
 
-  // destroy the client to free resources
-  await streamrClient.destroy();
+    await stream.publish(batchPayload);
+
+    // destroy the client to free resources
+    await streamrClient.destroy();
+  }
 }
