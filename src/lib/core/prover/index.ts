@@ -8,7 +8,7 @@ export default class implements Hooks {
     // send pending transactions to prover node
     try {
       const proverURL = await this.getProverURL();
-      
+
       if (!proverURL) {
         console.warn("No prover URL configured. Skipping sending transactions to prover.");
         return;
@@ -58,8 +58,6 @@ export default class implements Hooks {
     console.log("[info] Sending", pendingTransactions.length, "transactions to prover at", proverURL);
 
     const requestPayload = buildBatchPayload(pendingTransactions);
-
-    console.log("[info] Request payload:", requestPayload);
 
     return await this.sendTransactionsToProver(proverURL, requestPayload);
   }
