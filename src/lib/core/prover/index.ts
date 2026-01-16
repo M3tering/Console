@@ -8,6 +8,12 @@ export default class implements Hooks {
     // send pending transactions to prover node
     try {
       const proverURL = await this.getProverURL();
+      
+      if (!proverURL) {
+        console.warn("No prover URL configured. Skipping sending transactions to prover.");
+        return;
+      }
+
       console.info(`Sending pending transactions to prover: ${proverURL}`);
 
       const response = await this.sendPendingTransactionsToProver(proverURL!, pendingTransactions);
