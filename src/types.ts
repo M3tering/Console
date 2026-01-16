@@ -3,6 +3,10 @@ import { MqttClient } from "mqtt/*";
 // Application configuration type (console.config.json)
 export type AppConfig = {
   modules: string[];
+  streamr: {
+    streamId: string[];
+    cronSchedule: string;
+  };
 };
 
 // Hooks type for lifecycle events

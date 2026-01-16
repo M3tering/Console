@@ -1,24 +1,29 @@
 import cron from "node-cron";
 import { StreamrClient } from "@streamr/sdk";
 import { getAllTransactionRecords } from "../../../store/sqlite";
-import { buildBatchPayload, retry } from "../../utils";
+import { buildBatchPayload, loadConfigurations, retry } from "../../utils";
 import type { BatchTransactionPayload, Hooks, TransactionRecord } from "../../../types";
 
-const { STREAMR_STREAM_ID, ETHEREUM_PRIVATE_KEY } = process.env;
+const { ETHEREUM_PRIVATE_KEY } = process.env;
 
-if (!STREAMR_STREAM_ID || !ETHEREUM_PRIVATE_KEY) {
-  throw new Error("Missing STREAMR_STREAM_ID or ETHEREUM_PRIVATE_KEY in environment variables");
+if (!ETHEREUM_PRIVATE_KEY) {
+  throw new Error("Missing ETHEREUM_PRIVATE_KEY in environment variables");
 }
 
 export default class implements Hooks {
+  private config = loadConfigurations();
+
   async onAfterInit() {
     // Schedule a cron job to publish pending transactions every hour
-    cron.schedule("0 * * * *", async () => {
+    cron.schedule(this.config.streamr.cronSchedule, async () => {
       console.log("Publishing pending transactions to Streamr...");
-      
+
       const pendingTransactions = await this.getPendingTransactions();
       if (pendingTransactions.length > 0) {
-        await retry(() => this.publishPendingTransactionsToStreamr(pendingTransactions), 3, 2000);
+        for (const STREAMR_STREAM_ID of this.config.streamr.streamId) {
+          console.log(`Publishing to Streamr stream: ${STREAMR_STREAM_ID}`);
+          await retry(() => this.publishPendingTransactionsToStreamr(STREAMR_STREAM_ID, pendingTransactions), 3, 2000);
+        }
       }
     });
 
@@ -29,7 +34,7 @@ export default class implements Hooks {
     return getAllTransactionRecords();
   }
 
-  async publishPendingTransactionsToStreamr(pendingTransactions: TransactionRecord[]) {
+  async publishPendingTransactionsToStreamr(STREAMR_STREAM_ID: string, pendingTransactions: TransactionRecord[]) {
     const streamrClient = new StreamrClient({
       auth: {
         privateKey: ETHEREUM_PRIVATE_KEY!,

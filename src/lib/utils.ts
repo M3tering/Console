@@ -4,9 +4,26 @@ import { createPublicKey, verify } from "crypto";
 import type { TransactionRecord, BatchTransactionPayload, Hooks, AppConfig } from "../types";
 
 const extensions: Hooks[] = [];
+export const defaultConfigurations: AppConfig = {
+  modules: ["core/arweave", "core/prover", "core/streamr", "core/is_on"],
+  streamr: {
+    streamId: ["0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"],
+    cronSchedule: "0 * * * *",
+  },
+};
+
+export function loadConfigurations(configPath: string = "console.config.json"): AppConfig {
+  try {
+    const config: AppConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    return config;
+  } catch (error) {
+    console.warn(`Could not load configuration from ${configPath}, using default configurations. Error:`, error);
+    return defaultConfigurations;
+  }
+}
 
 export async function loadExtensionsFromConfig(configPath: string = "console.config.json"): Promise<Hooks[]> {
-  const config: AppConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  const config: AppConfig = loadConfigurations(configPath);
 
   for (const modulePath of config.modules) {
     const resolved = path.resolve(__dirname, modulePath);
