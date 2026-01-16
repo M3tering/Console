@@ -27,7 +27,6 @@
    CHIRPSTACK_HOST=localhost
    MAINNET_RPC=https://sepolia.drpc.org
    PREFERRED_PROVER_NODE=http://34.244.149.153
-   STREAMR_STREAM_ID="0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"
    ETHEREUM_PRIVATE_KEY="..."
    ```
 
