@@ -2,7 +2,7 @@ import cron from "node-cron";
 import { StreamrClient } from "@streamr/sdk";
 import { getAllTransactionRecords } from "../../../store/sqlite";
 import { buildBatchPayload, loadConfigurations, retry } from "../../utils";
-import type { BatchTransactionPayload, Hooks, TransactionRecord } from "../../../types";
+import type { Hooks, TransactionRecord } from "../../../types";
 
 const { ETHEREUM_PRIVATE_KEY } = process.env;
 
@@ -14,7 +14,9 @@ export default class implements Hooks {
   private config = loadConfigurations();
 
   async onAfterInit() {
-    // Schedule a cron job to publish pending transactions every hour
+    console.log("Registering Streamr cron job...");
+
+    // Schedule a cron job to publish pending transactions
     cron.schedule(this.config.streamr.cronSchedule, async () => {
       console.log("Publishing pending transactions to Streamr...");
 
