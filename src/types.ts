@@ -7,6 +7,9 @@ export type AppConfig = {
     streamId: string[];
     cronSchedule: string;
   };
+  prune_sync: {
+    cronSchedule: string;
+  };
 };
 
 // Hooks type for lifecycle events

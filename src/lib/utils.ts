@@ -5,9 +5,12 @@ import type { TransactionRecord, BatchTransactionPayload, Hooks, AppConfig } fro
 
 const extensions: Hooks[] = [];
 export const defaultConfigurations: AppConfig = {
-  modules: ["core/arweave", "core/prover", "core/streamr", "core/is_on"],
+  modules: ["core/arweave", "core/prover", "core/streamr", "core/is_on", "core/prune_sync"],
   streamr: {
     streamId: ["0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"],
+    cronSchedule: "0 * * * *",
+  },
+  prune_sync: {
     cronSchedule: "0 * * * *",
   },
 };
