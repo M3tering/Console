@@ -44,7 +44,7 @@ export async function runHook<K extends keyof Hooks>(hook: K, ...args: Parameter
   for (const ext of extensions) {
     const fn = ext[hook];
     let functionReturn;
-    if (fn) functionReturn = await (fn as any)(...args);
+    if (fn) functionReturn = await (fn as any).call(ext, ...args);
 
     if (typeof functionReturn === "boolean" && hook === "isOnStateCompute") {
       result = result && functionReturn;

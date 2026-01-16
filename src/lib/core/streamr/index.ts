@@ -17,17 +17,25 @@ export default class implements Hooks {
     console.log("Registering Streamr cron job...");
 
     // Schedule a cron job to publish pending transactions
-    cron.schedule(this.config.streamr.cronSchedule, async () => {
-      console.log("Publishing pending transactions to Streamr...");
+    cron.schedule(
+      this.config.streamr.cronSchedule,
+      async () => {
+        console.log("Publishing pending transactions to Streamr...");
 
-      const pendingTransactions = await this.getPendingTransactions();
-      if (pendingTransactions.length > 0) {
-        for (const STREAMR_STREAM_ID of this.config.streamr.streamId) {
-          console.log(`Publishing to Streamr stream: ${STREAMR_STREAM_ID}`);
-          await retry(() => this.publishPendingTransactionsToStreamr(STREAMR_STREAM_ID, pendingTransactions), 3, 2000);
+        const pendingTransactions = await this.getPendingTransactions();
+        if (pendingTransactions.length > 0) {
+          for (const STREAMR_STREAM_ID of this.config.streamr.streamId) {
+            console.log(`Publishing to Streamr stream: ${STREAMR_STREAM_ID}`);
+            await retry(
+              () => this.publishPendingTransactionsToStreamr(STREAMR_STREAM_ID, pendingTransactions),
+              3,
+              2000
+            );
+          }
         }
-      }
-    });
+      },
+      { name: "streamr-publish-pending-transactions", noOverlap: true }
+    );
 
     return;
   }

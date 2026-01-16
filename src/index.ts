@@ -22,8 +22,13 @@ async function initializeApp() {
 
     runHook("onDatabaseSetup")
 
+    try{
     // Start MQTT handling
     await handleUplinks();
+    } catch (mqttError) {
+      console.error("[error] MQTT initialization failed:", mqttError);
+      // throw mqttError;
+    }
 
     console.log("[info] Application initialization completed successfully");
 
