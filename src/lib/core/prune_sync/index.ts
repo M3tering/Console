@@ -21,5 +21,8 @@ export default class implements Hooks {
         }
       }
     });
+
+    console.log("prune_sync cron job registered.");
+    return;
   }
 }

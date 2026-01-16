@@ -37,6 +37,7 @@ export default class implements Hooks {
       { name: "streamr-publish-pending-transactions", noOverlap: true }
     );
 
+    console.log("Streamr cron job registered.");
     return;
   }
 
