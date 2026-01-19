@@ -1,9 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { createPublicKey, verify } from "crypto";
-import type { TransactionRecord, BatchTransactionPayload, Hooks, AppConfig } from "../types";
+import type { TransactionRecord, BatchTransactionPayload, Hooks, AppConfig, UIHooks, UIAppIcon, UIAppWindow, UIAction } from "../types";
 
 const extensions: Hooks[] = [];
+const uiExtensions: Map<string, UIHooks> = new Map();
 export const defaultConfigurations: AppConfig = {
   modules: ["core/arweave", "core/prover", "core/streamr", "core/is_on", "core/prune_sync"],
   streamr: {
@@ -52,6 +53,113 @@ export async function runHook<K extends keyof Hooks>(hook: K, ...args: Parameter
   }
 
   return result;
+}
+
+// ==========================================
+// UI Extension System
+// ==========================================
+
+/**
+ * Load UI extensions from configuration file
+ * Looks for 'uiModules' key in config, which maps module IDs to their paths
+ */
+export async function loadUIExtensionsFromConfig(configPath: string = "console.config.json"): Promise<Map<string, UIHooks>> {
+  const config = loadConfigurations(configPath) as AppConfig & { uiModules?: Record<string, string> };
+
+  if (!config.uiModules) {
+    console.log("[ui] No UI modules configured");
+    return uiExtensions;
+  }
+
+  for (const [moduleId, modulePath] of Object.entries(config.uiModules)) {
+    try {
+      const resolved = path.resolve(__dirname, modulePath);
+      const mod = await import(resolved);
+      const instance = new mod.default();
+      uiExtensions.set(moduleId, instance);
+      console.log(`[ui] Loaded UI module: ${moduleId}`);
+    } catch (error) {
+      console.error(`[ui] Failed to load UI module ${moduleId}:`, error);
+    }
+  }
+
+  return uiExtensions;
+}
+
+/**
+ * Get all UI components (icons, windows, actions) from loaded UI extensions
+ */
+export async function getUIComponents(): Promise<{
+  icons: UIAppIcon[];
+  windows: UIAppWindow[];
+  actions: Map<string, UIAction[]>;
+}> {
+  const icons: UIAppIcon[] = [];
+  const windows: UIAppWindow[] = [];
+  const actions: Map<string, UIAction[]> = new Map();
+
+  for (const [moduleId, ext] of uiExtensions) {
+    try {
+      if (ext.getAppIcon) {
+        const icon = await ext.getAppIcon();
+        icons.push(icon);
+      }
+      if (ext.getAppWindow) {
+        const window = await ext.getAppWindow();
+        windows.push(window);
+      }
+      if (ext.getActions) {
+        const moduleActions = await ext.getActions();
+        actions.set(moduleId, moduleActions);
+      }
+    } catch (error) {
+      console.error(`[ui] Error getting components from ${moduleId}:`, error);
+    }
+  }
+
+  return { icons, windows, actions };
+}
+
+/**
+ * Get a specific UI extension by module ID
+ */
+export function getUIExtension(moduleId: string): UIHooks | undefined {
+  return uiExtensions.get(moduleId);
+}
+
+/**
+ * Invoke an action from a UI module
+ */
+export async function invokeUIAction(
+  moduleId: string,
+  actionId: string
+): Promise<{ success: boolean; message?: string; data?: any }> {
+  const ext = uiExtensions.get(moduleId);
+  if (!ext) {
+    return { success: false, message: `Module '${moduleId}' not found` };
+  }
+
+  if (!ext.getActions) {
+    return { success: false, message: `Module '${moduleId}' has no actions` };
+  }
+
+  const actions = await ext.getActions();
+  const action = actions.find((a) => a.id === actionId);
+
+  if (!action) {
+    return { success: false, message: `Action '${actionId}' not found in module '${moduleId}'` };
+  }
+
+  try {
+    const result = await action.handler();
+    return {
+      success: true,
+      message: result?.message || `Action '${actionId}' executed successfully`,
+      data: result?.data,
+    };
+  } catch (error: any) {
+    return { success: false, message: error.message || "Action failed" };
+  }
 }
 
 /**

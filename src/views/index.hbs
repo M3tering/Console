@@ -97,6 +97,21 @@
           </div>
         </div>
 
+        {{! {/* Dynamic Module Icons */} }}
+        {{#each icons}}
+        <div id="{{id}}-icon">
+          <div>
+            <button
+              class="nes-btn {{buttonClass}}"
+              onclick="clickButton(); toggleApp('{{id}}', true)"
+            >
+              {{{iconHtml}}}
+            </button>
+            <p>{{label}}</p>
+          </div>
+        </div>
+        {{/each}}
+
         {{! {/* M3ters Table */} }}
         <div
           class="nes-table-responsive nes-container hidden"
@@ -217,6 +232,31 @@
             <p id="status-message">Enter credentials and click Connect to start terminal session</p>
           </div>
         </div>
+
+        {{! {/* Dynamic Module Windows */} }}
+        {{#each windows}}
+        <div class="nes-container {{containerClass}} hidden" id="{{id}}" style="background-color: white; margin-top: 10px;">
+          <div>
+            <button
+              class="nes-btn is-error"
+              onclick="clickButton(); toggleApp('{{id}}', false)"
+            >
+              <i class="nes-icon close is-small"></i>
+            </button>
+            <button
+              class="nes-btn"
+              style="font-size: 12px;"
+              onclick="clickButton(); toggleApp('{{id}}', false)"
+            >
+              _
+            </button>
+            <h3 style="display: inline; margin-left: 10px;">{{title}}</h3>
+          </div>
+          <div style="margin-top: 10px;">
+            {{{contentHtml}}}
+          </div>
+        </div>
+        {{/each}}
       </div>
     </div>
 

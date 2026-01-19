@@ -52,13 +52,18 @@ export default class implements Hooks {
       },
     });
 
-    const stream = await streamrClient.getStream(STREAMR_STREAM_ID!);
+    try {
+      const stream = await streamrClient.getStream(STREAMR_STREAM_ID!);
 
-    const batchPayload = buildBatchPayload(pendingTransactions);
+      const batchPayload = buildBatchPayload(pendingTransactions);
 
-    await stream.publish(batchPayload);
-
-    // destroy the client to free resources
-    await streamrClient.destroy();
+      await stream.publish(batchPayload);
+    } catch (error) {
+      console.error(`Failed to publish to Streamr: ${(error as Error).message}`);
+      throw error;
+    } finally {
+      // destroy the client to free resources
+      await streamrClient.destroy();
+    }
   }
 }

@@ -3,6 +3,7 @@ import { MqttClient } from "mqtt/*";
 // Application configuration type (console.config.json)
 export type AppConfig = {
   modules: string[];
+  uiModules?: Record<string, string>;
   streamr: {
     streamId: string[];
     cronSchedule: string;
@@ -97,4 +98,65 @@ export interface VerifierInfo {
   ensName: string;
   targetAddress: string;
   verifierAddress: string;
+}
+
+// ==========================================
+// UI Extension Types
+// ==========================================
+
+/**
+ * Represents an app icon displayed in the desktop UI
+ */
+export interface UIAppIcon {
+  /** Unique identifier for the icon */
+  id: string;
+  /** Display label shown below the icon */
+  label: string;
+  /** HTML content for the icon (can use NES.css classes) */
+  iconHtml: string;
+  /** Optional CSS class for the button */
+  buttonClass?: string;
+}
+
+/**
+ * Represents an app window/panel in the UI
+ */
+export interface UIAppWindow {
+  /** Unique identifier matching the icon id */
+  id: string;
+  /** Window title */
+  title: string;
+  /** HTML content for the window body */
+  contentHtml: string;
+  /** Optional CSS class for the container */
+  containerClass?: string;
+}
+
+/**
+ * Represents an action that can be triggered from the UI
+ */
+export interface UIAction {
+  /** Unique identifier for the action */
+  id: string;
+  /** Display label for the action button */
+  label: string;
+  /** Optional CSS class for the button (e.g., 'is-primary', 'is-warning') */
+  buttonClass?: string;
+  /** Handler function called when action is triggered */
+  handler: () => void | Promise<void | { message?: string; data?: any }>;
+}
+
+/**
+ * UI Hooks interface for extending the console UI
+ * Modules can implement this to add icons, windows, and actions to the web interface
+ */
+export type UIHooks = {
+  /** Return an app icon to display on the desktop */
+  getAppIcon?: () => UIAppIcon | Promise<UIAppIcon>;
+  /** Return an app window/panel configuration */
+  getAppWindow?: () => UIAppWindow | Promise<UIAppWindow>;
+  /** Return available actions for this module */
+  getActions?: () => UIAction[] | Promise<UIAction[]>;
+  /** Return metadata/status data for display */
+  getStatusData?: () => Record<string, any> | Promise<Record<string, any>>;
 }
