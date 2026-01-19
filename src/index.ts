@@ -31,7 +31,7 @@ async function initializeApp() {
       await handleUplinks();
     } catch (mqttError) {
       console.error("[error] MQTT initialization failed:", mqttError);
-      // throw mqttError; // TODO: uncomment after testing
+      throw mqttError;
     }
 
     console.log("[info] Application initialization completed successfully");
