@@ -147,8 +147,13 @@ export default class implements UIHooks {
       console.log(`[streamr-ui] Published ${pendingTransactions.length} transactions to stream ${streamId}`);
     } catch (error) {
       console.error(`[streamr-ui] Error publishing to Streamr:`, error);
+      throw error;
     } finally {
-      await streamrClient.destroy();
+      try {
+        await streamrClient.destroy();
+      } catch (destroyError) {
+        console.error(`[streamr-ui] Error destroying client:`, destroyError);
+      }
     }
   }
 }

@@ -66,9 +66,14 @@ export default class implements Hooks {
       await new Promise((resolve) => setTimeout(resolve, 2000));
     } catch (error) {
       console.error(`[streamr] Error publishing to Streamr:`, error);
+      throw error;
     } finally {
       // destroy the client to free resources
-      await streamrClient.destroy();
+      try {
+        await streamrClient.destroy();
+      } catch (destroyError) {
+        console.error(`[streamr] Error destroying client:`, destroyError);
+      }
     }
   }
 }
