@@ -29,12 +29,12 @@ export default class implements Hooks {
             await retry(
               () => this.publishPendingTransactionsToStreamr(STREAMR_STREAM_ID, pendingTransactions),
               3,
-              2000
+              2000,
             );
           }
         }
       },
-      { name: "streamr-publish-pending-transactions", noOverlap: true }
+      { name: "streamr-publish-pending-transactions", noOverlap: true },
     );
 
     console.log("Streamr cron job registered.");
@@ -53,14 +53,10 @@ export default class implements Hooks {
     });
 
     try {
-      const stream = await retry(
-        () => streamrClient.getStream(STREAMR_STREAM_ID!),
-        3,
-        2000
-      );
+      const stream = await retry(() => streamrClient.getStream(STREAMR_STREAM_ID!), 3, 2000);
 
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      
+
       const batchPayload = buildBatchPayload(pendingTransactions);
       await stream.publish(batchPayload);
 
