@@ -140,8 +140,9 @@ export default class implements UIHooks {
     });
 
     try {
-      const stream = await streamrClient.getStream(streamId);
+      const stream = await retry(() => streamrClient.getStream(streamId), 3, 2000);
       const batchPayload = buildBatchPayload(pendingTransactions);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
       await stream.publish(batchPayload);
     } finally {
       await streamrClient.destroy();
