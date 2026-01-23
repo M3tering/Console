@@ -53,17 +53,19 @@ export default class implements Hooks {
     });
 
     try {
+      console.log(`[streamr] Connecting to ${STREAMR_STREAM_ID}...`);
       const stream = await retry(() => streamrClient.getStream(STREAMR_STREAM_ID!), 3, 2000);
 
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
+      console.log(`[streamr] Connected. Publishing ${pendingTransactions.length} transactions...`);
       const batchPayload = buildBatchPayload(pendingTransactions);
       await stream.publish(batchPayload);
 
+      console.log(`[streamr] Published ${pendingTransactions.length} transactions to stream ${STREAMR_STREAM_ID}`);
       await new Promise((resolve) => setTimeout(resolve, 2000));
     } catch (error) {
-      console.error(`Failed to publish to Streamr: ${(error as Error).message}`);
-      throw error;
+      console.error(`[streamr] Error publishing to Streamr:`, error);
     } finally {
       // destroy the client to free resources
       await streamrClient.destroy();

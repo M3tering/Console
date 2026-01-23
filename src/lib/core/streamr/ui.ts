@@ -140,10 +140,17 @@ export default class implements UIHooks {
     });
 
     try {
+      console.log(`[streamr-ui] Connecting to ${streamId}...`);
       const stream = await retry(() => streamrClient.getStream(streamId), 3, 2000);
+
+      console.log(`[streamr-ui] Connected. Publishing ${pendingTransactions.length} transactions...`);
       const batchPayload = buildBatchPayload(pendingTransactions);
+
       await new Promise((resolve) => setTimeout(resolve, 2000));
       await stream.publish(batchPayload);
+      console.log(`[streamr-ui] Published ${pendingTransactions.length} transactions to stream ${streamId}`);
+    } catch (error) {
+      console.error(`[streamr-ui] Error publishing to Streamr:`, error);
     } finally {
       await streamrClient.destroy();
     }
