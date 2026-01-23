@@ -71,20 +71,25 @@ Both systems use a config-driven approach where modules are loaded dynamically f
 
 ```json
 {
-  "modules": [
-    "core/arweave",
-    "core/prover",
-    "core/streamr",
-    "core/is_on",
-    "core/prune_sync"
-  ],
-  "uiModules": {
-    "streamr": "core/streamr/ui"
-  },
-  "streamr": {
-    "streamId": ["0x.../m3tering/test"],
-    "cronSchedule": "0 * * * *"
-  }
+    "modules": [
+        "core/arweave",
+        "core/prover",
+        "core/streamr",
+        "core/is_on",
+        "core/prune_sync"
+    ],
+    "uiModules": {
+        "streamr": "core/streamr/ui"
+    },
+    "streamr": {
+        "streamId": [
+            "0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"
+        ],
+        "cronSchedule": "0 * * * *"
+    },
+    "prune_sync": {
+        "cronSchedule": "0 * * * *"
+    }
 }
 ```
 

@@ -53,11 +53,18 @@ export default class implements Hooks {
     });
 
     try {
-      const stream = await streamrClient.getStream(STREAMR_STREAM_ID!);
+      const stream = await retry(
+        () => streamrClient.getStream(STREAMR_STREAM_ID!),
+        3,
+        2000
+      );
 
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      
       const batchPayload = buildBatchPayload(pendingTransactions);
-
       await stream.publish(batchPayload);
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     } catch (error) {
       console.error(`Failed to publish to Streamr: ${(error as Error).message}`);
       throw error;

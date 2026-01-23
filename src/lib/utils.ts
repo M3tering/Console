@@ -1,12 +1,24 @@
 import fs from "fs";
 import path from "path";
 import { createPublicKey, verify } from "crypto";
-import type { TransactionRecord, BatchTransactionPayload, Hooks, AppConfig, UIHooks, UIAppIcon, UIAppWindow, UIAction } from "../types";
+import type {
+  TransactionRecord,
+  BatchTransactionPayload,
+  Hooks,
+  AppConfig,
+  UIHooks,
+  UIAppIcon,
+  UIAppWindow,
+  UIAction,
+} from "../types";
 
 const extensions: Hooks[] = [];
 const uiExtensions: Map<string, UIHooks> = new Map();
 export const defaultConfigurations: AppConfig = {
   modules: ["core/arweave", "core/prover", "core/streamr", "core/is_on", "core/prune_sync"],
+  uiModules: {
+    streamr: "core/streamr/ui",
+  },
   streamr: {
     streamId: ["0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"],
     cronSchedule: "0 * * * *",
@@ -21,7 +33,7 @@ export function loadConfigurations(configPath: string = "console.config.json"): 
     const config: AppConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     return config;
   } catch (error) {
-    console.warn(`Could not load configuration from ${configPath}, using default configurations.` );
+    console.warn(`Could not load configuration from ${configPath}, using default configurations.`);
     return defaultConfigurations;
   }
 }
@@ -63,7 +75,9 @@ export async function runHook<K extends keyof Hooks>(hook: K, ...args: Parameter
  * Load UI extensions from configuration file
  * Looks for 'uiModules' key in config, which maps module IDs to their paths
  */
-export async function loadUIExtensionsFromConfig(configPath: string = "console.config.json"): Promise<Map<string, UIHooks>> {
+export async function loadUIExtensionsFromConfig(
+  configPath: string = "console.config.json",
+): Promise<Map<string, UIHooks>> {
   const config = loadConfigurations(configPath) as AppConfig & { uiModules?: Record<string, string> };
 
   if (!config.uiModules) {
@@ -132,7 +146,7 @@ export function getUIExtension(moduleId: string): UIHooks | undefined {
  */
 export async function invokeUIAction(
   moduleId: string,
-  actionId: string
+  actionId: string,
 ): Promise<{ success: boolean; message?: string; data?: any }> {
   const ext = uiExtensions.get(moduleId);
   if (!ext) {
