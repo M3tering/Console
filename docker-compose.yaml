@@ -1,5 +1,6 @@
 services:
   console:
+    image: ghcr.io/m3tering/console:main
     build: .
     network_mode: host
     restart: unless-stopped
