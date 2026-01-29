@@ -1,34 +1,45 @@
 import "dotenv/config";
-import { handleUplinks } from "./logic/mqtt";
+import { handleUplinks } from "./services/mqtt";
 import { Request, Response } from "express";
-import { app } from "./logic/context";
-import setupDatabase, {
-  getAllMeterRecords,
-  deleteMeterByPublicKey,
-} from "./store/sqlite";
-import { initializeVerifiersCache } from "./logic/sync";
-import "./logic/streamr";
+import { app } from "./services/context";
+import { loadExtensionsFromConfig, loadUIExtensionsFromConfig, getUIComponents, invokeUIAction, runHook } from "./lib/utils";
+import setupDatabase, { getAllMeterRecords, deleteMeterByPublicKey } from "./store/sqlite";
 
 // Async initialization function
 async function initializeApp() {
   try {
     console.log("[info] Starting application initialization...");
-    
+
+    // Load extensions from config
+    await loadExtensionsFromConfig();
+    console.log("[info] Extensions loaded successfully");
+
+    // Load UI extensions
+    await loadUIExtensionsFromConfig();
+    console.log("[info] UI extensions loaded successfully");
+
+    runHook("onBeforeInit");
+
     // Initialize database tables and jobs
     setupDatabase();
     console.log("[info] Database setup completed");
 
-    // Initialize verifiers cache on startup
-    await initializeVerifiersCache();
-    console.log("[info] Verifiers cache initialized successfully");
-    
-    // Start MQTT handling
-    handleUplinks();
-    console.log("[info] MQTT uplinks handler started");
-    
+    runHook("onDatabaseSetup");
+
+    try {
+      // Start MQTT handling
+      await handleUplinks();
+    } catch (mqttError) {
+      console.error("[error] MQTT initialization failed:", mqttError);
+      throw mqttError;
+    }
+
     console.log("[info] Application initialization completed successfully");
+
+    runHook("onAfterInit");
   } catch (error) {
     console.error("[fatal] Failed to initialize application:", error);
+    runHook("onInitError", error);
     process.exit(1);
   }
 }
@@ -38,26 +49,26 @@ initializeApp();
 
 app.get("/", async (req: Request, res: Response) => {
   const m3ters = getAllMeterRecords();
-  res.render("index", { m3ters });
+  
+  // Get UI components from loaded UI extensions
+  const { icons, windows } = await getUIComponents();
+  
+  res.render("index", { m3ters, icons, windows });
   console.log("[server]: Server handled GET request at `/`");
 });
 
-app.post("/", async (req: Request, res: Response) => {
-  // try {
-  //   const tokenId = (await req.body).tokenId;
-  //   const publicKey = await m3ter.publicKey(tokenId);
-  //   const latestNonce = await rollup.nonce(tokenId);
-  //   saveMeter({
-  //     publicKey,
-  //     tokenId,
-  //     latestNonce: Number(latestNonce),
-  //     devEui: (await req.body).devEui ?? null,
-  //   });
-  // } catch (err) {
-  //   console.error(err);
-  // }
-  res.redirect("/");
-  console.log("[server]: Server handled POST request at `/`");
+// API endpoint to invoke UI actions
+app.post("/api/actions/:moduleId/:actionId", async (req: Request, res: Response) => {
+  const { moduleId, actionId } = req.params;
+  console.log(`[server]: Invoking action '${actionId}' from module '${moduleId}'`);
+  
+  const result = await invokeUIAction(moduleId, actionId);
+  
+  if (result.success) {
+    res.status(200).json(result);
+  } else {
+    res.status(400).json(result);
+  }
 });
 
 app.delete("/delete-meter", async (req: Request, res: Response) => {
