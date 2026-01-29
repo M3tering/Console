@@ -1,5 +1,5 @@
 # console configuration file
-console.config.json
+# console.config.json
 
 #test scripts
 emulate.ts
