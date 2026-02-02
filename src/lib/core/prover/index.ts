@@ -1,7 +1,7 @@
 import { buildBatchPayload } from "../../utils";
 import type { BatchTransactionPayload, Hooks, TransactionRecord } from "../../../types";
 
-const PREFERRED_PROVER_NODE = process.env.PREFERRED_PROVER_NODE || "https://prover.m3ter.ing";
+const PREFERRED_PROVER_NODE = process.env.PREFERRED_PROVER_NODE;
 
 export default class implements Hooks {
   async onTransactionDistribution(_: any, __: any, pendingTransactions: TransactionRecord[]) {
@@ -51,7 +51,7 @@ export default class implements Hooks {
   }
 
   async getProverURL(): Promise<string | null> {
-    return PREFERRED_PROVER_NODE;
+    return PREFERRED_PROVER_NODE || null;
   }
 
   async sendPendingTransactionsToProver(proverURL: string, pendingTransactions: TransactionRecord[]) {
