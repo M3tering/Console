@@ -68,7 +68,7 @@ export default class implements Hooks {
 
     try {
       console.log(`[streamr] Connecting to ${STREAMR_STREAM_ID}...`);
-      const stream = await retry(() => streamrClient.getStream(STREAMR_STREAM_ID!), 3, 2000);
+      const stream = await retry(() => streamrClient.getStream(STREAMR_STREAM_ID!), 3, 10000);
 
       await new Promise((resolve) => setTimeout(resolve, 2000)); // wait for 2 seconds to ensure connection is established
 
@@ -77,7 +77,7 @@ export default class implements Hooks {
       await stream.publish(batchPayload);
 
       console.log(`[streamr] Published ${pendingTransactions.length} transactions to stream ${STREAMR_STREAM_ID}`);
-      await new Promise((resolve) => setTimeout(resolve, 20000)); // wait for 20 seconds to ensure message is sent
+      await new Promise((resolve) => setTimeout(resolve, 100000)); // wait for 100 seconds to ensure message is sent
     } catch (error) {
       console.error(`[streamr] Error publishing to Streamr:`, error);
       throw error;

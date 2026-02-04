@@ -13,7 +13,6 @@ RUN npm install --include=dev && npm cache clean --force
 # Copy application files
 COPY babel.config.js .
 COPY tsconfig.json .
-COPY .env .
 COPY src ./src
 
 # Build project
