@@ -28,30 +28,30 @@ let isCacheInitialized = false;
 export async function initializeVerifiersCache(): Promise<void> {
   try {
     console.log("[info] Initializing verifiers cache...");
-    
+
     // Get the number of verifiers
     const verifierCount = Number(await retry(() => ccipRevenueReaderContract.verifierCount()));
     console.log(`[info] Found ${verifierCount} verifiers to cache`);
-    
+
     const verifiers: VerifierInfo[] = [];
-    
+
     // Fetch all verifiers and resolve their ENS names
     for (let i = 0; i < verifierCount; i++) {
       try {
         // Get verifier info (ensName, targetContractAddress)
         const [ensName, targetAddress] = await retry(() => ccipRevenueReaderContract.verifiers(i));
-        
+
         console.log(`[info] Fetching verifier ${i}: ENS: ${ensName}, target: ${targetAddress}`);
-        
+
         // Resolve ENS name to get the verifier address
         const verifierAddress = await retry(() => provider.resolveName(ensName));
-        
+
         if (!verifierAddress || verifierAddress === ZeroAddress) {
           throw new Error(`Failed to resolve ENS name: ${ensName}`);
         }
-        
+
         console.log(`[info] Resolved ${ensName} to verifier address: ${verifierAddress}`);
-        
+
         verifiers.push({
           ensName,
           targetAddress,
@@ -62,11 +62,11 @@ export async function initializeVerifiersCache(): Promise<void> {
         throw error; // Fail fast as requested
       }
     }
-    
+
     // Cache the verifiers
     verifiersCache = verifiers;
     isCacheInitialized = true;
-    
+
     console.log(`[info] Successfully cached ${verifiers.length} verifiers`);
   } catch (error) {
     console.error("[error] Failed to initialize verifiers cache:", error);
@@ -102,9 +102,7 @@ export function getCachedVerifiersCount(): number {
 
 export async function pruneAndSyncOnchain(meterIdentifier: number | string): Promise<number> {
   const meter =
-    typeof meterIdentifier === "number"
-      ? getMeterByTokenId(meterIdentifier)
-      : getMeterByPublicKey(meterIdentifier);
+    typeof meterIdentifier === "number" ? getMeterByTokenId(meterIdentifier) : getMeterByPublicKey(meterIdentifier);
 
   if (!meter) {
     throw new Error(`Meter with identifier ${meterIdentifier} not found`);
@@ -148,20 +146,22 @@ export async function getCrossChainRevenue(tokenId: number): Promise<number> {
   try {
     // Use cached verifiers instead of fetching them each time
     const verifiers = await getCachedVerifiers();
-    
+
     let totalRevenue = 0;
 
     // Iterate through all cached verifiers and get revenue from each chain
     for (const verifier of verifiers) {
       try {
-        console.log(`[info] Getting revenue from ENS: ${verifier.ensName}, target: ${verifier.targetAddress}, verifier: ${verifier.verifierAddress}`);
+        console.log(
+          `[info] Getting revenue from ENS: ${verifier.ensName}, target: ${verifier.targetAddress}, verifier: ${verifier.verifierAddress}`,
+        );
 
         // Get revenue from this specific chain using CCIP read
         // Parameters: tokenId, target (L2 contract), verifier (resolved from ENS)
         const revenue = await retry(() =>
           ccipRevenueReaderContract.read(tokenId, verifier.targetAddress, verifier.verifierAddress, {
             enableCcipRead: true,
-          })
+          }),
         );
         const revenueAmount = Number(revenue);
 

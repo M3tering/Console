@@ -2,7 +2,13 @@ import "dotenv/config";
 import { handleUplinks } from "./services/mqtt";
 import { Request, Response } from "express";
 import { app } from "./services/context";
-import { loadExtensionsFromConfig, loadUIExtensionsFromConfig, getUIComponents, invokeUIAction, runHook } from "./lib/utils";
+import {
+  loadExtensionsFromConfig,
+  loadUIExtensionsFromConfig,
+  getUIComponents,
+  invokeUIAction,
+  runHook,
+} from "./lib/utils";
 import setupDatabase, { getAllMeterRecords, deleteMeterByPublicKey } from "./store/sqlite";
 
 // Async initialization function
@@ -49,10 +55,10 @@ initializeApp();
 
 app.get("/", async (req: Request, res: Response) => {
   const m3ters = getAllMeterRecords();
-  
+
   // Get UI components from loaded UI extensions
   const { icons, windows } = await getUIComponents();
-  
+
   res.render("index", { m3ters, icons, windows });
   console.log("[server]: Server handled GET request at `/`");
 });
@@ -61,9 +67,9 @@ app.get("/", async (req: Request, res: Response) => {
 app.post("/api/actions/:moduleId/:actionId", async (req: Request, res: Response) => {
   const { moduleId, actionId } = req.params;
   console.log(`[server]: Invoking action '${actionId}' from module '${moduleId}'`);
-  
+
   const result = await invokeUIAction(moduleId, actionId);
-  
+
   if (result.success) {
     res.status(200).json(result);
   } else {

@@ -16,7 +16,12 @@ import {
 import type { State, TransactionRecord } from "../types";
 import { decodePayload } from "../lib/decode";
 import { runHook, verifyPayloadSignature } from "../lib/utils";
-import { getLatestTransactionNonce, pruneAndSyncOnchain, getCrossChainRevenue, getOwedFromPriceContext } from "../lib/sync";
+import {
+  getLatestTransactionNonce,
+  pruneAndSyncOnchain,
+  getCrossChainRevenue,
+  getOwedFromPriceContext,
+} from "../lib/sync";
 import { createMeterLogger } from "../utils/logger";
 
 const CHIRPSTACK_HOST = process.env.CHIRPSTACK_HOST;
@@ -193,7 +198,7 @@ export async function handleMessage(blob: Buffer) {
 
       enqueue(
         message["deviceInfo"]["devEui"],
-        encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0)
+        encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0),
       );
 
       return; // Exit early without processing the transaction
@@ -228,24 +233,24 @@ export async function handleMessage(blob: Buffer) {
       await runHook("onTransactionDistribution", m3ter.tokenId, decoded, pendingTransactions);
     }
 
-      try {
-        is_on = await runHook("isOnStateCompute", m3ter.tokenId);
-      } catch (error) {
-        runHook("onIsOnStateComputeError", m3ter.tokenId, error);
-        logger.error(`Error in isOnStateCompute hook: ${error}`);
-      }
+    try {
+      is_on = await runHook("isOnStateCompute", m3ter.tokenId);
+    } catch (error) {
+      runHook("onIsOnStateComputeError", m3ter.tokenId, error);
+      logger.error(`Error in isOnStateCompute hook: ${error}`);
+    }
 
-      runHook("onIsOnStateComputed", m3ter.tokenId, is_on);
+    runHook("onIsOnStateComputed", m3ter.tokenId, is_on);
 
-      const state = decoded.nonce === expectedNonce ? { is_on } : { nonce: m3ter.latestNonce, is_on };
+    const state = decoded.nonce === expectedNonce ? { is_on } : { nonce: m3ter.latestNonce, is_on };
 
-      logger.info(`Enqueuing state: ${JSON.stringify(state)}`);
+    logger.info(`Enqueuing state: ${JSON.stringify(state)}`);
 
-      enqueue(
-        message["deviceInfo"]["devEui"],
-        encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0)
-      );
-      runHook("onStateEnqueued", state, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0);
+    enqueue(
+      message["deviceInfo"]["devEui"],
+      encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0),
+    );
+    runHook("onStateEnqueued", state, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0);
   } catch (error) {
     logger.error(`Error handling MQTT message: ${error}`);
     runHook("onMessageError", error);

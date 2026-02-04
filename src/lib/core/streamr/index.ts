@@ -16,7 +16,12 @@ export default class implements Hooks {
   private cronSchedule: string = process.env.STREAMR_CRONSCHEDULE || "0 * * * *";
 
   async onAfterInit() {
-    console.log("Registering Streamr cron job... Schedule: ", this.cronSchedule, " Stream IDs: ", JSON.stringify(this.streamIds));
+    console.log(
+      "Registering Streamr cron job... Schedule: ",
+      this.cronSchedule,
+      " Stream IDs: ",
+      JSON.stringify(this.streamIds),
+    );
 
     // Schedule a cron job to publish pending transactions
     cron.schedule(

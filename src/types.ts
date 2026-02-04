@@ -26,7 +26,7 @@ export type Hooks = {
   onTransactionDistribution?: (
     tokenId: number,
     decodedPayload: DecodedPayload,
-    pendingTransactions: TransactionRecord[]
+    pendingTransactions: TransactionRecord[],
   ) => void | Promise<void>;
 
   isOnStateCompute?: (m3terId: number) => boolean | Promise<boolean>;
@@ -152,4 +152,4 @@ export type UIHooks = {
   getActions?: () => UIAction[] | Promise<UIAction[]>;
   /** Return metadata/status data for display */
   getStatusData?: () => Record<string, any> | Promise<Record<string, any>>;
-}
+};

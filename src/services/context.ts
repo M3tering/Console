@@ -52,66 +52,63 @@ wss.on("connection", (ws: WebSocket, request: http.IncomingMessage) => {
   ssh
     .on("ready", () => {
       console.log("[ws/ssh]: SSH connection established");
-      ssh.shell(
-        { term: "xterm", cols: parseInt(cols), rows: parseInt(rows) },
-        (err, stream) => {
-          if (err) {
-            ws.send(`[ws/ssh]: SSH shell error: ${err.message}`);
-            ws.close();
-            ssh.end();
-            return;
+      ssh.shell({ term: "xterm", cols: parseInt(cols), rows: parseInt(rows) }, (err, stream) => {
+        if (err) {
+          ws.send(`[ws/ssh]: SSH shell error: ${err.message}`);
+          ws.close();
+          ssh.end();
+          return;
+        }
+
+        // SSH -> WebSocket
+        stream.on("data", (data: Buffer) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(data);
+          }
+        });
+
+        stream.on("close", () => {
+          console.log("[ws/ssh]: SSH stream closed");
+          ws.close();
+          ssh.end();
+        });
+
+        stream.stderr.on("data", (data: Buffer) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(`[ws/ssh]: SSH stderr: ${data.toString()}`);
+          }
+        });
+
+        // WebSocket -> SSH
+        console.log("[ws/ssh]: Setting up WebSocket message handler");
+        ws.on("message", (msg) => {
+          // support JSON control messages for resize
+          try {
+            const parsed = JSON.parse(msg.toString());
+            if (parsed.type === "resize") {
+              const { cols, rows } = parsed;
+              stream.setWindow(rows, cols, cols * 8, rows * 16); // width/height px optional
+              return;
+            }
+          } catch (e) {
+            /* not JSON - treat as raw data */
           }
 
-          // SSH -> WebSocket
-          stream.on("data", (data: Buffer) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(data);
-            }
-          });
+          if (stream.writable) stream.write(msg);
+        });
 
-          stream.on("close", () => {
-            console.log("[ws/ssh]: SSH stream closed");
-            ws.close();
-            ssh.end();
-          });
+        ws.on("close", () => {
+          console.log("[ws]: WebSocket closed, closing SSH stream");
+          stream.end();
+          ssh.end();
+        });
 
-          stream.stderr.on("data", (data: Buffer) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(`[ws/ssh]: SSH stderr: ${data.toString()}`);
-            }
-          });
-
-          // WebSocket -> SSH
-          console.log("[ws/ssh]: Setting up WebSocket message handler");
-          ws.on("message", (msg) => {
-            // support JSON control messages for resize
-            try {
-              const parsed = JSON.parse(msg.toString());
-              if (parsed.type === "resize") {
-                const { cols, rows } = parsed;
-                stream.setWindow(rows, cols, cols * 8, rows * 16); // width/height px optional
-                return;
-              }
-            } catch (e) {
-              /* not JSON - treat as raw data */
-            }
-
-            if (stream.writable) stream.write(msg);
-          });
-
-          ws.on("close", () => {
-            console.log("[ws]: WebSocket closed, closing SSH stream");
-            stream.end();
-            ssh.end();
-          });
-
-          ws.on("error", () => {
-            console.log("[ws]: WebSocket error, closing SSH stream");
-            stream.end();
-            ssh.end();
-          });
-        }
-      );
+        ws.on("error", () => {
+          console.log("[ws]: WebSocket error, closing SSH stream");
+          stream.end();
+          ssh.end();
+        });
+      });
     })
     .on("error", (err) => {
       console.error("[ws/ssh]: SSH connection error:", err);
@@ -131,17 +128,14 @@ export const provider = new JsonRpcProvider(process.env.MAINNET_RPC);
 
 export const m3ter = new Contract(
   process.env.M3TER_CONTRACT_ADDRESS || "0x9C547B649475f1bE81323AefdbcF209C17961D5E",
-  [
-    "function publicKey(uint256) view returns (bytes32)",
-    "function tokenID(bytes32) view returns (uint256)",
-  ],
-  provider
+  ["function publicKey(uint256) view returns (bytes32)", "function tokenID(bytes32) view returns (uint256)"],
+  provider,
 );
 
 export const rollup = new Contract(
   process.env.ROLLUP_CONTRACT_ADDRESS || "0xf8f2d4315DB5db38f3e5c45D0bCd59959c603d9b",
   ["function nonce(uint256) external view returns (bytes6)"],
-  provider
+  provider,
 );
 
 export const ccipRevenueReader = new Contract(
@@ -152,11 +146,11 @@ export const ccipRevenueReader = new Contract(
     "function verifierCount() external view returns (uint256)",
     "function verifiers(uint256) external view returns (string, address)",
   ],
-  provider
+  provider,
 );
 
 export const priceContext = new Contract(
   process.env.PRICE_CONTEXT_ADDRESS || "0xc6D5Ff8E80F4Ee511Db4bCf6a0BcEbF9f41aAA32",
   ["function owed(uint256 tokenId) public view returns (uint256)"],
-  provider
+  provider,
 );
