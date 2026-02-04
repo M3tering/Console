@@ -1,4 +1,3 @@
-import fs from "fs";
 import path from "path";
 import { createPublicKey, verify } from "crypto";
 import type {
@@ -14,11 +13,29 @@ import type {
 
 const extensions: Hooks[] = [];
 const uiExtensions: Map<string, UIHooks> = new Map();
+
+const { BACKEND_MODULES, UI_MODULES } = process.env;
+
+if (!BACKEND_MODULES) {
+  console.warn("[config] No BACKEND_MODULES specified");
+}
+
+if (!UI_MODULES) {
+  console.warn("[config] No UI_MODULES specified");
+}
+
 export const defaultConfigurations: AppConfig = {
-  modules: ["core/arweave", "core/prover", "core/streamr", "core/is_on", "core/prune_sync"],
-  uiModules: {
-    streamr: "core/streamr/ui",
-  },
+  modules: (BACKEND_MODULES || "").split(",").filter(Boolean), // ["core/arweave", "core/prover", "core/streamr", "core/is_on"],
+  uiModules: Object.fromEntries(
+    (UI_MODULES || "")
+      .split(",")
+      .filter(Boolean)
+      .map((entry) => {
+        const [moduleId, modulePath] = entry.split(":");
+        return [moduleId, modulePath];
+      })
+      .filter(([moduleId, modulePath]) => moduleId && modulePath),
+  ),
 };
 
 export async function loadExtensionsFromConfig(): Promise<Hooks[]> {
@@ -50,10 +67,6 @@ export async function runHook<K extends keyof Hooks>(hook: K, ...args: Parameter
   return result;
 }
 
-// ==========================================
-// UI Extension System
-// ==========================================
-
 /**
  * Load UI extensions from configuration file
  * Looks for 'uiModules' key in config, which maps module IDs to their paths
@@ -62,7 +75,7 @@ export async function loadUIExtensionsFromConfig(): Promise<Map<string, UIHooks>
   const config = defaultConfigurations as AppConfig & { uiModules?: Record<string, string> };
 
   if (!config.uiModules) {
-    console.log("[ui] No UI modules configured");
+    console.warn("[ui] No UI modules configured");
     return uiExtensions;
   }
 
