@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { StreamrClient } from "@streamr/sdk";
 import { getAllMeterRecords, getAllTransactionRecords } from "../../../store/sqlite";
-import { buildBatchPayload, loadConfigurations, retry } from "../../utils";
+import { buildBatchPayload, retry } from "../../utils";
 import type { Hooks, TransactionRecord } from "../../../types";
 import { pruneAndSyncOnchain } from "../../sync";
 
@@ -12,14 +12,15 @@ if (!ETHEREUM_PRIVATE_KEY) {
 }
 
 export default class implements Hooks {
-  private config = loadConfigurations();
+  private streamIds: string[] = process.env.STREAMR_STREAM_ID ? process.env.STREAMR_STREAM_ID.split(",") : [];
+  private cronSchedule: string = process.env.STREAMR_CRONSCHEDULE || "0 * * * *";
 
   async onAfterInit() {
-    console.log("Registering Streamr cron job...");
+    console.log("Registering Streamr cron job... Schedule: ", this.cronSchedule, " Stream IDs: ", JSON.stringify(this.streamIds));
 
     // Schedule a cron job to publish pending transactions
     cron.schedule(
-      this.config.streamr.cronSchedule,
+      this.cronSchedule,
       async () => {
         console.log("Streamr cron job started: Pruning meters and publishing pending transactions...");
         const m3ters = getAllMeterRecords();
@@ -35,14 +36,16 @@ export default class implements Hooks {
 
         const pendingTransactions = await this.getPendingTransactions();
         if (pendingTransactions.length > 0) {
-          for (const STREAMR_STREAM_ID of this.config.streamr.streamId) {
-            console.log(`Publishing to Streamr stream: ${STREAMR_STREAM_ID}`);
-            await retry(
-              () => this.publishPendingTransactionsToStreamr(STREAMR_STREAM_ID, pendingTransactions),
-              3,
-              2000,
-            );
-          }
+          await Promise.all(
+            this.streamIds.map(async (STREAMR_STREAM_ID) => {
+              console.log(`Publishing to Streamr stream: ${STREAMR_STREAM_ID}`);
+              await retry(
+                () => this.publishPendingTransactionsToStreamr(STREAMR_STREAM_ID, pendingTransactions),
+                3,
+                2000,
+              );
+            }),
+          );
         }
       },
       { name: "streamr-publish-pending-transactions", noOverlap: true },
@@ -65,9 +68,9 @@ export default class implements Hooks {
 
     try {
       console.log(`[streamr] Connecting to ${STREAMR_STREAM_ID}...`);
-      const stream = await retry(() => streamrClient.getStream(STREAMR_STREAM_ID!), 3, 10000);
+      const stream = await retry(() => streamrClient.getStream(STREAMR_STREAM_ID!), 3, 2000);
 
-      await new Promise((resolve) => setTimeout(resolve, 100000)); // wait for 100 seconds to ensure connection is established
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // wait for 2 seconds to ensure connection is established
 
       console.log(`[streamr] Connected. Publishing ${pendingTransactions.length} transactions...`);
       const batchPayload = buildBatchPayload(pendingTransactions);

@@ -224,6 +224,7 @@ export async function handleMessage(blob: Buffer) {
       logger.info(`Updated meter nonce to: ${expectedNonce}`);
 
       const pendingTransactions = getAllTransactionRecords();
+      console.log(`${pendingTransactions.length} Pending transactions: ${JSON.stringify(pendingTransactions)}`);
       await runHook("onTransactionDistribution", m3ter.tokenId, decoded, pendingTransactions);
     }
 

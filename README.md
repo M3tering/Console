@@ -22,14 +22,29 @@ A modular, extensible service console for providers on the M3tering protocol. Fe
    Create `.env` file:
 
    ```
+   # Server Configuration
    PORT=3000
+   
+   # Module Configuration
+   BACKEND_MODULES="core/arweave,core/is_on,core/prover,core/streamr"
+   UI_MODULES="streamr:core/streamr/ui"
+   
+   # ChirpStack Configuration
    API_TOKEN=...
    APPLICATION_ID=...
-   CONTRACT_LABEL=M3ters
    CHIRPSTACK_HOST=localhost
+   
+   # Contract & Network Configuration
+   CONTRACT_LABEL=M3ters
    MAINNET_RPC=https://sepolia.drpc.org
-   PREFERRED_PROVER_NODE=http://34.244.149.153
    ETHEREUM_PRIVATE_KEY="..."
+   
+   # Streamr Configuration
+   STREAMR_STREAM_ID="0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"
+   STREAMR_CRONSCHEDULE="0 * * * *"  # Every hour
+   
+   # Optional: Prover Node (defaults to automatic selection)
+   # PREFERRED_PROVER_NODE="http://prover.m3ter.ing"
    ```
 
 3. **Docker Build and Run**
@@ -65,36 +80,36 @@ The M3tering Console provides two complementary extension systems:
 1. **Backend Hooks** - Hook into the console lifecycle (MQTT, database, message processing)
 2. **UI Hooks** - Add custom icons, panels, and actions to the web interface
 
-Both systems use a config-driven approach where modules are loaded dynamically from paths specified in `console.config.json`.
+Both systems use an environment-driven approach where modules are loaded dynamically from paths specified in your `.env` file.
 
 ## Configuration
 
-```json
-{
-    "modules": [
-        "core/arweave",
-        "core/prover",
-        "core/streamr",
-        "core/is_on",
-        "core/prune_sync"
-    ],
-    "uiModules": {
-        "streamr": "core/streamr/ui"
-    },
-    "streamr": {
-        "streamId": [
-            "0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"
-        ],
-        "cronSchedule": "0 * * * *"
-    },
-    "prune_sync": {
-        "cronSchedule": "0 * * * *"
-    }
-}
+Modules are configured via environment variables. Modules are automatically pulled from GitHub repositories when the container starts up.
+
+```bash
+# Backend Modules (comma-separated GitHub repositories)
+BACKEND_MODULES="core/arweave,core/is_on,core/prover,core/streamr,username/my-custom-module"
+
+# UI Modules (colon-separated format: moduleId:github_repo)
+UI_MODULES="streamr:core/streamr/ui,my-module:username/my-custom-module"
+
+# Module-specific configuration
+STREAMR_STREAM_ID="0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"
+STREAMR_CRONSCHEDULE="0 * * * *"  # Every hour
 ```
 
-- **`modules`**: Array of paths to backend hook modules (relative to `src/lib/`)
-- **`uiModules`**: Object mapping module IDs to UI module paths (relative to `src/lib/`)
+- **`BACKEND_MODULES`**: Comma-separated list of GitHub repositories in the format `<github_username>/<repo_name>` or built-in paths like `core/arweave`
+- **`UI_MODULES`**: Comma-separated list of `moduleId:<github_username>/<repo_name>` pairs
+- **Module-specific variables**: Each module can have its own configuration variables (e.g., `STREAMR_STREAM_ID`)
+
+### Publishing Custom Modules
+
+To use your own extensions:
+
+1. Publish your module code to a GitHub repository
+2. Reference it in your `.env` file using the format `<github_username>/<repo_name>`
+3. The extension code is automatically cloned from GitHub when the Docker container starts up
+4. For specific versions, append `#<tag>` or `#<branch>` (e.g., `username/my-module#v1.0.0`)
 
 ---
 
@@ -104,8 +119,10 @@ Backend hooks allow modules to react to console lifecycle events. Each module ex
 
 ## Creating a Backend Module
 
+1. **Create your module repository** with the following structure:
+
 ```typescript
-// src/lib/core/my-module/index.ts
+// index.ts
 import type { Hooks } from "../../../types";
 
 export default class implements Hooks {
@@ -119,12 +136,14 @@ export default class implements Hooks {
 }
 ```
 
-Add to `console.config.json`:
-```json
-{
-  "modules": ["core/my-module"]
-}
+2. **Publish to GitHub**: Push your module code to a GitHub repository (e.g., `github.com/yourusername/my-m3tering-module`)
+
+3. **Configure in `.env`**:
+```bash
+BACKEND_MODULES="core/arweave,core/prover,yourusername/my-m3tering-module"
 ```
+
+4. **Restart container**: The module will be automatically cloned from GitHub and loaded when the container starts
 
 ## Hook Lifecycle Reference
 
@@ -180,8 +199,10 @@ UI Hooks allow modules to extend the web interface at `http://localhost:3000`. M
 
 ## Creating a UI Module
 
+1. **Create your module repository** with the following structure:
+
 ```typescript
-// src/lib/core/my-module/ui.ts
+// ui.ts (or index.ts)
 import type { UIHooks, UIAppIcon, UIAppWindow, UIAction } from "../../../types";
 
 export default class implements UIHooks {
@@ -222,14 +243,14 @@ export default class implements UIHooks {
 }
 ```
 
-Add to `console.config.json`:
-```json
-{
-  "uiModules": {
-    "my-module": "core/my-module/ui"
-  }
-}
+2. **Publish to GitHub**: Push your module code to a GitHub repository (e.g., `github.com/yourusername/my-ui-module`)
+
+3. **Configure in `.env`**:
+```bash
+UI_MODULES="streamr:core/streamr/ui,my-module:yourusername/my-ui-module"
 ```
+
+4. **Restart container**: The module will be automatically cloned from GitHub and loaded when the container starts
 
 ## UIHooks Interface
 
@@ -311,7 +332,6 @@ Response: { success: boolean, message?: string, data?: any }
 | `core/prover` | Sends batched transactions to the prover node |
 | `core/streamr` | Publishes transactions to Streamr streams on a cron schedule |
 | `core/is_on` | Computes device on/off state based on balance |
-| `core/prune_sync` | Cleans up old synchronized transactions |
 
 ## UI Modules
 

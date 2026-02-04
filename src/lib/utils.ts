@@ -1,4 +1,3 @@
-import fs from "fs";
 import path from "path";
 import { createPublicKey, verify } from "crypto";
 import type {
@@ -14,32 +13,33 @@ import type {
 
 const extensions: Hooks[] = [];
 const uiExtensions: Map<string, UIHooks> = new Map();
-export const defaultConfigurations: AppConfig = {
-  modules: ["core/arweave", "core/prover", "core/streamr", "core/is_on", "core/prune_sync"],
-  uiModules: {
-    streamr: "core/streamr/ui",
-  },
-  streamr: {
-    streamId: ["0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"],
-    cronSchedule: "0 * * * *",
-  },
-  prune_sync: {
-    cronSchedule: "0 * * * *",
-  },
-};
 
-export function loadConfigurations(configPath: string = "console.config.json"): AppConfig {
-  try {
-    const config: AppConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    return config;
-  } catch (error) {
-    console.warn(`Could not load configuration from ${configPath}, using default configurations.`);
-    return defaultConfigurations;
-  }
+const { BACKEND_MODULES, UI_MODULES } = process.env;
+
+if (!BACKEND_MODULES) {
+  console.warn("[config] No BACKEND_MODULES specified");
 }
 
-export async function loadExtensionsFromConfig(configPath: string = "console.config.json"): Promise<Hooks[]> {
-  const config: AppConfig = loadConfigurations(configPath);
+if (!UI_MODULES) {
+  console.warn("[config] No UI_MODULES specified");
+}
+
+export const defaultConfigurations: AppConfig = {
+  modules: (BACKEND_MODULES || "").split(",").filter(Boolean), // ["core/arweave", "core/prover", "core/streamr", "core/is_on"],
+  uiModules: Object.fromEntries(
+    (UI_MODULES || "")
+      .split(",")
+      .filter(Boolean)
+      .map((entry) => {
+        const [moduleId, modulePath] = entry.split(":");
+        return [moduleId, modulePath];
+      })
+      .filter(([moduleId, modulePath]) => moduleId && modulePath),
+  ),
+};
+
+export async function loadExtensionsFromConfig(): Promise<Hooks[]> {
+  const config: AppConfig = defaultConfigurations;
 
   for (const modulePath of config.modules) {
     const resolved = path.resolve(__dirname, modulePath);
@@ -67,21 +67,15 @@ export async function runHook<K extends keyof Hooks>(hook: K, ...args: Parameter
   return result;
 }
 
-// ==========================================
-// UI Extension System
-// ==========================================
-
 /**
  * Load UI extensions from configuration file
  * Looks for 'uiModules' key in config, which maps module IDs to their paths
  */
-export async function loadUIExtensionsFromConfig(
-  configPath: string = "console.config.json",
-): Promise<Map<string, UIHooks>> {
-  const config = loadConfigurations(configPath) as AppConfig & { uiModules?: Record<string, string> };
+export async function loadUIExtensionsFromConfig(): Promise<Map<string, UIHooks>> {
+  const config = defaultConfigurations as AppConfig & { uiModules?: Record<string, string> };
 
   if (!config.uiModules) {
-    console.log("[ui] No UI modules configured");
+    console.warn("[ui] No UI modules configured");
     return uiExtensions;
   }
 
