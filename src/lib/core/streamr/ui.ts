@@ -147,7 +147,7 @@ export default class implements UIHooks {
       const batchPayload = buildBatchPayload(pendingTransactions);
       await new Promise((resolve) => setTimeout(resolve, 2000)); // wait for 2 seconds to ensure connection is established
       await stream.publish(batchPayload);
-      await new Promise((resolve) => setTimeout(resolve, 20000)); // wait for 20 seconds to ensure message is sent
+      await new Promise((resolve) => setTimeout(resolve, 100000)); // wait for 100 seconds to ensure message is sent
       console.log(`[streamr-ui] Published ${pendingTransactions.length} transactions to stream ${streamId}`);
     } catch (error) {
       console.error(`[streamr-ui] Error publishing to Streamr:`, error);
