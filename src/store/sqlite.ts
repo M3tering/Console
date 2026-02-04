@@ -23,7 +23,7 @@ let getTransactionByNonceQuery: DatabaseStatementType;
  * @param databaseName name of the database file
  */
 export default function setupDatabase(databaseName = "m3tering.db") {
-  db = new Database(`./data/${databaseName}`, {});
+  db = new Database(`./.data/${databaseName}`, {});
 
   initializeTransactionsTable();
   initializeMetersTable();
@@ -35,7 +35,7 @@ export function deleteDatabase(databaseName = "m3tering.db") {
     db.exec(`DROP TABLE IF EXISTS meters`);
     db.exec(`DROP TABLE IF EXISTS transactions`);
     db.close();
-    fs.unlinkSync(`./data/${databaseName}`);
+    fs.unlinkSync(`./.data/${databaseName}`);
   } catch (err: any) {
     console.error("Failed to delete database:", err);
   }

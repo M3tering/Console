@@ -6,7 +6,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - console_db:/data
+      - ./.data:/opt/app/.data
       - console_src_modules:/opt/app/src/lib
       - console_dist_modules:/opt/app/dist/lib
 
