@@ -68,7 +68,7 @@ export default class implements Hooks {
 
     try {
       console.log(`[streamr] Connecting to ${STREAMR_STREAM_ID}...`);
-      const stream = await retry(() => streamrClient.getStream(STREAMR_STREAM_ID!), 3, 10000);
+      const stream = await retry(() => streamrClient.getStream(STREAMR_STREAM_ID!), 3, 2000);
 
       await new Promise((resolve) => setTimeout(resolve, 2000)); // wait for 2 seconds to ensure connection is established
 
