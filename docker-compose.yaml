@@ -1,8 +1,16 @@
 services:
   console:
     image: ghcr.io/m3tering/console:main
-    build: .
     network_mode: host
     restart: unless-stopped
     ports:
       - "3000:3000"
+    volumes:
+      - console_db:/data
+      - console_src_modules:/opt/app/src/lib
+      - console_dist_modules:/opt/app/dist/lib
+
+volumes:
+  console_db:
+  console_src_modules:
+  console_dist_modules:
