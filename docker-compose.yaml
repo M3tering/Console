@@ -3,6 +3,8 @@ services:
     image: ghcr.io/m3tering/console:main
     network_mode: host
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "3000:3000"
     volumes:
