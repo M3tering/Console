@@ -1,5 +1,5 @@
 import { getAllTransactionRecords } from "../../../store/sqlite";
-import { buildBatchPayload, loadConfigurations, retry } from "../../utils";
+import { buildBatchPayload, retry } from "../../utils";
 import type { UIHooks, UIAppIcon, UIAppWindow, UIAction, TransactionRecord } from "../../../types";
 import { StreamrClient } from "@streamr/sdk";
 
@@ -11,7 +11,8 @@ const { ETHEREUM_PRIVATE_KEY } = process.env;
  * a panel showing stream configuration and a manual publish action
  */
 export default class implements UIHooks {
-  private config = loadConfigurations();
+  private streamIds: string[] = process.env.STREAMR_STREAM_ID ? process.env.STREAMR_STREAM_ID.split(",") : [];
+  private cronSchedule: string = process.env.STREAMR_CRONSCHEDULE || "Not configured";
   private lastPublishTime: Date | null = null;
   private lastPublishStatus: "success" | "error" | null = null;
 
@@ -26,8 +27,8 @@ export default class implements UIHooks {
 
   async getAppWindow(): Promise<UIAppWindow> {
     const pendingCount = (await this.getPendingTransactions()).length;
-    const streamIds = this.config.streamr.streamId;
-    const cronSchedule = this.config.streamr.cronSchedule;
+    const streamIds = this.streamIds;
+    const cronSchedule = this.cronSchedule;
 
     return {
       id: "streamr",
@@ -94,16 +95,18 @@ export default class implements UIHooks {
           }
 
           try {
-            for (const streamId of this.config.streamr.streamId) {
-              console.log(`[streamr-ui] Publishing to stream: ${streamId}`);
-              await retry(() => this.publishToStreamr(streamId, pendingTransactions), 3, 2000);
-            }
+            await Promise.all(
+              this.streamIds.map(async (streamId) => {
+                console.log(`[streamr-ui] Publishing to stream: ${streamId}`);
+                await retry(() => this.publishToStreamr(streamId, pendingTransactions), 3, 2000);
+              }),
+            );
 
             this.lastPublishTime = new Date();
             this.lastPublishStatus = "success";
 
             return {
-              message: `Published ${pendingTransactions.length} transactions to ${this.config.streamr.streamId.length} stream(s)`,
+              message: `Published ${pendingTransactions.length} transactions to ${this.streamIds.length} stream(s)`,
               data: { count: pendingTransactions.length },
             };
           } catch (error: any) {
@@ -119,8 +122,8 @@ export default class implements UIHooks {
     const pendingTransactions = await this.getPendingTransactions();
     return {
       pendingCount: pendingTransactions.length,
-      streamIds: this.config.streamr.streamId,
-      cronSchedule: this.config.streamr.cronSchedule,
+      streamIds: this.streamIds,
+      cronSchedule: this.cronSchedule,
       lastPublishTime: this.lastPublishTime,
       lastPublishStatus: this.lastPublishStatus,
     };
@@ -142,9 +145,9 @@ export default class implements UIHooks {
     try {
       const stream = await retry(() => streamrClient.getStream(streamId), 3, 2000);
       const batchPayload = buildBatchPayload(pendingTransactions);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // wait for 2 seconds to ensure connection is established
       await stream.publish(batchPayload);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 20000)); // wait for 20 seconds to ensure message is sent
       console.log(`[streamr-ui] Published ${pendingTransactions.length} transactions to stream ${streamId}`);
     } catch (error) {
       console.error(`[streamr-ui] Error publishing to Streamr:`, error);
