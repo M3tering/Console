@@ -45,6 +45,7 @@ A modular, extensible service console for providers on the M3tering protocol. Fe
    
    # Optional: Prover Node (defaults to automatic selection)
    # PREFERRED_PROVER_NODE="http://prover.m3ter.ing"
+   # PROVER_CRONSCHEDULE="0 0 * * *" # Every 24 hours
    ```
 
 3. **Docker Build and Run**
