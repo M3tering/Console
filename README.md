@@ -341,3 +341,145 @@ Response: { success: boolean, message?: string, data?: any }
 | `streamr` | Panel showing stream config, pending count, and "Publish Now" action |
 
 ---
+
+# Guides
+
+## Extracting Transaction data from running console docker container
+
+## 1) Find the running container name/ID
+
+```bash
+docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}"
+```
+
+Look for `ghcr.io/m3tering/console:main`.
+
+## 2) Copy the SQLite file OUT of the container (backup)
+
+```bash
+docker cp <container_name_or_id>:/opt/app/m3tering.db ./m3tering.db
+```
+
+Now you must have the sqlite database in the directory you are working from. if you want to get the transactions in json or csv format, go ahead with the following steps
+
+## 3) Extract in readable format
+
+## Option 1: Use `sqlite3` + `.mode json` (fastest)
+
+If you have `sqlite3` installed:
+
+1. Export `transactions` table to JSON:
+
+```bash
+sqlite3 m3tering.db ".mode json" ".once transactions.json" "SELECT * FROM transactions;"
+```
+
+## Option 2: Export to CSV then convert to JSON (works everywhere)
+
+Export a table to CSV:
+
+```bash
+sqlite3 m3tering.db ".headers on" ".mode csv" ".once transactions.csv" "SELECT * FROM transactions;"
+```
+
+## Option 3: Export the whole DB (all tables) into one JSON file (best)
+
+This produces a single JSON like:
+
+```json
+{ "table1": [...], "table2": [...] }
+```
+
+```bash
+python3 - <<'PY'
+import sqlite3, json
+
+db_path = "m3tering.db"
+out_path = "db_export.json"
+
+con = sqlite3.connect(db_path)
+con.row_factory = sqlite3.Row
+cur = con.cursor()
+
+tables = [r[0] for r in cur.execute("""
+  SELECT name FROM sqlite_master
+  WHERE type='table' AND name NOT LIKE 'sqlite_%'
+  ORDER BY name
+""")]
+
+export = {}
+for t in tables:
+    rows = cur.execute(f'SELECT * FROM "{t}"').fetchall()
+    export[t] = [dict(r) for r in rows]
+
+with open(out_path, "w", encoding="utf-8") as f:
+    json.dump(export, f, indent=2, ensure_ascii=False)
+
+print(f"Exported {len(tables)} tables to {out_path}")
+PY
+```
+
+## Updating code for Running Console Code (Docker)
+
+“updating code” means **pulling a newer image tag** (or switching to a `build:` config) or updating the console's environment variables.
+
+---
+
+### A) Update only `.env` (no image change)
+
+1. Edit `.env` in the Console directory.
+
+2. Recreate the container so it reloads `env_file`:
+
+```bash
+docker compose up -d --force-recreate console
+```
+
+3. Confirm env actually changed:
+
+```bash
+docker compose exec console sh -lc 'env | sort | head'
+```
+
+---
+
+### B) Update the app “code” (i.e., get latest `ghcr.io/m3tering/console:main`)
+
+Because you’re using an image, you update by pulling and recreating.
+
+1. Pull the latest image:
+
+```bash
+docker compose pull console
+```
+
+2. Recreate using the new image:
+
+```bash
+docker compose up -d --force-recreate console
+```
+
+3. Verify the container is on the new image:
+
+```bash
+docker compose images
+docker compose ps
+docker image ls | grep ghcr.io/m3tering/console
+```
+
+Optional (clean up old images):
+
+```bash
+docker image prune -f
+```
+
+---
+
+## C) If you changed BOTH `.env` and want latest image
+
+Do it in one go:
+
+```bash
+docker compose pull console
+docker compose up -d --force-recreate console
+```
