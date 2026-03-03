@@ -44,7 +44,7 @@ A modular, extensible service console for providers on the M3tering protocol. Fe
    STREAMR_CRONSCHEDULE="0 * * * *"  # Every hour
    
    # Optional: Prover Node (defaults to automatic selection)
-   # PREFERRED_PROVER_NODE="http://prover.m3ter.ing"
+   # PREFERRED_PROVER_NODE="https://prover.m3ter.ing"
    # PROVER_CRONSCHEDULE="0 0 * * *" # Every 24 hours
    ```
 
