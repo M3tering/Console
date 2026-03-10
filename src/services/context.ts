@@ -123,6 +123,8 @@ server.listen(port, () => {
   console.log(`[server]: Server is running at port ${port}`);
 });
 
+console.log("[info] Starting application initialization...");
+
 // ETHERS JS CONTRACT CONFIG
 export const provider = new JsonRpcProvider(process.env.MAINNET_RPC, undefined, { staticNetwork: true });
 
