@@ -124,7 +124,7 @@ server.listen(port, () => {
 });
 
 // ETHERS JS CONTRACT CONFIG
-export const provider = new JsonRpcProvider(process.env.MAINNET_RPC);
+export const provider = new JsonRpcProvider(process.env.MAINNET_RPC, undefined, { staticNetwork: true });
 
 export const m3ter = new Contract(
   process.env.M3TER_CONTRACT_ADDRESS || "heads.m3ter.eth",
