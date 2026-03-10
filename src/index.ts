@@ -28,13 +28,18 @@ async function initializeApp() {
 
     // Initialize database tables and jobs
     setupDatabase();
+
     console.log("[info] Database setup completed");
 
     runHook("onDatabaseSetup");
 
     try {
+      console.log("[info] Initializing MQTT handling...");
+
       // Start MQTT handling
       await handleUplinks();
+
+      console.log("[info] MQTT handling initialized successfully");
     } catch (mqttError) {
       console.error("[error] MQTT initialization failed:", mqttError);
       throw mqttError;

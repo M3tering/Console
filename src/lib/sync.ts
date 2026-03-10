@@ -12,7 +12,7 @@ import {
   ccipRevenueReader as ccipRevenueReaderContract,
   priceContext as priceContextContract,
 } from "../services/context";
-import { JsonRpcProvider, Contract, ZeroAddress } from "ethers";
+import { ZeroAddress } from "ethers";
 import { retry } from "./utils";
 import type { VerifierInfo } from "../types";
 
