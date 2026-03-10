@@ -118,7 +118,7 @@ export async function pruneAndSyncOnchain(meterIdentifier: number | string): Pro
     updateMeterNonce(publicKey, onchainNonce);
   }
   // prune transactions with nonce less than or equal to onchainNonce
-  pruneTransactionsBefore(meter.tokenId, onchainNonce);
+  pruneTransactionsBefore(onchainNonce, meter.tokenId);
 
   return onchainNonce;
 }
