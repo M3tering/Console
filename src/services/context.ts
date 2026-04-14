@@ -4,6 +4,7 @@ import { JsonRpcProvider, Contract } from "ethers";
 import WebSocket from "ws";
 import { ConnectConfig, Client as SSHClient } from "ssh2";
 import http from "http";
+import { retry } from "../lib/utils";
 
 // HBS CONFIG
 const hbs = create({
@@ -146,7 +147,9 @@ async function resolveContractAddress(contractName: string, ref: string): Promis
     return ref;
   }
 
-  const resolved = await provider.resolveName(ref);
+  console.log(`[ethers] ${contractName}: resolving ENS name ${ref}...`);
+
+  const resolved = await retry(() => provider.resolveName(ref), 3, 1500);
   if (!resolved) {
     throw new Error(`[ethers] ${contractName}: failed to resolve ENS ${ref}`);
   }
