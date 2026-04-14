@@ -126,19 +126,47 @@ server.listen(port, () => {
 console.log("[info] Starting application initialization...");
 
 // ETHERS JS CONTRACT CONFIG
-export const provider = new JsonRpcProvider(process.env.MAINNET_RPC, undefined, { staticNetwork: true });
+const rpcUrl = process.env.MAINNET_RPC;
+console.log("[info] using RPC", rpcUrl)
+export const provider = new JsonRpcProvider(rpcUrl);
 
-export const m3ter = new Contract(
-  process.env.M3TER_CONTRACT_ADDRESS || "heads.m3ter.eth",
-  ["function publicKey(uint256) view returns (bytes32)", "function tokenID(bytes32) view returns (uint256)"],
-  provider,
-);
+const m3terRef = process.env.M3TER_CONTRACT_ADDRESS || "heads.m3ter.eth";
+const rollupRef = process.env.ROLLUP_CONTRACT_ADDRESS || "rollup.m3ter.eth";
 
-export const rollup = new Contract(
-  process.env.ROLLUP_CONTRACT_ADDRESS || "rollup.m3ter.eth",
-  ["function nonce(uint256) external view returns (bytes6)"],
-  provider,
-);
+const m3terAbi = ["function publicKey(uint256) view returns (bytes32)", "function tokenID(bytes32) view returns (uint256)"];
+const rollupAbi = ["function nonce(uint256) external view returns (bytes6)"];
+
+function isHexAddress(value: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
+
+async function resolveContractAddress(contractName: string, ref: string): Promise<string> {
+  if (isHexAddress(ref)) {
+    console.log(`[ethers] ${contractName}: using address ${ref}`);
+    return ref;
+  }
+
+  const resolved = await provider.resolveName(ref);
+  if (!resolved) {
+    throw new Error(`[ethers] ${contractName}: failed to resolve ENS ${ref}`);
+  }
+
+  console.log(`[ethers] ${contractName}: resolved ENS ${ref} -> ${resolved}`);
+  return resolved;
+}
+
+export let m3ter!: Contract;
+export let rollup!: Contract;
+
+export const contractsReady = (async () => {
+  const [m3terAddress, rollupAddress] = await Promise.all([
+    resolveContractAddress("m3ter", m3terRef),
+    resolveContractAddress("rollup", rollupRef),
+  ]);
+
+  m3ter = new Contract(m3terAddress, m3terAbi, provider);
+  rollup = new Contract(rollupAddress, rollupAbi, provider);
+})();
 
 export const ccipRevenueReader = new Contract(
   process.env.CCIP_REVENUE_READER_ADDRESS || "0xD648cdF47e9534B2FCfb18C1E94CA9AAff07BA0E",

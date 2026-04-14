@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { handleUplinks } from "./services/mqtt";
 import { Request, Response } from "express";
-import { app } from "./services/context";
+import { app, contractsReady } from "./services/context";
 import {
   loadExtensionsFromConfig,
   loadUIExtensionsFromConfig,
@@ -23,6 +23,9 @@ async function initializeApp() {
     // Load UI extensions
     await loadUIExtensionsFromConfig();
     console.log("[info] UI extensions loaded successfully");
+
+    await contractsReady;
+    console.log("[info] resolved contract addresses");
 
     runHook("onBeforeInit");
 

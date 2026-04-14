@@ -9,6 +9,7 @@ import {
 import {
   provider,
   rollup as rollupContract,
+  contractsReady,
   ccipRevenueReader as ccipRevenueReaderContract,
   priceContext as priceContextContract,
 } from "../services/context";
@@ -101,6 +102,8 @@ export function getCachedVerifiersCount(): number {
 }
 
 export async function pruneAndSyncOnchain(meterIdentifier: number | string): Promise<number> {
+  await contractsReady;
+
   const meter =
     typeof meterIdentifier === "number" ? getMeterByTokenId(meterIdentifier) : getMeterByPublicKey(meterIdentifier);
 
@@ -124,6 +127,8 @@ export async function pruneAndSyncOnchain(meterIdentifier: number | string): Pro
 }
 
 export async function getLatestTransactionNonce(meterIdentifier: number): Promise<number> {
+  await contractsReady;
+
   // get latest nonce from chain
   let latestNonce = Number(await rollupContract.nonce(meterIdentifier));
 

@@ -1,7 +1,7 @@
 import { connect } from "mqtt";
 import { enqueue } from "./grpc";
 import { encode } from "../lib/encode";
-import { app, m3ter as m3terContract } from "./context";
+import { app, m3ter as m3terContract, contractsReady } from "./context";
 import {
   deleteMeterByPublicKey,
   getAllTransactionRecords,
@@ -27,7 +27,9 @@ import { createMeterLogger } from "../utils/logger";
 const CHIRPSTACK_HOST = process.env.CHIRPSTACK_HOST;
 const deviceLocks = new Map<string, boolean>(); // Lock per devEUI to prevent concurrent message processing
 
-export function handleUplinks(): Promise<boolean> {
+export async function handleUplinks(): Promise<boolean> {
+  await contractsReady;
+
   return new Promise(function (resolve, reject) {
     const client = connect({
       host: CHIRPSTACK_HOST,
