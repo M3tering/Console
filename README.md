@@ -357,7 +357,7 @@ Look for `ghcr.io/m3tering/console:main`.
 ## 2) Copy the SQLite file OUT of the container (backup)
 
 ```bash
-docker cp <container_name_or_id>:/opt/app/m3tering.db ./m3tering.db
+docker cp <container_name_or_id>:/opt/app/.data/m3tering.db ./m3tering.db
 ```
 
 Now you must have the sqlite database in the directory you are working from. if you want to get the transactions in json or csv format, go ahead with the following steps
