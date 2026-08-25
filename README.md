@@ -36,7 +36,7 @@ A modular, extensible service console for providers on the M3tering protocol. Fe
    
    # Contract & Network Configuration
    CONTRACT_LABEL=M3ters
-   MAINNET_RPC=https://sepolia.drpc.org
+   MAINNET_RPC=https://ethereum-sepolia-rpc.publicnode.com
    ETHEREUM_PRIVATE_KEY="..."
    
    # Streamr Configuration
