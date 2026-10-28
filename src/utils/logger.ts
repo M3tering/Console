@@ -8,18 +8,10 @@ export interface MeterLogger {
 
 export interface MeterContext {
   devEui?: string;
-  tokenId?: number;
-  publicKey?: string;
 }
 
 export function createMeterLogger(context: MeterContext): MeterLogger {
-  const prefix = context.tokenId 
-    ? `[Meter-${context.tokenId}${context.devEui ? `|${context.devEui}` : ''}]`
-    : context.devEui 
-    ? `[Device-${context.devEui}]`
-    : context.publicKey
-    ? `[PubKey-${context.publicKey.slice(-8)}]`
-    : '[Unknown-Meter]';
+  const prefix = context.devEui ? `[Device-${context.devEui}]` : "[Unknown-Meter]";
 
   return {
     info: (message: string) => console.log(`${prefix} [info] ${message}`),

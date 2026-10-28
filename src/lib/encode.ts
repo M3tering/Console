@@ -24,13 +24,11 @@ function floatToByteArray(float: number) {
 }
 
 /**
- * 
+ *
  * @notice only needs `nonce` from the state
  */
 export function encode(state: State, latitude: number, longitude: number) {
-  let responseBytes = floatToByteArray(latitude).concat(
-    floatToByteArray(longitude)
-  );
+  let responseBytes = floatToByteArray(latitude).concat(floatToByteArray(longitude));
 
   let nonce = state.nonce;
 

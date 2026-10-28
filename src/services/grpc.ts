@@ -1,14 +1,8 @@
 import { credentials, Metadata } from "@grpc/grpc-js";
 import { DeviceServiceClient } from "@chirpstack/chirpstack-api/api/device_grpc_pb";
-import {
-  DeviceQueueItem,
-  EnqueueDeviceQueueItemRequest,
-} from "@chirpstack/chirpstack-api/api/device_pb";
+import { DeviceQueueItem, EnqueueDeviceQueueItemRequest } from "@chirpstack/chirpstack-api/api/device_pb";
 
-const deviceService = new DeviceServiceClient(
-  `${process.env.CHIRPSTACK_HOST}:8080`,
-  credentials.createInsecure()
-);
+const deviceService = new DeviceServiceClient(`${process.env.CHIRPSTACK_HOST}:8080`, credentials.createInsecure());
 
 const metadata = new Metadata();
 metadata.set("authorization", "Bearer " + process.env.API_TOKEN);
