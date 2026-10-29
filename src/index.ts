@@ -1,102 +1,57 @@
-import "dotenv/config";
-import { handleUplinks } from "./services/mqtt";
-import { Request, Response } from "express";
-import { app, contractsReady } from "./services/context";
-import {
-  loadExtensionsFromConfig,
-  loadUIExtensionsFromConfig,
-  getUIComponents,
-  invokeUIAction,
-  runHook,
-} from "./lib/utils";
-import setupDatabase, { getAllMeterRecords, deleteMeterByPublicKey } from "./store/sqlite";
+import 'dotenv/config';
+import { handleUplinks } from './services/mqtt';
+import { contractsReady } from './services/contracts';
+import { startServer } from './services/server';
+import './services/ssh'; // attaches ssh and websocket to server
+import { loadExtensionsFromConfig, loadUIExtensionsFromConfig, runHook } from './lib/utils';
+import setupDatabase from './store/sqlite';
+import { createLogger } from './utils/logger';
 
-// Async initialization function
-async function initializeApp() {
+const logger = createLogger('[index]');
+
+(async function () {
   try {
-    console.log("[info] Starting application initialization...");
+    logger.info('Starting application initialization(v1.0.0)...');
 
     // Load extensions from config
     await loadExtensionsFromConfig();
-    console.log("[info] Extensions loaded successfully");
+    logger.info('Extensions loaded successfully');
 
     // Load UI extensions
     await loadUIExtensionsFromConfig();
-    console.log("[info] UI extensions loaded successfully");
+    logger.info('UI extensions loaded successfully');
 
-    await contractsReady;
-    console.log("[info] resolved contract addresses");
+    await contractsReady();
 
-    runHook("onBeforeInit");
+    runHook('onBeforeInit');
 
     // Initialize database tables and jobs
     setupDatabase();
 
-    console.log("[info] Database setup completed");
+    logger.info('Database setup completed');
 
-    runHook("onDatabaseSetup");
+    runHook('onDatabaseSetup');
 
     try {
-      console.log("[info] Initializing MQTT handling...");
+      logger.info('Initializing MQTT handling...');
 
       // Start MQTT handling
       await handleUplinks();
 
-      console.log("[info] MQTT handling initialized successfully");
+      logger.info('MQTT handling initialized successfully');
     } catch (mqttError) {
-      console.error("[error] MQTT initialization failed:", mqttError);
+      logger.error('[error] MQTT initialization failed:', mqttError);
       throw mqttError;
     }
 
-    console.log("[info] Application initialization completed successfully");
+    logger.info('Application initialization completed successfully');
 
-    runHook("onAfterInit");
+    startServer();
+
+    runHook('onAfterInit');
   } catch (error) {
-    console.error("[fatal] Failed to initialize application:", error);
-    runHook("onInitError", error);
+    logger.error('[fatal] Failed to initialize application:', error);
+    runHook('onInitError', error);
     process.exit(1);
   }
-}
-
-// Start initialization
-initializeApp();
-
-app.get("/", async (req: Request, res: Response) => {
-  const m3ters = getAllMeterRecords();
-
-  // Get UI components from loaded UI extensions
-  const { icons, windows } = await getUIComponents();
-
-  res.render("index", { m3ters, icons, windows });
-  console.log("[server]: Server handled GET request at `/`");
-});
-
-// API endpoint to invoke UI actions
-app.post("/api/actions/:moduleId/:actionId", async (req: Request, res: Response) => {
-  const { moduleId, actionId } = req.params;
-  console.log(`[server]: Invoking action '${actionId}' from module '${moduleId}'`);
-
-  const result = await invokeUIAction(moduleId, actionId);
-
-  if (result.success) {
-    res.status(200).json(result);
-  } else {
-    res.status(400).json(result);
-  }
-});
-
-app.delete("/delete-meter", async (req: Request, res: Response) => {
-  let publicKey = decodeURIComponent(req.query?.publicKey?.toString() as string);
-  if (publicKey) {
-    const deleted = deleteMeterByPublicKey(publicKey.toString());
-    if (!deleted) {
-      res.status(404).send({ message: "meter not found" });
-      return;
-    }
-  } else {
-    res.status(400).send({ message: "public key not specified" });
-    return;
-  }
-  console.log("[server]: Server handled DELETE request at `/delete-meter`");
-  res.status(200).send({ message: "deleted meter" });
-});
+})();

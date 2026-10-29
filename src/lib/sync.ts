@@ -5,17 +5,16 @@ import {
   pruneTransactionsAfter,
   pruneTransactionsBefore,
   updateMeterNonce,
-} from "../store/sqlite";
+} from '../store/sqlite';
 import {
   provider,
-  rollup as rollupContract,
-  contractsReady,
   ccipRevenueReader as ccipRevenueReaderContract,
   priceContext as priceContextContract,
-} from "../services/context";
-import { ZeroAddress } from "ethers";
-import { retry } from "./utils";
-import type { VerifierInfo } from "../types";
+} from '../services/contracts';
+import { ZeroAddress } from 'ethers';
+import { retry } from './utils';
+import type { VerifierInfo } from '../types';
+import { meterLatestNonceContractCall } from '../utils/contracts';
 
 // Cache for verifiers - populated once on startup
 let verifiersCache: VerifierInfo[] | null = null;
@@ -28,7 +27,7 @@ let isCacheInitialized = false;
  */
 export async function initializeVerifiersCache(): Promise<void> {
   try {
-    console.log("[info] Initializing verifiers cache...");
+    console.log('[info] Initializing verifiers cache...');
 
     // Get the number of verifiers
     const verifierCount = Number(await retry(() => ccipRevenueReaderContract.verifierCount()));
@@ -70,7 +69,7 @@ export async function initializeVerifiersCache(): Promise<void> {
 
     console.log(`[info] Successfully cached ${verifiers.length} verifiers`);
   } catch (error) {
-    console.error("[error] Failed to initialize verifiers cache:", error);
+    console.error('[error] Failed to initialize verifiers cache:', error);
     isCacheInitialized = false;
     verifiersCache = null;
     throw error;
@@ -102,17 +101,15 @@ export function getCachedVerifiersCount(): number {
 }
 
 export async function pruneAndSyncOnchain(meterIdentifier: number | string): Promise<number> {
-  await contractsReady;
-
   const meter =
-    typeof meterIdentifier === "number" ? getMeterByTokenId(meterIdentifier) : getMeterByPublicKey(meterIdentifier);
+    typeof meterIdentifier === 'number' ? getMeterByTokenId(meterIdentifier) : getMeterByPublicKey(meterIdentifier);
 
   if (!meter) {
     throw new Error(`Meter with identifier ${meterIdentifier} not found`);
   }
 
   // Check the latest nonce on the blockchain
-  const onchainNonce = Number(await rollupContract.nonce(meter.tokenId));
+  const onchainNonce = await meterLatestNonceContractCall(meter.tokenId);
   const latestNonce = meter.latestNonce;
 
   if (onchainNonce > latestNonce) {
@@ -127,26 +124,22 @@ export async function pruneAndSyncOnchain(meterIdentifier: number | string): Pro
 }
 
 export async function getLatestTransactionNonce(meterIdentifier: number): Promise<number> {
-  await contractsReady;
-
   // get latest nonce from chain
-  let latestNonce = Number(await rollupContract.nonce(meterIdentifier));
+  let latestNonce = await meterLatestNonceContractCall(meterIdentifier);
 
   // check local state for the highest nonce we have
-  while (true) {
-    const existingTransaction = getTransactionByNonce(latestNonce + 1, meterIdentifier);
-    if (existingTransaction) {
-      latestNonce += 1;
-    } else {
-      pruneTransactionsAfter(latestNonce, meterIdentifier);
-      break;
-    }
+  let localLatestNonce = (getMeterByTokenId(meterIdentifier))?.latestNonce || 0;
+
+  if (localLatestNonce > latestNonce) {
+    latestNonce = localLatestNonce;
   }
+
+  pruneTransactionsAfter(latestNonce, meterIdentifier); // remove zombie transaction records (just in case)
 
   return latestNonce;
 }
 
-// get revenue across suppored chains
+// get revenue across supported chains
 export async function getCrossChainRevenue(tokenId: number): Promise<number> {
   try {
     // Use cached verifiers instead of fetching them each time
