@@ -6,8 +6,8 @@ import {
   getCrossChainRevenue,
 } from "../../src/lib/sync";
 
-// Mock the context module
-jest.mock("../../src/services/context", () => ({
+// Mock the contracts module
+jest.mock("../../src/services/contracts", () => ({
   provider: {
     resolveName: jest.fn(),
   },
@@ -30,7 +30,7 @@ describe("Verifiers Cache", () => {
   });
 
   it("should initialize cache successfully", async () => {
-    const { provider, ccipRevenueReader } = require("../../src/services/context");
+    const { provider, ccipRevenueReader } = require("../../src/services/contracts");
 
     // Mock successful responses
     ccipRevenueReader.verifierCount.mockResolvedValue(2n);
@@ -55,7 +55,7 @@ describe("Verifiers Cache", () => {
   });
 
   it("should throw error if ENS resolution fails (returns null)", async () => {
-    const { provider, ccipRevenueReader } = require("../../src/services/context");
+    const { provider, ccipRevenueReader } = require("../../src/services/contracts");
 
     // Mock responses with ENS resolution failure
     ccipRevenueReader.verifierCount.mockResolvedValue(1n);
@@ -69,7 +69,7 @@ describe("Verifiers Cache", () => {
   });
 
   it("should throw error if ENS resolution fails (returns zero address)", async () => {
-    const { provider, ccipRevenueReader } = require("../../src/services/context");
+    const { provider, ccipRevenueReader } = require("../../src/services/contracts");
 
     // Mock responses with ENS resolution failure
     ccipRevenueReader.verifierCount.mockResolvedValue(1n);
@@ -83,7 +83,7 @@ describe("Verifiers Cache", () => {
   });
 
   it("should use cached verifiers for getCrossChainRevenue", async () => {
-    const { provider, ccipRevenueReader } = require("../../src/services/context");
+    const { provider, ccipRevenueReader } = require("../../src/services/contracts");
 
     // Mock successful initialization
     ccipRevenueReader.verifierCount.mockResolvedValue(1n);
