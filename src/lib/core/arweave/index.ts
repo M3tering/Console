@@ -2,6 +2,9 @@ import { ArweaveSigner, TurboFactory } from "@ardrive/turbo-sdk";
 import { Readable } from "stream";
 import Arweave from "arweave";
 import type { DecodedPayload, Hooks } from "../../../types";
+import { createLogger } from "../../../utils/logger";
+
+const logger = createLogger("[arweave]");
 
 export default class implements Hooks {
   async onTransactionDistribution(m3terId: number, decoded: DecodedPayload) {
@@ -45,20 +48,20 @@ export default class implements Hooks {
       },
       events: {
         onUploadProgress: (progress) => {
-          console.log("[arweave] Upload progress:", progress);
+          logger.info("Upload progress:", progress);
         },
         onError: (error) => {
-          console.error("[arweave] Upload error:", error);
+          logger.error("Upload error:", error);
         },
         onSuccess(event) {
-          console.log("[arweave] Upload successful! Transaction ID:", event);
+          logger.info("Upload successful! Transaction ID:", event);
         },
         onUploadSuccess(event) {
-          console.log("[arweave] Upload completed! Transaction ID:", event);
+          logger.info("Upload completed! Transaction ID:", event);
         },
       },
     });
 
-    console.log(`[arweave] Uploaded transaction ${decoded.nonce} for M3ter ID ${m3terId} to Arweave.`);
+    logger.info(`Uploaded transaction ${decoded.nonce} for M3ter ID ${m3terId} to Arweave.`);
   }
 }

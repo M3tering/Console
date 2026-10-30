@@ -41,7 +41,7 @@ app.get('/', async (req: Request, res: Response) => {
 // API endpoint to invoke UI actions
 app.post('/api/actions/:moduleId/:actionId', async (req: Request, res: Response) => {
   const { moduleId, actionId } = req.params;
-  console.log(`[server]: Invoking action '${actionId}' from module '${moduleId}'`);
+  logger.info(`Invoking action '${actionId}' from module '${moduleId}'`);
 
   const result = await invokeUIAction(moduleId, actionId);
 
@@ -64,7 +64,7 @@ app.delete('/delete-meter', async (req: Request, res: Response) => {
     res.status(400).send({ message: 'public key not specified' });
     return;
   }
-  console.log('[server]: Server handled DELETE request at `/delete-meter`');
+  logger.info('Server handled DELETE request at `/delete-meter`');
   res.status(200).send({ message: 'deleted meter' });
 });
 
