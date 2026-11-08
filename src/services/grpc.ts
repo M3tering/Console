@@ -1,6 +1,9 @@
 import { credentials, Metadata } from "@grpc/grpc-js";
 import { DeviceServiceClient } from "@chirpstack/chirpstack-api/api/device_grpc_pb";
 import { DeviceQueueItem, EnqueueDeviceQueueItemRequest } from "@chirpstack/chirpstack-api/api/device_pb";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("[grpc]");
 
 const deviceService = new DeviceServiceClient(`${process.env.CHIRPSTACK_HOST}:8080`, credentials.createInsecure());
 
@@ -18,7 +21,7 @@ export function enqueue(devEui: string, data: number[]) {
 
   enqueueReq.setQueueItem(item);
   deviceService.enqueue(enqueueReq, metadata, (err: any, resp: any) => {
-    if (err !== null) return console.log(err);
-    console.log(`${data} has been enqueued with id: ` + resp.getId());
+    if (err !== null) return logger.error("Failed to enqueue device data:", err);
+    logger.info(`${data} has been enqueued with id: ` + resp.getId());
   });
 }

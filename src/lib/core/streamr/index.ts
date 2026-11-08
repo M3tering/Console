@@ -4,6 +4,9 @@ import { getAllMeterRecords, getAllTransactionRecords } from "../../../store/sql
 import { buildBatchPayload, retry } from "../../utils";
 import type { Hooks, TransactionRecord } from "../../../types";
 import { pruneAndSyncOnchain } from "../../sync";
+import { createLogger } from "../../../utils/logger";
+
+const logger = createLogger("[streamr]");
 
 const { ETHEREUM_PRIVATE_KEY } = process.env;
 
@@ -16,7 +19,7 @@ export default class implements Hooks {
   private cronSchedule: string = process.env.STREAMR_CRONSCHEDULE || "0 * * * *";
 
   async onAfterInit() {
-    console.log(
+    logger.info(
       "Registering Streamr cron job... Schedule: ",
       this.cronSchedule,
       " Stream IDs: ",
@@ -27,23 +30,23 @@ export default class implements Hooks {
     cron.schedule(
       this.cronSchedule,
       async () => {
-        console.log("Streamr cron job started: Pruning meters and publishing pending transactions...");
+        logger.info("Streamr cron job started: Pruning meters and publishing pending transactions...");
         const m3ters = getAllMeterRecords();
         for (const m3ter of m3ters) {
           try {
             pruneAndSyncOnchain(m3ter.publicKey);
           } catch (error) {
-            console.error(`Error pruning and syncing meter ${m3ter.publicKey}:`, error);
+            logger.error(`Error pruning and syncing meter ${m3ter.publicKey}:`, error);
           }
         }
 
-        console.log("Publishing pending transactions to Streamr...");
+        logger.info("Publishing pending transactions to Streamr...");
 
         const pendingTransactions = await this.getPendingTransactions();
         if (pendingTransactions.length > 0) {
           await Promise.all(
             this.streamIds.map(async (STREAMR_STREAM_ID) => {
-              console.log(`Publishing to Streamr stream: ${STREAMR_STREAM_ID}`);
+              logger.info(`Publishing to Streamr stream: ${STREAMR_STREAM_ID}`);
               await retry(
                 () => this.publishPendingTransactionsToStreamr(STREAMR_STREAM_ID, pendingTransactions),
                 3,
@@ -56,7 +59,7 @@ export default class implements Hooks {
       { name: "streamr-publish-pending-transactions", noOverlap: true },
     );
 
-    console.log("Streamr cron job registered.");
+    logger.info("Streamr cron job registered.");
     return;
   }
 
@@ -72,26 +75,26 @@ export default class implements Hooks {
     });
 
     try {
-      console.log(`[streamr] Connecting to ${STREAMR_STREAM_ID}...`);
+      logger.info(`Connecting to ${STREAMR_STREAM_ID}...`);
       const stream = await retry(() => streamrClient.getStream(STREAMR_STREAM_ID!), 3, 2000);
 
       await new Promise((resolve) => setTimeout(resolve, 2000)); // wait for 2 seconds to ensure connection is established
 
-      console.log(`[streamr] Connected. Publishing ${pendingTransactions.length} transactions...`);
+      logger.info(`Connected. Publishing ${pendingTransactions.length} transactions...`);
       const batchPayload = buildBatchPayload(pendingTransactions);
       await stream.publish(batchPayload);
 
-      console.log(`[streamr] Published ${pendingTransactions.length} transactions to stream ${STREAMR_STREAM_ID}`);
+      logger.info(`Published ${pendingTransactions.length} transactions to stream ${STREAMR_STREAM_ID}`);
       await new Promise((resolve) => setTimeout(resolve, 100000)); // wait for 100 seconds to ensure message is sent
     } catch (error) {
-      console.error(`[streamr] Error publishing to Streamr:`, error);
+      logger.error(`Error publishing to Streamr:`, error);
       throw error;
     } finally {
       // destroy the client to free resources
       try {
         await streamrClient.destroy();
       } catch (destroyError) {
-        console.error(`[streamr] Error destroying client:`, destroyError);
+        logger.error(`Error destroying client:`, destroyError);
       }
     }
   }

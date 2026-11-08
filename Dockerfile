@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+# Use Node.js headers bundled with the base image
+ENV npm_config_nodedir=/usr/local
+
 # Create working directory
 WORKDIR /opt/app
 

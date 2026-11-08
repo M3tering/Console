@@ -5,17 +5,19 @@ import {
   pruneTransactionsAfter,
   pruneTransactionsBefore,
   updateMeterNonce,
-} from "../store/sqlite";
+} from '../store/sqlite';
 import {
   provider,
-  rollup as rollupContract,
-  contractsReady,
   ccipRevenueReader as ccipRevenueReaderContract,
   priceContext as priceContextContract,
-} from "../services/context";
-import { ZeroAddress } from "ethers";
-import { retry } from "./utils";
-import type { VerifierInfo } from "../types";
+} from '../services/contracts';
+import { ZeroAddress } from 'ethers';
+import { retry } from './utils';
+import type { VerifierInfo } from '../types';
+import { meterLatestNonceContractCall } from '../utils/contracts';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('[sync]');
 
 // Cache for verifiers - populated once on startup
 let verifiersCache: VerifierInfo[] | null = null;
@@ -28,11 +30,11 @@ let isCacheInitialized = false;
  */
 export async function initializeVerifiersCache(): Promise<void> {
   try {
-    console.log("[info] Initializing verifiers cache...");
+    logger.info('Initializing verifiers cache...');
 
     // Get the number of verifiers
     const verifierCount = Number(await retry(() => ccipRevenueReaderContract.verifierCount()));
-    console.log(`[info] Found ${verifierCount} verifiers to cache`);
+    logger.info(`Found ${verifierCount} verifiers to cache`);
 
     const verifiers: VerifierInfo[] = [];
 
@@ -42,7 +44,7 @@ export async function initializeVerifiersCache(): Promise<void> {
         // Get verifier info (ensName, targetContractAddress)
         const [ensName, targetAddress] = await retry(() => ccipRevenueReaderContract.verifiers(i));
 
-        console.log(`[info] Fetching verifier ${i}: ENS: ${ensName}, target: ${targetAddress}`);
+        logger.info(`Fetching verifier ${i}: ENS: ${ensName}, target: ${targetAddress}`);
 
         // Resolve ENS name to get the verifier address
         const verifierAddress = await retry(() => provider.resolveName(ensName));
@@ -51,7 +53,7 @@ export async function initializeVerifiersCache(): Promise<void> {
           throw new Error(`Failed to resolve ENS name: ${ensName}`);
         }
 
-        console.log(`[info] Resolved ${ensName} to verifier address: ${verifierAddress}`);
+        logger.info(`Resolved ${ensName} to verifier address: ${verifierAddress}`);
 
         verifiers.push({
           ensName,
@@ -59,7 +61,7 @@ export async function initializeVerifiersCache(): Promise<void> {
           verifierAddress,
         });
       } catch (error) {
-        console.error(`[error] Failed to initialize verifier ${i}:`, error);
+        logger.error(`Failed to initialize verifier ${i}:`, error);
         throw error; // Fail fast as requested
       }
     }
@@ -68,9 +70,9 @@ export async function initializeVerifiersCache(): Promise<void> {
     verifiersCache = verifiers;
     isCacheInitialized = true;
 
-    console.log(`[info] Successfully cached ${verifiers.length} verifiers`);
+    logger.info(`Successfully cached ${verifiers.length} verifiers`);
   } catch (error) {
-    console.error("[error] Failed to initialize verifiers cache:", error);
+    logger.error('Failed to initialize verifiers cache:', error);
     isCacheInitialized = false;
     verifiersCache = null;
     throw error;
@@ -102,17 +104,15 @@ export function getCachedVerifiersCount(): number {
 }
 
 export async function pruneAndSyncOnchain(meterIdentifier: number | string): Promise<number> {
-  await contractsReady;
-
   const meter =
-    typeof meterIdentifier === "number" ? getMeterByTokenId(meterIdentifier) : getMeterByPublicKey(meterIdentifier);
+    typeof meterIdentifier === 'number' ? getMeterByTokenId(meterIdentifier) : getMeterByPublicKey(meterIdentifier);
 
   if (!meter) {
     throw new Error(`Meter with identifier ${meterIdentifier} not found`);
   }
 
   // Check the latest nonce on the blockchain
-  const onchainNonce = Number(await rollupContract.nonce(meter.tokenId));
+  const onchainNonce = await meterLatestNonceContractCall(meter.tokenId);
   const latestNonce = meter.latestNonce;
 
   if (onchainNonce > latestNonce) {
@@ -127,26 +127,22 @@ export async function pruneAndSyncOnchain(meterIdentifier: number | string): Pro
 }
 
 export async function getLatestTransactionNonce(meterIdentifier: number): Promise<number> {
-  await contractsReady;
-
   // get latest nonce from chain
-  let latestNonce = Number(await rollupContract.nonce(meterIdentifier));
+  let latestNonce = await meterLatestNonceContractCall(meterIdentifier);
 
   // check local state for the highest nonce we have
-  while (true) {
-    const existingTransaction = getTransactionByNonce(latestNonce + 1, meterIdentifier);
-    if (existingTransaction) {
-      latestNonce += 1;
-    } else {
-      pruneTransactionsAfter(latestNonce, meterIdentifier);
-      break;
-    }
+  let localLatestNonce = (getMeterByTokenId(meterIdentifier))?.latestNonce || 0;
+
+  if (localLatestNonce > latestNonce) {
+    latestNonce = localLatestNonce;
   }
+
+  pruneTransactionsAfter(latestNonce, meterIdentifier); // remove zombie transaction records (just in case)
 
   return latestNonce;
 }
 
-// get revenue across suppored chains
+// get revenue across supported chains
 export async function getCrossChainRevenue(tokenId: number): Promise<number> {
   try {
     // Use cached verifiers instead of fetching them each time
@@ -157,8 +153,8 @@ export async function getCrossChainRevenue(tokenId: number): Promise<number> {
     // Iterate through all cached verifiers and get revenue from each chain
     for (const verifier of verifiers) {
       try {
-        console.log(
-          `[info] Getting revenue from ENS: ${verifier.ensName}, target: ${verifier.targetAddress}, verifier: ${verifier.verifierAddress}`,
+        logger.info(
+          `Getting revenue from ENS: ${verifier.ensName}, target: ${verifier.targetAddress}, verifier: ${verifier.verifierAddress}`,
         );
 
         // Get revenue from this specific chain using CCIP read
@@ -170,18 +166,18 @@ export async function getCrossChainRevenue(tokenId: number): Promise<number> {
         );
         const revenueAmount = Number(revenue);
 
-        console.log(`[info] Revenue from ${verifier.ensName} (${verifier.verifierAddress}): ${revenueAmount}`);
+        logger.info(`Revenue from ${verifier.ensName} (${verifier.verifierAddress}): ${revenueAmount}`);
         totalRevenue += revenueAmount;
       } catch (error) {
-        console.error(`[error] Failed to get revenue from verifier ${verifier.ensName}:`, error);
+        logger.error(`Failed to get revenue from verifier ${verifier.ensName}:`, error);
         // Continue with other verifiers even if one fails
       }
     }
 
-    console.log(`[info] Total cross-chain revenue for token ${tokenId}: ${totalRevenue}`);
+    logger.info(`Total cross-chain revenue for token ${tokenId}: ${totalRevenue}`);
     return totalRevenue;
   } catch (error) {
-    console.error(`[error] Failed to get cross-chain revenue for token ${tokenId}:`, error);
+    logger.error(`Failed to get cross-chain revenue for token ${tokenId}:`, error);
     throw error;
   }
 }
@@ -190,17 +186,17 @@ export async function getCrossChainRevenue(tokenId: number): Promise<number> {
 export async function getOwedFromPriceContext(tokenId: number): Promise<number> {
   try {
     return await retry(async () => {
-      console.log(`[info] Getting owed amount for token ${tokenId} from price context`);
+      logger.info(`Getting owed amount for token ${tokenId} from price context`);
 
       // Call the price context to get the amount the user owes with CCIP read enabled
       const owedAmount = await priceContextContract.owed(tokenId);
       const owed = Number(owedAmount);
 
-      console.log(`[info] Owed amount for token ${tokenId}: ${owed}`);
+      logger.info(`Owed amount for token ${tokenId}: ${owed}`);
       return owed;
     });
   } catch (error) {
-    console.error(`[error] Failed to get owed amount for token ${tokenId}:`, error);
+    logger.error(`Failed to get owed amount for token ${tokenId}:`, error);
     throw error;
   }
 }
