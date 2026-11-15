@@ -15,8 +15,9 @@ async function invokeAction(moduleId, actionId, buttonElement) {
   let originalContent = null;
   if (buttonElement) {
     originalContent = buttonElement.innerHTML;
-    buttonElement.innerHTML = "...";
+    buttonElement.textContent = "Working…";
     buttonElement.disabled = true;
+    buttonElement.setAttribute('aria-busy', 'true');
   }
 
   try {
@@ -46,74 +47,20 @@ async function invokeAction(moduleId, actionId, buttonElement) {
     if (buttonElement && originalContent !== null) {
       buttonElement.innerHTML = originalContent;
       buttonElement.disabled = false;
+      buttonElement.removeAttribute('aria-busy');
     }
   }
 }
 
-/**
- * Show a notification message using NES.css styling
- * @param {string} message - The message to display
- * @param {string} type - 'success' or 'error'
- */
+// Shared themed feedback for built-in applications and extensions.
+let notificationTimer;
 function showNotification(message, type) {
-  // Remove any existing notification
-  const existing = document.getElementById("action-notification");
-  if (existing) {
-    existing.remove();
-  }
-
-  // Create notification element
-  const notification = document.createElement("div");
-  notification.id = "action-notification";
-  notification.className = `nes-container ${type === "success" ? "is-success" : "is-error"}`;
-  notification.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 9999;
-    max-width: 400px;
-    animation: slideIn 0.3s ease-out;
-  `;
-  notification.innerHTML = `
-    <p style="margin: 0; font-size: 12px;">${message}</p>
-  `;
-
-  document.body.appendChild(notification);
-
-  // Play click sound for feedback
-  if (typeof clickButton === "function") {
-    clickButton();
-  }
-
-  // Auto-remove after 4 seconds
-  setTimeout(() => {
-    notification.style.animation = "slideOut 0.3s ease-in";
-    setTimeout(() => notification.remove(), 300);
-  }, 4000);
+  const area = document.getElementById('notification-area');
+  if (!area) return;
+  clearTimeout(notificationTimer);
+  const notification = document.createElement('div');
+  notification.className = 'notification ' + (type === 'error' ? 'error' : 'success');
+  notification.textContent = message;
+  area.replaceChildren(notification);
+  notificationTimer = setTimeout(() => notification.remove(), 6000);
 }
-
-// Add CSS animation styles
-const styleSheet = document.createElement("style");
-styleSheet.textContent = `
-  @keyframes slideIn {
-    from {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes slideOut {
-    from {
-      transform: translateX(0);
-      opacity: 1;
-    }
-    to {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-`;
-document.head.appendChild(styleSheet);

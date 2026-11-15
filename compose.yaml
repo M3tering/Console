@@ -9,10 +9,10 @@ services:
       - "3000:3000"
     volumes:
       - ./.data:/opt/app/.data
-      - console_src_modules:/opt/app/src/lib
-      - console_dist_modules:/opt/app/dist/lib
+      - console_extension_sources:/opt/app/src/extensions
+      - console_extension_builds:/opt/app/dist/extensions
 
 volumes:
   console_db:
-  console_src_modules:
-  console_dist_modules:
+  console_extension_sources:
+  console_extension_builds:

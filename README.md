@@ -24,6 +24,9 @@ A modular, extensible service console for providers on the M3tering protocol. Fe
    ```
    # Server Configuration
    PORT=3000
+   CONSOLE_HOST=127.0.0.1
+   CONSOLE_USERNAME=admin
+   CONSOLE_PASSWORD=<a-strong-unique-password>
    
    # Module Configuration
    BACKEND_MODULES="core/arweave,core/is_on,core/prover,core/streamr"
@@ -44,7 +47,7 @@ A modular, extensible service console for providers on the M3tering protocol. Fe
    STREAMR_STREAM_ID="0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"
    STREAMR_CRONSCHEDULE="0 * * * *"  # Every hour
    
-   # Optional: Prover Node (defaults to automatic selection)
+   # Optional: Prover Node (publishing is disabled when unset)
    # PREFERRED_PROVER_NODE="https://prover.m3ter.ing"
    # PROVER_CRONSCHEDULE="0 0 * * *" # Every 24 hours
    ```
@@ -72,6 +75,334 @@ A modular, extensible service console for providers on the M3tering protocol. Fe
 npm install
 npm run dev
 ```
+
+## M3ter Manager
+
+**M3ter Manager** is a built-in desktop application for Switch Cumulus telemetry
+and technician downlinks. Launch it from the desktop, dock, or application
+launcher. Its Overview, Live monitoring, Analytics, Commands, Queue, and Meter
+information sections share the selected device, desktop theme, and responsive
+window environment. On phones the desktop presents one active full-screen window.
+
+### Configuration and startup
+
+Configure the console credentials, separate manager login, and existing ChirpStack connection:
+
+```dotenv
+CONSOLE_USERNAME=admin
+CONSOLE_PASSWORD=your-strong-console-password
+M3TER_MANAGER_USERNAME=operator
+M3TER_MANAGER_PASSWORD=your-strong-manager-password
+APPLICATION_ID=your-chirpstack-application-uuid
+CHIRPSTACK_HOST=localhost
+API_TOKEN=your-server-side-chirpstack-api-token
+CHIRPSTACK_REST_URL=http://localhost:8090
+MQTT_URL=mqtt://localhost:1883
+# MQTT_USERNAME=your-broker-user
+# MQTT_PASSWORD=your-broker-password
+M3TER_INACTIVE_SECONDS=300
+```
+
+`CHIRPSTACK_REST_URL` is the origin of **chirpstack-rest-api**, not the web UI.
+It defaults to `http://CHIRPSTACK_HOST:8090`. The separately configured
+`CHIRPSTACK_WEB_URL` continues to serve the embedded ChirpStack web application.
+The REST proxy must be reachable from the console process/container. For a
+loopback-only proxy connected to a local plaintext gRPC server, its command is:
+
+```sh
+chirpstack-rest-api --server 127.0.0.1:8080 --bind 127.0.0.1:8090 --insecure
+```
+
+See the [official REST proxy documentation](https://github.com/chirpstack/chirpstack-rest-api)
+for installation and TLS options. No browser CORS or direct access to port 8090
+is needed. The API token needs device/application/profile read access and device
+queue enqueue/read/flush access for the configured application. MQTT requires
+permission to subscribe to that application's events. Configure ChirpStack's
+MQTT integration to publish JSON. `mqtts://` URLs use normal certificate
+verification; broker credentials remain on the backend.
+
+For monitoring and technician control **without the existing billing/blockchain
+workflow**, set `CONSOLE_MONITOR_ONLY=true`. This skips backend/UI extension
+loading, contract initialization, and the legacy billing uplink consumer. Built-in
+desktop applications remain available. The default is false to preserve existing
+console installations. When false, existing billing automation can still send
+its own commands; M3ter Manager displays this explicitly. Manager itself never
+initiates blockchain, wallet, payment, or tokenization operations.
+
+```sh
+npm run build
+npm start
+```
+
+Then open the console on its configured port (3000 by default), sign in, and
+launch **M3ter Manager**. The dashboard stays accessible while MQTT reconnects.
+
+### Architecture and API
+
+The application uses the same Express authentication boundary and SQLite
+connection as the console. Manager access additionally requires its own username/password
+from `.env`. Missing manager credentials leave the app locked. The login uses an
+eight-hour HttpOnly, SameSite cookie; logout, expiry, credential changes, and server
+restarts invalidate sessions. Failed sign-ins are rate limited. The API and live
+stream enforce both access checks; credentials never enter browser storage.
+All manager operators share the configured administrator identity. Records and operations are scoped to `APPLICATION_ID`;
+this does not introduce a separate multi-user/tenant authorization system.
+
+| Responsibility | Implementation |
+| --- | --- |
+| Desktop view and theme integration | `src/views/partials/m3ter-manager.hbs`, `src/public/css/m3ter-manager.css` |
+| Selection, telemetry, navigation, live connection | `src/public/js/m3ter-manager.js` |
+| Accessible SVG charts with pointer/keyboard inspection | `src/public/js/m3ter-charts.js` |
+| Command forms, previews, confirmation, queue/history | `src/public/js/m3ter-commands.js` |
+| Device discovery and scoped REST access | `src/m3ter/chirpstack.ts` |
+| Decoder registry and existing decoder/signature reuse | `src/m3ter/decoder.ts` |
+| MQTT ingestion, diagnostics, activity, delivery correlation | `src/m3ter/monitor.ts`, existing `src/services/mqtt.ts` |
+| SQLite tables and historical queries | `src/m3ter/store.ts` |
+| Command catalogue and exact frame generation | `src/m3ter/commands.ts` |
+| Authenticated API and real-time stream | `src/m3ter/api.ts`, `src/services/socket-router.ts` |
+
+The shared WebSocket upgrade router protects both `/terminal` and
+`/m3ter-manager/live` with console authentication and an exact-origin check.
+The manager stream additionally requires a manager session and closes on logout or expiry.
+The manager stream carries sanitized change notifications; the browser retrieves
+the selected device's data from authenticated, bounded HTTP endpoints.
+
+All HTTP routes below are prefixed with `/api/m3ter-manager`:
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET / POST / DELETE | `/session` | Check access / sign in / sign out |
+| GET | `/config` | Command catalogue, MQTT state, activity threshold |
+| GET | `/devices?search=&offset=` | Name/DevEUI search, 50 devices per page |
+| GET | `/devices/:devEui` | Sanitized device metadata, latest reading, known key |
+| GET | `/devices/:devEui/history?from=&to=&offset=&limit=` | Millisecond UTC date range, reading page and chart samples |
+| GET | `/devices/:devEui/events?offset=` | Device events and application-wide MQTT observations |
+| GET | `/devices/:devEui/commands?offset=` | Persistent command history |
+| POST | `/commands/preview` | Validate a command ID/parameter and produce exact bytes |
+| POST | `/devices/:devEui/commands` | Validate and enqueue an unconfirmed downlink |
+| GET | `/devices/:devEui/queue` | Up to 100 pending ChirpStack queue items |
+| DELETE | `/devices/:devEui/queue` | Clear all queued items after explicit DevEUI confirmation |
+
+### Telemetry and historical data
+
+One MQTT client subscribes to
+`application/{APPLICATION_ID}/device/+/event/+`. It validates both the topic and
+event identity, handles `up`, `ack`, `txack`, `join`, `location`, `log`, and `status`,
+and reconnects/resubscribes without creating another client when a meter changes.
+Telemetry is persisted before the optional legacy billing consumer runs.
+
+The current decoder accepts **only FPort 2, 74 or 106 bytes**. It wraps the
+existing `decodePayload` implementation: uint32 BE nonce; uint32 BE energy divided
+by 1,000,000; 64-byte Ed25519 signature; uint16 BE voltage divided by 10; optional
+32-byte public key. Existing console keys and subsequently learned keys support
+74-byte uplinks. Signature verification covers **only bytes 0–7**, not voltage.
+A first-seen key establishes cryptographic consistency, not independently verified
+device identity. Invalid/unverified signatures are labeled, never claimed valid.
+No GPS is extracted from these payloads. Device location comes only from validated
+ChirpStack device location events. A `phaseMode` device tag of `three-phase`,
+`phase-a`, `phase-b`, or `phase-c` may describe configured metadata; it is not a
+firmware acknowledgment. In three-phase metadata mode the dashboard separately
+labels the transmitted voltage sum and calculated mean (sum / 3).
+
+Additive SQLite tables store raw MQTT payloads/metadata separately from decoded
+readings, device state, and command audit history. Device/time indexes support
+bounded queries. Uplinks deduplicate by ChirpStack event ID, or by a stable tuple
+of device/event type/source time/frame counter/payload when an ID is absent.
+Identical values with distinct events are preserved. Without an event ID or
+source timestamp, events are retained separately rather than risking data loss.
+Source timestamps are preserved in metadata; invalid timestamps use receipt time.
+
+Charts plot **accumulator snapshots**, not interval consumption, and sample to at
+most 401 points. A nonce identifies an accumulation cycle ending when the main
+collector acknowledges/reset commands advance the nonce. Within a cycle only
+increases above its previous highest total add observed energy: repeated totals
+add zero, even with different MQTT event IDs. A higher nonce starts a fresh cycle
+and contributes its own accumulator, even when greater than the preceding total.
+The first observed report establishes a baseline. Lower totals without a nonce
+advance and regressed nonces (including ambiguous reboot/wrap behavior) are flagged
+as uncertain and never credited as a fresh reset. Charts split at cycle changes
+and decreases. Calculations include prior history before applying date filters,
+so pagination/range changes do not erase the baseline. Raw reports are preserved.
+This is observed incremental energy, **not the collector's acknowledged billing
+total**. Missing cycles, unobserved consumption before resets, and ambiguous nonce
+resets cannot be reconstructed. Manager never automatically acknowledges reports.
+
+Reading pages contain at most
+100 records (50 in the UI), activity pages 100, and command-history pages 50.
+History ranges are capped at 366 days. Data is retained until an operator manages
+the database; no automatic deletion policy is introduced.
+
+### Command safety and delivery evidence
+
+All 13 command types and their listed parameter variations are defined centrally.
+The backend reconstructs payloads from IDs and validated integer parameters,
+enforces lengths and FPorts 2/3, and rejects raw payload/FPort overrides. Class B,
+calibration, and FUOTA ports 200–202 are not exposed. Billing, restart, relay
+hardware, and Class A controls require explicit confirmation. Queue clearing
+requires a confirmation naming the selected DevEUI and removes all pending items,
+including items created by other applications.
+
+Commands are recorded before enqueueing. A UUID request ID makes a repeated
+submission idempotent, including retry after a lost HTTP response. A timeout or
+ambiguous upstream failure is **unknown**, not automatically retried. Inspect the
+queue before issuing a new request. A console restart marks interrupted enqueues
+unknown. The upstream queue item uses the same UUID for event correlation.
+
+`queued` means REST acceptance; the Queue tab shows pending delivery.
+`transmitted` means a gateway `txack`, **not** proven device delivery. Only an
+acknowledged `ack` event marks `delivered`; even this does not prove firmware
+execution. Commands default to unconfirmed, so device acknowledgments may never
+arrive. Events match both DevEUI and queue item ID; no relay state or applied
+configuration is inferred from queue acceptance. Confirmed deliveries are retained
+when a queue is cleared. MQTT activity/inactivity is explicitly observational.
+
+### Validation and preview boundaries
+
+```sh
+npm test -- --runInBand
+npm run test:ui
+npm run preview:ui
+```
+
+The preview at `http://127.0.0.1:4173` includes a **labeled simulated M3TER network**.
+Sign in there with **`demo` / `demo-manager`** (preview only).
+Its local REST and MQTT simulators never contact real meters; downlinks there only
+modify fixture queues. Browser integration tests exercise the production API,
+SQLite store, authenticated WebSocket routing, and a real MQTT.js TCP connection
+to a simulator. Unit tests cover every supplied command Base64 value, parameter
+boundaries, payload lengths and scaling, signatures, isolation, deduplication,
+reset segments, persistence, and pagination. Browser tests cover switching meters,
+MQTT reconnection, command confirmation/idempotency, queue operations, error
+recovery, charts and all four themes on desktop/tablet/phone sizes.
+
+The referenced firmware source is not included in this checkout; implementation
+uses the supplied firmware specification and existing console decoder. No live
+ChirpStack/meter validation is implied by simulator test results. Richer telemetry
+decoders and command-specific firmware acknowledgments are not implemented without
+their firmware specifications. The current protocol cannot verify relay state,
+the applied reporting interval, restart completion, or applied phase configuration.
+
+## ChirpStack desktop application
+
+Open **ChirpStack** from the desktop, dock, or application launcher. Its web
+interface opens inside a console window; the browser uses `/chirpstack/` on the
+console's own port. The console server connects to
+`http://CHIRPSTACK_HOST:8080` (localhost by default). Set
+`CHIRPSTACK_WEB_URL=http://your-chirpstack-host:8080` to override the web endpoint,
+or use an HTTPS origin. Only an origin is supported, without credentials or a
+subpath. In Docker this address must be reachable from the console container.
+
+Sign in with your **ChirpStack credentials** inside the app. The console login
+protects the proxy; neither console credentials nor the server's `API_TOKEN` are
+forwarded as ChirpStack credentials. An HttpOnly, SameSite cookie scoped to
+`/chirpstack` allows ChirpStack's own Bearer authentication. It expires after
+eight hours; use **Reload** to renew access. Console restarts invalidate it.
+ChirpStack browser storage is namespaced so its logout cannot erase desktop
+preferences. Reload restarts the embedded page; theme changes and minimizing
+preserve it. The toolbar also opens the proxied interface in a new tab.
+
+The integration targets the ChirpStack v4 hash-routed UI and gRPC-Web API,
+including streamed responses. ChirpStack retains its own interface inside the
+responsive console window. External SSO redirects and customized upstream builds
+may need deployment-specific configuration. Configure only a trusted ChirpStack
+server: its interface runs on the console origin. If the upstream cannot be
+reached, the app shows a connection error with a retry link. The UI-only preview
+does not connect to a real ChirpStack server.
+
+## Console access and reliability
+
+The production console requires `CONSOLE_USERNAME` and `CONSOLE_PASSWORD` and
+binds to `127.0.0.1` by default. The browser prompts for these credentials before
+loading the desktop; API routes and terminal upgrades require the same login.
+For remote access, use an SSH tunnel or a TLS reverse proxy. Set `CONSOLE_ORIGIN`
+to the proxy's exact public origin (for example `https://console.example.com`,
+without a trailing slash). Set `CONSOLE_HOST` only if the proxy needs a different
+bind address, and keep the backend port private.
+
+Terminal host credentials are separate from the console login. They are sent in
+the first authenticated WebSocket message to `/terminal`, never in the URL or
+connection logs. There is no built-in SSH password. Cross-origin browser writes
+and terminal upgrades are rejected.
+
+Meter transactions and their local nonces commit atomically. Device downlinks
+are attempted before external delivery hooks; a delivery failure does not block
+acknowledgement or later delivery extensions. Exact retransmissions can be
+acknowledged without storing or distributing the same transaction twice.
+Transactions remain in SQLite for chain synchronization and scheduled publishing;
+this does not provide an exactly-once delivery guarantee for external services.
+Scheduled batches wait for synchronization, exclude confirmed nonces, and skip
+meters whose synchronization failed until a later run.
+
+`core/is_on` compares cross-chain revenue with owed amounts using exact integers.
+Bootstrap messages use the same check. Failed or incomplete balance reads produce
+an off response instead of silently permitting power; configure the revenue and
+price contracts for your network before using this module with live devices.
+
+The transaction encoder matches the decoder's scales and interprets signature
+and public-key strings as hexadecimal bytes. Values outside the current wire
+format are rejected. In particular, its signed 24-bit coordinate fields at
+`1e5` precision cover approximately ±83.886 degrees; extending that range requires
+a coordinated device protocol change.
+
+## Desktop personalization
+
+Open **Settings** from the desktop, dock, or application launcher. All applications
+share one desktop environment; changing themes preserves open windows and their
+contents.
+
+- **Appearance:** Retro 8-Bit (default), macOS Inspired, Linux Inspired, and
+  Windows Inspired. Preview cards show each theme's chrome before selecting it.
+  Background choices apply independently of the theme.
+- **Desktop:** automatic grid arrangement, or manual positioning with grid
+  snapping. Dropping onto another icon swaps their positions. On a touch screen,
+  hold an icon briefly to move it; swiping before the hold scrolls the desktop.
+  With an icon focused, **Alt + arrow keys** moves it in manual mode. Plain arrow
+  keys navigate the grid. Icon sizing and a confirmed layout reset are included.
+- **General:** reduced motion, optional interface sounds, and 24-hour time.
+  The operating system's reduced-motion preference is always respected.
+
+Preferences live in this browser's `localStorage` under `m3tering.desktop.v1`.
+Invalid or incompatible values fall back to defaults. Custom positions use stable
+application IDs; viewport changes reflow them without overwriting the saved
+desktop layout. Unavailable applications are ignored and new applications occupy
+free cells. Browser storage restrictions leave the interface usable and display
+a persistence notice. Preferences are local to the browser, not account-synced.
+
+On desktop, windows support dragging, resizing, maximizing, minimizing, and
+stacking. Use the dock to switch applications or **Show desktop** to hide/restore
+open windows. At 700px and below, one active application occupies the available
+screen, with the dock always accessible. The desktop and launcher scroll when
+there are more applications than fit on screen.
+
+### Frontend structure
+
+| File | Responsibility |
+| --- | --- |
+| `src/public/js/desktop-preferences.js` | Theme metadata, versioned preference validation, storage, and early theme application |
+| `src/public/js/desktop-layout.js` | Pure grid sizing, collision handling, and placement calculations |
+| `src/public/js/desktop.js` | Shared application registry, window management, icon gestures, launcher, and Settings |
+| `src/public/css/global.css` | Shared design tokens, theme chrome, application styling, and responsive presentation |
+| `src/public/js/toggle.js` | Existing `toggleApp` compatibility entry point for UI extensions |
+
+Backend-provided UI icons and windows automatically join the registry. Existing
+extension HTML and `invokeAction(moduleId, actionId)` continue to use the same
+action endpoint. There are no new runtime dependencies for the desktop shell.
+
+### UI development and verification
+
+```bash
+npm test                         # Type check and unit tests, including grid/preferences
+npx playwright install chromium # Once, for browser tests
+npm run test:ui                  # Chromium interaction and responsive-layout tests
+npm run preview:ui               # http://127.0.0.1:4173
+```
+
+The UI preview and browser tests render the real templates with fixture meters
+and an extension. They do not connect to MQTT, Ethereum, SSH, or publishing
+services, and their mutation responses are simulated. Browser tests intentionally
+block third-party resources for repeatability. Live external integrations still
+require the normal configured application. If using an existing Chromium binary,
+set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its absolute path.
 
 ---
 
@@ -103,6 +434,26 @@ STREAMR_CRONSCHEDULE="0 * * * *"  # Every hour
 - **`BACKEND_MODULES`**: Comma-separated list of GitHub repositories in the format `<github_username>/<repo_name>` or built-in paths like `core/arweave`
 - **`UI_MODULES`**: Comma-separated list of `moduleId:<github_username>/<repo_name>` pairs
 - **Module-specific variables**: Each module can have its own configuration variables (e.g., `STREAMR_STREAM_ID`)
+
+External references resolve consistently to `src/extensions/<owner>/<repo>` and
+`dist/extensions/<owner>/<repo>`. `#branch` and `#tag` select the checkout revision;
+the suffix is not part of the runtime import path. Backend and UI references to
+the same repository share one checkout and must use the same revision.
+Built-in `core/...` modules are never cloned. The legacy `MODULES` variable may
+still specify extra repositories to install, but loading is controlled by
+`BACKEND_MODULES` and `UI_MODULES`.
+
+For a local checkout, run `npm run modules:install` after setting the environment
+variables. Docker runs the same installer automatically. A custom repository must
+export a default extension from `index.ts` or CommonJS `index.js`. TypeScript
+extensions compile with the console's `tsconfig.json`; their package dependencies
+and runtime assets are copied alongside the compiled module. Installation errors
+stop startup rather than leaving a silently missing backend module.
+
+The Compose module volumes now mount only `src/extensions` and `dist/extensions`.
+They no longer mask the built-in code shipped in updated images. Existing meter
+data remains on the same `.data` mount; old module volumes are left untouched and
+configured external modules are downloaded into the new scoped volumes.
 
 ### Publishing Custom Modules
 
@@ -204,7 +555,7 @@ UI Hooks allow modules to extend the web interface at `http://localhost:3000`. M
 1. **Create your module repository** with the following structure:
 
 ```typescript
-// ui.ts (or index.ts)
+// index.ts
 import type { UIHooks, UIAppIcon, UIAppWindow, UIAction } from "../../../types";
 
 export default class implements UIHooks {
@@ -484,3 +835,34 @@ Do it in one go:
 docker compose pull console
 docker compose up -d --force-recreate console
 ```
+
+## Application appearance and local Docker updates
+
+Each application title bar has a **Theme / Light / Dark** selector. Preferences
+are saved by application ID through the shared desktop preference store, and
+survive desktop theme changes and reloads. Native content, dialogs, and terminal
+colors follow the chosen palette. Embedded external websites retain their own
+appearance controls; the containing window follows the application setting.
+
+To build and install the current checkout on the existing Linux Docker host:
+
+```sh
+# First-time setup only: copy .env.example to .env and fill in your settings.
+./install.sh
+# If the existing deployment used a custom Compose project name:
+./install.sh --project-name your-existing-project
+```
+
+Requires Docker with a current Compose plugin (`up --wait`). The script uses
+`compose.yaml` plus `compose.local.yaml`, builds `m3tering-console:local` first,
+then recreates **only the console service** and waits up to 240 seconds for the
+HTTP authentication boundary to be ready. Mounted database and extension volumes,
+`.env`, and other services are preserved. A build failure leaves the running
+container untouched. A startup failure is reported; the script does not claim
+success or delete data, and does not automatically roll back. Readiness does not
+verify connectivity to external ChirpStack, MQTT, or chain services.
+
+Use the same Compose project name and checkout/data directory as the existing
+installation so Compose replaces the intended service and reuses its volumes.
+Standalone `docker run` containers are not removed by this script. The replacement
+uses Compose's [documented recreate behavior](https://docs.docker.com/reference/cli/docker/compose/up/).

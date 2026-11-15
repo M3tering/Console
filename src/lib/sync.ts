@@ -1,7 +1,8 @@
 import {
   getMeterByPublicKey,
   getMeterByTokenId,
-  getTransactionByNonce,
+  getAllMeterRecords,
+  getAllTransactionRecords,
   pruneTransactionsAfter,
   pruneTransactionsBefore,
   updateMeterNonce,
@@ -120,7 +121,8 @@ export async function pruneAndSyncOnchain(meterIdentifier: number | string): Pro
     // If the onchain nonce is greater, update the local record
     updateMeterNonce(publicKey, onchainNonce);
   }
-  // prune transactions with nonce less than or equal to onchainNonce
+  // Retain the latest confirmed record for exact retransmission comparison.
+  // Scheduled publishers exclude it from their pending batches.
   pruneTransactionsBefore(onchainNonce, meter.tokenId);
 
   return onchainNonce;
@@ -143,12 +145,12 @@ export async function getLatestTransactionNonce(meterIdentifier: number): Promis
 }
 
 // get revenue across supported chains
-export async function getCrossChainRevenue(tokenId: number): Promise<number> {
+export async function getCrossChainRevenue(tokenId: number): Promise<bigint> {
   try {
     // Use cached verifiers instead of fetching them each time
     const verifiers = await getCachedVerifiers();
 
-    let totalRevenue = 0;
+    let totalRevenue = 0n;
 
     // Iterate through all cached verifiers and get revenue from each chain
     for (const verifier of verifiers) {
@@ -164,13 +166,13 @@ export async function getCrossChainRevenue(tokenId: number): Promise<number> {
             enableCcipRead: true,
           }),
         );
-        const revenueAmount = Number(revenue);
+        const revenueAmount = BigInt(revenue);
 
         logger.info(`Revenue from ${verifier.ensName} (${verifier.verifierAddress}): ${revenueAmount}`);
         totalRevenue += revenueAmount;
       } catch (error) {
         logger.error(`Failed to get revenue from verifier ${verifier.ensName}:`, error);
-        // Continue with other verifiers even if one fails
+        throw error; // A partial total must not be used to decide a meter's balance.
       }
     }
 
@@ -183,14 +185,14 @@ export async function getCrossChainRevenue(tokenId: number): Promise<number> {
 }
 
 // get owed from price context
-export async function getOwedFromPriceContext(tokenId: number): Promise<number> {
+export async function getOwedFromPriceContext(tokenId: number): Promise<bigint> {
   try {
     return await retry(async () => {
       logger.info(`Getting owed amount for token ${tokenId} from price context`);
 
       // Call the price context to get the amount the user owes with CCIP read enabled
       const owedAmount = await priceContextContract.owed(tokenId);
-      const owed = Number(owedAmount);
+      const owed = BigInt(owedAmount);
 
       logger.info(`Owed amount for token ${tokenId}: ${owed}`);
       return owed;
@@ -199,4 +201,14 @@ export async function getOwedFromPriceContext(tokenId: number): Promise<number> 
     logger.error(`Failed to get owed amount for token ${tokenId}:`, error);
     throw error;
   }
+}
+
+/** Only publish records for meters whose chain synchronization succeeded. */
+export async function getSyncedPendingTransactions() {
+  const synced = new Map<number, number>();
+  for (const meter of getAllMeterRecords()) {
+    try { const nonce = await pruneAndSyncOnchain(meter.publicKey); synced.set(meter.tokenId, nonce); }
+    catch (error) { logger.error(`Could not synchronize meter ${meter.tokenId}:`, error); }
+  }
+  return getAllTransactionRecords().filter(record => synced.has(record.identifier) && record.nonce > synced.get(record.identifier)!);
 }

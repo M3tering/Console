@@ -1,0 +1,13 @@
+# Used by ./install.sh to deploy the current checkout with production data volumes.
+services:
+  console:
+    image: m3tering-console:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    healthcheck:
+      test: ["CMD", "node", "scripts/healthcheck.cjs"]
+      interval: 5s
+      timeout: 4s
+      start_period: 30s
+      retries: 24
