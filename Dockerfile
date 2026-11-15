@@ -11,12 +11,13 @@ RUN apk add --no-cache cmake make g++ python3 openssl-dev py3-setuptools git
 # Copy and install dependencies
 COPY package*.json ./
 
-RUN npm install --include=dev && npm cache clean --force
+RUN npm ci --include=dev && npm cache clean --force
 
 # Copy application files
 COPY babel.config.js .
 COPY tsconfig.json .
 COPY src ./src
+COPY scripts ./scripts
 
 # Build project
 RUN npm run build

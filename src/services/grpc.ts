@@ -10,7 +10,7 @@ const deviceService = new DeviceServiceClient(`${process.env.CHIRPSTACK_HOST}:80
 const metadata = new Metadata();
 metadata.set("authorization", "Bearer " + process.env.API_TOKEN);
 
-export function enqueue(devEui: string, data: number[]) {
+export function enqueue(devEui: string, data: number[]): Promise<void> {
   const item = new DeviceQueueItem();
   const enqueueReq = new EnqueueDeviceQueueItemRequest();
 
@@ -20,8 +20,11 @@ export function enqueue(devEui: string, data: number[]) {
   item.setData(new Uint8Array(data));
 
   enqueueReq.setQueueItem(item);
-  deviceService.enqueue(enqueueReq, metadata, (err: any, resp: any) => {
-    if (err !== null) return logger.error("Failed to enqueue device data:", err);
-    logger.info(`${data} has been enqueued with id: ` + resp.getId());
+  return new Promise((resolve, reject) => {
+    deviceService.enqueue(enqueueReq, metadata, (err, resp) => {
+      if (err || !resp) { reject(err || new Error("Missing enqueue response")); return; }
+      logger.info(`${data} has been enqueued with id: ` + resp.getId());
+      resolve();
+    });
   });
 }

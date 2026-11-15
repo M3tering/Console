@@ -1,4 +1,4 @@
-import { State, TransactionRecord } from "../types";
+import { State } from "../types";
 
 export function intToByteArray(num: number, byteLength: number = 4) {
   const byteArray = new Uint8Array(byteLength);
@@ -70,21 +70,24 @@ export function encodeTransaction({
   longitude: number;
   latitude: number;
 }) {
-  const encodedNonce = intToByteArray(nonce, 4);
-  const encodedEnergy = intToByteArray(energy * 10e6, 4);
-  const encodedSignature = stringToByteArray(signature, 64);
-  const encodedVoltage = intToByteArray(voltage * 10, 2);
-  const encodedDeviceId = stringToByteArray(deviceId, 32);
-  const encodedLongitude = intToByteArray(longitude * 10e5, 3);
-  const encodedLatitude = intToByteArray(latitude * 10e5, 3);
-
-  return [
-    ...encodedNonce,
-    ...encodedEnergy,
-    ...encodedSignature,
-    ...encodedVoltage,
-    ...encodedDeviceId,
-    ...encodedLongitude,
-    ...encodedLatitude,
-  ];
+  const hexBytes = (value: string, length: number, name: string): Buffer => {
+    const raw = value.replace(/^0x/, '');
+    if (!new RegExp(`^[0-9a-fA-F]{${length * 2}}$`).test(raw)) throw new Error(`${name} must contain ${length} hexadecimal bytes`);
+    return Buffer.from(raw, 'hex');
+  };
+  const scaled = (value: number, scale: number, name: string): number => {
+    if (!Number.isFinite(value)) throw new Error(`${name} must be finite`);
+    return Math.round(value * scale);
+  };
+  if (!Number.isInteger(nonce) || nonce < 0) throw new Error('Nonce must be a non-negative integer');
+  const result = Buffer.alloc(112);
+  result.writeUInt32BE(nonce, 0);
+  result.writeUInt32BE(scaled(energy, 1e6, 'Energy'), 4);
+  hexBytes(signature, 64, 'Signature').copy(result, 8);
+  result.writeUInt16BE(scaled(voltage, 10, 'Voltage'), 72);
+  hexBytes(deviceId, 32, 'Device ID').copy(result, 74);
+  // Signed 24-bit coordinates retain the existing device wire format.
+  result.writeIntBE(scaled(longitude, 1e5, 'Longitude'), 106, 3);
+  result.writeIntBE(scaled(latitude, 1e5, 'Latitude'), 109, 3);
+  return Array.from(result);
 }

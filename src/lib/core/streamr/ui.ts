@@ -8,6 +8,14 @@ const logger = createLogger("[streamr-ui]");
 
 const { ETHEREUM_PRIVATE_KEY } = process.env;
 
+// Configuration values are text content in the extension's HTML presentation.
+function escapeHtml(value: string): string {
+  const entities: Record<string, string> = {
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  };
+  return value.replace(/[&<>"']/g, (character) => entities[character]);
+}
+
 /**
  * Streamr UI Module
  * Provides UI components for the Streamr integration, including
@@ -23,7 +31,7 @@ export default class implements UIHooks {
     return {
       id: "streamr",
       label: "Streamr",
-      iconHtml: '<i class="nes-icon star is-medium"></i>',
+      iconHtml: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M8 8a6 6 0 0 0 0 8m8-8a6 6 0 0 1 0 8M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14"/></svg>',
       buttonClass: "is-primary",
     };
   }
@@ -38,47 +46,24 @@ export default class implements UIHooks {
       title: "Streamr Publisher",
       containerClass: "",
       contentHtml: `
-        <div class="nes-container with-title">
-          <p class="title">Configuration</p>
-          <div style="margin-bottom: 15px;">
-            <strong>Cron Schedule:</strong> 
-            <span class="nes-text is-primary">${cronSchedule}</span>
-          </div>
-          <div style="margin-bottom: 15px;">
-            <strong>Stream IDs:</strong>
-            <ul class="nes-list is-disc" style="margin-left: 20px;">
-              ${streamIds.map((id) => `<li style="font-size: 10px; word-break: break-all;">${id}</li>`).join("")}
-            </ul>
-          </div>
+        <div class="page-heading">
+          <div><span class="eyebrow">STREAMR NETWORK</span><h2>Keep the data flowing.</h2>
+          <p>Publish your pending meter transactions to connected streams.</p></div>
+          <span class="count-badge">${pendingCount} pending</span>
         </div>
-        
-        <div class="nes-container with-title" style="margin-top: 15px;">
-          <p class="title">Status</p>
-          <div style="margin-bottom: 15px;">
-            <strong>Pending Transactions:</strong> 
-            <span class="nes-text ${pendingCount > 0 ? "is-warning" : "is-success"}">${pendingCount}</span>
-          </div>
-          <div style="margin-bottom: 15px;">
-            <strong>Last Publish:</strong> 
-            <span id="streamr-last-publish">${this.lastPublishTime ? this.lastPublishTime.toLocaleString() : "Never"}</span>
-            ${this.lastPublishStatus ? `<span class="nes-text ${this.lastPublishStatus === "success" ? "is-success" : "is-error"}">(${this.lastPublishStatus})</span>` : ""}
-          </div>
+        <div class="publisher-summary">
+          <div class="publisher-stat"><span>Pending transactions</span><strong>${pendingCount}</strong></div>
+          <div class="publisher-stat"><span>Last publish</span><strong id="streamr-last-publish">${this.lastPublishTime ? this.lastPublishTime.toLocaleString() : "Never"}</strong>
+          ${this.lastPublishStatus ? `<small>${this.lastPublishStatus === "success" ? "Published successfully" : "Publish failed"}</small>` : ""}</div>
         </div>
-        
-        <div style="margin-top: 15px;">
-          <button 
-            class="nes-btn is-warning" 
-            onclick="invokeAction('streamr', 'publish-now', this)"
-            ${pendingCount === 0 ? "disabled" : ""}
-          >
-            Publish Now
-          </button>
-          <button 
-            class="nes-btn" 
-            onclick="location.reload()"
-          >
-            <i class="nes-icon is-small"></i> Refresh
-          </button>
+        <section class="publisher-config"><h3>Configuration</h3>
+          <div class="setting-row"><span>Publish schedule</span><code>${escapeHtml(cronSchedule)}</code></div>
+          <h3>Connected streams</h3>
+          <ul class="stream-list">${streamIds.map((id) => `<li><span class="status-dot" aria-hidden="true"></span><code>${escapeHtml(id)}</code></li>`).join("") || '<li>No streams configured.</li>'}</ul>
+        </section>
+        <div class="publisher-actions">
+          <button class="nes-btn is-primary" onclick="invokeAction('streamr', 'publish-now', this)" ${pendingCount === 0 ? "disabled" : ""}>Publish Now</button>
+          <button class="nes-btn" onclick="location.reload()">Refresh</button>
         </div>
       `,
     };

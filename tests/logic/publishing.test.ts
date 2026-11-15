@@ -1,0 +1,20 @@
+import { getSyncedPendingTransactions } from '../../src/lib/sync';
+import * as store from '../../src/store/sqlite';
+import { meterLatestNonceContractCall } from '../../src/utils/contracts';
+jest.mock('../../src/services/contracts', () => ({}));
+jest.mock('../../src/utils/contracts', () => ({ meterLatestNonceContractCall: jest.fn() }));
+jest.mock('../../src/store/sqlite', () => ({ getAllMeterRecords: jest.fn(), getAllTransactionRecords: jest.fn(), getMeterByPublicKey: jest.fn(), getMeterByTokenId: jest.fn(), pruneTransactionsBefore: jest.fn(), updateMeterNonce: jest.fn() }));
+test('batch reads wait for pruning and exclude failed meters and already confirmed nonces', async () => {
+  const meters = [{ publicKey: 'a', tokenId: 1, latestNonce: 4 }, { publicKey: 'b', tokenId: 2, latestNonce: 4 }];
+  (store.getAllMeterRecords as jest.Mock).mockReturnValue(meters);
+  (store.getMeterByPublicKey as jest.Mock).mockImplementation(key => meters.find(meter => meter.publicKey === key));
+  (store.getAllTransactionRecords as jest.Mock).mockReturnValue([{ identifier: 1, nonce: 2 }, { identifier: 1, nonce: 3 }, { identifier: 2, nonce: 3 }]);
+  let resume!: (nonce: number) => void;
+  (meterLatestNonceContractCall as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { resume = resolve; })).mockRejectedValueOnce(new Error('RPC unavailable'));
+  const batch = getSyncedPendingTransactions();
+  expect(store.getAllTransactionRecords).not.toHaveBeenCalled();
+  resume(2);
+  await expect(batch).resolves.toEqual([{ identifier: 1, nonce: 3 }]);
+  expect(store.pruneTransactionsBefore).toHaveBeenCalledWith(2, 1);
+  expect((store.pruneTransactionsBefore as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan((store.getAllTransactionRecords as jest.Mock).mock.invocationCallOrder[0]);
+});

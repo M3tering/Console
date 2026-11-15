@@ -1,7 +1,7 @@
 import cron from 'node-cron';
-import { pruneAndSyncOnchain } from '../../sync';
+import { getSyncedPendingTransactions } from '../../sync';
 import { buildBatchPayload, retry } from '../../utils';
-import { getAllMeterRecords, getAllTransactionRecords, getTransactionByNonce } from '../../../store/sqlite';
+import { getAllTransactionRecords, getTransactionByNonce } from '../../../store/sqlite';
 import type { BatchTransactionPayload, DecodedPayload, Hooks, TransactionRecord } from '../../../types';
 import { createLogger } from '../../../utils/logger';
 
@@ -27,18 +27,7 @@ export default class implements Hooks {
         logger.info(
           `Prover cron job started: Pruning meters and sending pending transactions to the prover at ${PREFERRED_PROVER_NODE}...`,
         );
-        const m3ters = getAllMeterRecords();
-        for (const m3ter of m3ters) {
-          try {
-            pruneAndSyncOnchain(m3ter.publicKey);
-          } catch (error) {
-            logger.error(`Error pruning and syncing meter ${m3ter.publicKey}:`, error);
-          }
-        }
-
-        logger.info('sending pending transactions to prover...');
-
-        const pendingTransactions = getAllTransactionRecords();
+        const pendingTransactions = await getSyncedPendingTransactions();
         const proverUrl = await this.getProverURL();
 
         if (pendingTransactions.length > 0) {
