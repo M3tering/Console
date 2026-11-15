@@ -1,0 +1,18 @@
+services:
+  console:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: m3tering-console:dev
+    network_mode: host
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./.data-dev:/opt/app/.data
+      - console_dev_src_modules:/opt/app/src/lib
+      - console_dev_dist_modules:/opt/app/dist/lib
+
+volumes:
+  console_dev_src_modules:
+  console_dev_dist_modules:

@@ -2,6 +2,9 @@ import { getAllTransactionRecords } from "../../../store/sqlite";
 import { buildBatchPayload, retry } from "../../utils";
 import type { UIHooks, UIAppIcon, UIAppWindow, UIAction, TransactionRecord } from "../../../types";
 import { StreamrClient } from "@streamr/sdk";
+import { createLogger } from "../../../utils/logger";
+
+const logger = createLogger("[streamr-ui]");
 
 const { ETHEREUM_PRIVATE_KEY } = process.env;
 
@@ -97,7 +100,7 @@ export default class implements UIHooks {
           try {
             await Promise.all(
               this.streamIds.map(async (streamId) => {
-                console.log(`[streamr-ui] Publishing to stream: ${streamId}`);
+                logger.info(`Publishing to stream: ${streamId}`);
                 await retry(() => this.publishToStreamr(streamId, pendingTransactions), 3, 2000);
               }),
             );
@@ -148,15 +151,15 @@ export default class implements UIHooks {
       await new Promise((resolve) => setTimeout(resolve, 2000)); // wait for 2 seconds to ensure connection is established
       await stream.publish(batchPayload);
       await new Promise((resolve) => setTimeout(resolve, 100000)); // wait for 100 seconds to ensure message is sent
-      console.log(`[streamr-ui] Published ${pendingTransactions.length} transactions to stream ${streamId}`);
+      logger.info(`Published ${pendingTransactions.length} transactions to stream ${streamId}`);
     } catch (error) {
-      console.error(`[streamr-ui] Error publishing to Streamr:`, error);
+      logger.error(`Error publishing to Streamr:`, error);
       throw error;
     } finally {
       try {
         await streamrClient.destroy();
       } catch (destroyError) {
-        console.error(`[streamr-ui] Error destroying client:`, destroyError);
+        logger.error(`Error destroying client:`, destroyError);
       }
     }
   }

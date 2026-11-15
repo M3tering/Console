@@ -10,6 +10,9 @@ import type {
   UIAppWindow,
   UIAction,
 } from "../types";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("[utils]");
 
 const extensions: Hooks[] = [];
 const uiExtensions: Map<string, UIHooks> = new Map();
@@ -17,11 +20,11 @@ const uiExtensions: Map<string, UIHooks> = new Map();
 const { BACKEND_MODULES, UI_MODULES } = process.env;
 
 if (!BACKEND_MODULES) {
-  console.warn("[config] No BACKEND_MODULES specified");
+  logger.warn("No BACKEND_MODULES specified");
 }
 
 if (!UI_MODULES) {
-  console.warn("[config] No UI_MODULES specified");
+  logger.warn("No UI_MODULES specified");
 }
 
 export const defaultConfigurations: AppConfig = {
@@ -75,7 +78,7 @@ export async function loadUIExtensionsFromConfig(): Promise<Map<string, UIHooks>
   const config = defaultConfigurations as AppConfig & { uiModules?: Record<string, string> };
 
   if (!config.uiModules) {
-    console.warn("[ui] No UI modules configured");
+    logger.warn("No UI modules configured");
     return uiExtensions;
   }
 
@@ -85,9 +88,9 @@ export async function loadUIExtensionsFromConfig(): Promise<Map<string, UIHooks>
       const mod = await import(resolved);
       const instance = new mod.default();
       uiExtensions.set(moduleId, instance);
-      console.log(`[ui] Loaded UI module: ${moduleId}`);
+      logger.info(`Loaded UI module: ${moduleId}`);
     } catch (error) {
-      console.error(`[ui] Failed to load UI module ${moduleId}:`, error);
+      logger.error(`Failed to load UI module ${moduleId}:`, error);
     }
   }
 
@@ -121,7 +124,7 @@ export async function getUIComponents(): Promise<{
         actions.set(moduleId, moduleActions);
       }
     } catch (error) {
-      console.error(`[ui] Error getting components from ${moduleId}:`, error);
+      logger.error(`Error getting components from ${moduleId}:`, error);
     }
   }
 
@@ -191,7 +194,7 @@ export async function retry<T>(fn: () => Promise<T>, maxRetries: number = 5, bas
       }
 
       const delay = baseDelay * Math.pow(2, attempt);
-      console.log(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`, error);
+      logger.warn(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`, error);
 
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
@@ -227,7 +230,7 @@ export function verifyPayloadSignature(transaction: Buffer, rawPubKey: Buffer): 
 
     return ok;
   } catch (error) {
-    console.error("Error verifying signature:", error);
+    logger.error("Error verifying signature:", error);
     return false;
   }
 }

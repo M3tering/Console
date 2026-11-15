@@ -2,6 +2,9 @@ import fs from "fs";
 import Database from "better-sqlite3";
 import type { Database as DatabaseType, Statement as DatabaseStatementType } from "better-sqlite3";
 import { MeterRecord, TransactionRecord } from "../types";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger("[sqlite]");
 
 // meter queries
 let db: DatabaseType;
@@ -37,7 +40,7 @@ export function deleteDatabase(databaseName = "m3tering.db") {
     db.close();
     fs.unlinkSync(`./.data/${databaseName}`);
   } catch (err: any) {
-    console.error("Failed to delete database:", err);
+    logger.error("Failed to delete database:", err);
   }
 }
 
@@ -132,7 +135,7 @@ export function saveMeter(meterData: MeterRecord): void {
       devEui: meterData.devEui ?? null,
     });
   } catch (err: any) {
-    console.error("Failed to save meter:", err);
+    logger.error("Failed to save meter:", err);
     throw err;
   }
 }
@@ -142,7 +145,7 @@ export function getMeterByPublicKey(publicKey: string): MeterRecord | null {
     const result = getMeterByPublicKeyQuery.get(publicKey) as MeterRecord | undefined;
     return result || null;
   } catch (err: any) {
-    console.error("Failed to get meter:", err);
+    logger.error("Failed to get meter:", err);
     return null;
   }
 }
@@ -152,7 +155,7 @@ export function getMeterByDevEui(devEui: string): MeterRecord | null {
     const result = getMeterByDevEuiQuery.get(devEui) as MeterRecord | undefined;
     return result || null;
   } catch (err: any) {
-    console.error("Failed to get meter by DevEui:", err);
+    logger.error("Failed to get meter by DevEui:", err);
     return null;
   }
 }
@@ -162,7 +165,7 @@ export function getMeterByTokenId(tokenId: number): MeterRecord | null {
     const result = getMeterByTokenIdQuery.get(tokenId) as MeterRecord | undefined;
     return result || null;
   } catch (err: any) {
-    console.error("Failed to get meter:", err);
+    logger.error("Failed to get meter:", err);
     return null;
   }
 }
@@ -172,7 +175,7 @@ export function getAllMeterRecords(): MeterRecord[] {
     const results = getAllMetersQuery.all() as MeterRecord[];
     return results;
   } catch (err: any) {
-    console.error("Failed to get all meters:", err);
+    logger.error("Failed to get all meters:", err);
     return [];
   }
 }
@@ -182,11 +185,11 @@ export function deleteMeterByPublicKey(publicKey: string): boolean {
     const result = deleteMeterByPublicKeyQuery.run(publicKey);
     const deleted = result.changes > 0;
     if (!deleted) {
-      console.log("Meter not found for deletion:", { publicKey });
+      logger.info("Meter not found for deletion:", { publicKey });
     }
     return deleted;
   } catch (err: any) {
-    console.error("Failed to delete meter:", err);
+    logger.error("Failed to delete meter:", err);
     return false;
   }
 }
@@ -196,11 +199,11 @@ export function updateMeterNonce(publicKey: string, nonce: number): boolean {
     const result = updateMeterNonceQuery.run(nonce, publicKey);
     const updated = result.changes > 0;
     if (!updated) {
-      console.log("Meter not found for nonce update:", { publicKey });
+      logger.info("Meter not found for nonce update:", { publicKey });
     }
     return updated;
   } catch (err: any) {
-    console.error("Failed to update meter nonce:", err);
+    logger.error("Failed to update meter nonce:", err);
     return false;
   }
 }
@@ -210,11 +213,11 @@ export function updateMeterDevEui(publicKey: string, devEui: string): boolean {
     const result = updateMeterDevEuiQuery.run(devEui, publicKey);
     const updated = result.changes > 0;
     if (!updated) {
-      console.log("Meter not found for DevEui update:", { publicKey });
+      logger.info("Meter not found for DevEui update:", { publicKey });
     }
     return updated;
   } catch (err: any) {
-    console.error("Failed to update meter DevEui:", err);
+    logger.error("Failed to update meter DevEui:", err);
     return false;
   }
 }
@@ -226,7 +229,7 @@ export function getTransactionByNonce(nonce: number, identifier: number): Transa
       | undefined;
     return result || null;
   } catch (err: any) {
-    console.error("Failed to get transaction by nonce:", err);
+    logger.error("Failed to get transaction by nonce:", err);
     return null;
   }
 }
@@ -245,7 +248,7 @@ export function insertTransaction(transactionData: TransactionRecord): void {
 
     createTransactionQuery.run(transactionData);
   } catch (err: any) {
-    console.error("Failed to insert transaction:", err);
+    logger.error("Failed to insert transaction:", err);
     throw err;
   }
 }
@@ -255,7 +258,7 @@ export function getAllTransactionRecords(): TransactionRecord[] {
     const results = db.prepare(`SELECT * FROM transactions`).all() as TransactionRecord[];
     return results;
   } catch (err: any) {
-    console.error("Failed to get all transactions:", err);
+    logger.error("Failed to get all transactions:", err);
     return [];
   }
 }
@@ -265,11 +268,11 @@ export function pruneTransactionsBefore(nonce: number, meterNumber: number) {
     const result = db
       .prepare(`DELETE FROM transactions WHERE identifier = ? AND nonce < ?`)
       .run(meterNumber, nonce);
-    console.log(
+    logger.info(
       `Pruned ${result.changes} transactions for meter ${meterNumber} with nonce < ${nonce}`
     );
   } catch (err: any) {
-    console.error("Failed to prune transactions:", err);
+    logger.error("Failed to prune transactions:", err);
   }
 }
 
@@ -278,10 +281,10 @@ export function pruneTransactionsAfter(nonce: number, meterNumber: number) {
     const result = db
       .prepare(`DELETE FROM transactions WHERE identifier = ? AND nonce > ?`)
       .run(meterNumber, nonce);
-    console.log(
+    logger.info(
       `Pruned ${result.changes} transactions for meter ${meterNumber} with nonce > ${nonce}`
     );
   } catch (err: any) {
-    console.error("Failed to prune transactions:", err);
+    logger.error("Failed to prune transactions:", err);
   }
 }
