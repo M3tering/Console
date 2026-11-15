@@ -98,8 +98,12 @@ test('manual mouse drag swaps occupied cells, suppresses launching, persists, an
   await page.getByRole('button', { name: 'Keep my layout' }).click();
   expect(await page.evaluate(() => Desktop.getPreferences().mode)).toBe('manual');
   await page.locator('#reset-layout').click();
-  await page.getByRole('button', { name: 'Reset layout', exact: true }).last().click();
-  expect(await page.evaluate(() => Desktop.getPreferences())).toMatchObject({ mode: 'auto', positions: {} });
+  await page.locator('#reset-dialog').getByRole('button', { name: 'Reset layout', exact: true }).click();
+  // The native dialog dispatches its close event asynchronously after the click.
+  await expect.poll(() => page.evaluate(() => {
+    const { mode, positions } = Desktop.getPreferences();
+    return { mode, positions };
+  })).toEqual({ mode: 'auto', positions: {} });
   await page.locator('input[value="manual"]').check();
   await page.locator('#reset-layout').click();
   await page.keyboard.press('Escape');
