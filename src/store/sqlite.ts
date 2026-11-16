@@ -3,6 +3,7 @@ import Database from "better-sqlite3";
 import type { Database as DatabaseType, Statement as DatabaseStatementType } from "better-sqlite3";
 import { MeterRecord, TransactionRecord } from "../types";
 import { createLogger } from "../utils/logger";
+import { initializeManagerStore } from '../m3ter/store';
 
 const logger = createLogger("[sqlite]");
 
@@ -26,11 +27,14 @@ let getTransactionByNonceQuery: DatabaseStatementType;
  * @param databaseName name of the database file
  */
 export default function setupDatabase(databaseName = "m3tering.db") {
+  if (db?.open) db.close();
+  fs.mkdirSync("./.data", { recursive: true });
   db = new Database(`./.data/${databaseName}`, {});
 
   initializeTransactionsTable();
   initializeMetersTable();
   prepareQueries();
+  initializeManagerStore(db);
 }
 
 export function deleteDatabase(databaseName = "m3tering.db") {
@@ -251,6 +255,17 @@ export function insertTransaction(transactionData: TransactionRecord): void {
     logger.error("Failed to insert transaction:", err);
     throw err;
   }
+}
+
+/** Persist a transaction and advance its meter nonce as one SQLite commit. */
+export function recordMeterTransaction(publicKey: string, record: TransactionRecord): void {
+  db.transaction(() => {
+    createTransactionQuery.run(record);
+    const result = db.prepare(`UPDATE meters SET latestNonce = ?
+      WHERE publicKey = ? AND tokenId = ? AND latestNonce = ?`)
+      .run(record.nonce, publicKey, record.identifier, record.nonce - 1);
+    if (result.changes !== 1) throw new Error('Meter nonce changed or meter was not found');
+  })();
 }
 
 export function getAllTransactionRecords(): TransactionRecord[] {

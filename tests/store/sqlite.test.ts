@@ -165,3 +165,13 @@ it("should prune transactions before a given nonce for a specific meter", () => 
   expect(transactions).toHaveLength(5);
   expect(transactions.every((tx) => tx.nonce >= nonceToPrune)).toBe(true);
 });
+
+it('commits transaction and nonce together, rolling back when the nonce is stale', () => {
+  const { recordMeterTransaction } = require('../../src/store/sqlite');
+  saveMeter({ publicKey: 'atomic-meter', tokenId: 7, latestNonce: 0, devEui: 'dev' });
+  recordMeterTransaction('atomic-meter', { identifier: 7, nonce: 1, receivedAt: 1, raw: '01' });
+  expect(getMeterByPublicKey('atomic-meter')?.latestNonce).toBe(1);
+  expect(() => recordMeterTransaction('atomic-meter', { identifier: 7, nonce: 3, receivedAt: 2, raw: '03' })).toThrow();
+  expect(getAllTransactionRecords().map(tx => tx.nonce)).toEqual([1]);
+  expect(getMeterByPublicKey('atomic-meter')?.latestNonce).toBe(1);
+});

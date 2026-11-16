@@ -11,6 +11,7 @@ jest.mock("../../src/services/contracts", () => ({
   provider: {
     resolveName: jest.fn(),
   },
+  priceContext: { owed: jest.fn() },
   ccipRevenueReader: {
     verifierCount: jest.fn(),
     verifiers: jest.fn(),
@@ -98,7 +99,7 @@ describe("Verifiers Cache", () => {
 
     const result = await getCrossChainRevenue(123);
 
-    expect(result).toBe(1000);
+    expect(result).toBe(1000n);
     expect(ccipRevenueReader.read).toHaveBeenCalledWith(
       123,
       "0x1234567890123456789012345678901234567890",
@@ -110,4 +111,17 @@ describe("Verifiers Cache", () => {
     expect(ccipRevenueReader.verifierCount).toHaveBeenCalledTimes(1);
     expect(ccipRevenueReader.verifiers).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it("preserves large revenues and rejects incomplete verifier totals", async () => {
+  const { provider, ccipRevenueReader } = require("../../src/services/contracts");
+  ccipRevenueReader.verifierCount.mockResolvedValue(1n);
+  ccipRevenueReader.verifiers.mockResolvedValue(["test.eth", "0x1234567890123456789012345678901234567890"]);
+  provider.resolveName.mockResolvedValue("0x1111111111111111111111111111111111111111");
+  await initializeVerifiersCache();
+  ccipRevenueReader.read.mockResolvedValueOnce(9007199254740993n);
+  await expect(getCrossChainRevenue(123)).resolves.toBe(9007199254740993n);
+  ccipRevenueReader.read.mockRejectedValueOnce(new Error("gateway failed"));
+  await expect(getCrossChainRevenue(123)).rejects.toThrow("gateway failed");
 });

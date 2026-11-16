@@ -139,3 +139,9 @@ dist
 .pnp.*
 cache/
 db/
+# Browser test artifacts
+playwright-report/
+test-results/
+
+# Downloaded external extensions
+src/extensions/

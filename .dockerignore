@@ -1,4 +1,5 @@
 node_modules
+src/extensions
 npm-debug.log
 .env.local
 .env.development.local
@@ -21,3 +22,12 @@ build
 # ignore test files
 **/*.test.ts
 **/*.spec.ts
+
+# Local secrets and runtime/test artifacts never belong in the build context.
+.env
+.env.*
+.data
+.data-dev
+test-results
+playwright-report
+tests

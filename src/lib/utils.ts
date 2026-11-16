@@ -1,4 +1,4 @@
-import path from "path";
+import { getModuleConfiguration, resolveModulePath } from "./modules";
 import { createPublicKey, verify } from "crypto";
 import type {
   TransactionRecord,
@@ -27,25 +27,13 @@ if (!UI_MODULES) {
   logger.warn("No UI_MODULES specified");
 }
 
-export const defaultConfigurations: AppConfig = {
-  modules: (BACKEND_MODULES || "").split(",").filter(Boolean), // ["core/arweave", "core/prover", "core/streamr", "core/is_on"],
-  uiModules: Object.fromEntries(
-    (UI_MODULES || "")
-      .split(",")
-      .filter(Boolean)
-      .map((entry) => {
-        const [moduleId, modulePath] = entry.split(":");
-        return [moduleId, modulePath];
-      })
-      .filter(([moduleId, modulePath]) => moduleId && modulePath),
-  ),
-};
+export const defaultConfigurations: AppConfig = getModuleConfiguration();
 
 export async function loadExtensionsFromConfig(): Promise<Hooks[]> {
   const config: AppConfig = defaultConfigurations;
 
   for (const modulePath of config.modules) {
-    const resolved = path.resolve(__dirname, modulePath);
+    const resolved = resolveModulePath(__dirname, modulePath);
 
     const mod = await import(resolved);
     extensions.push(new mod.default());
@@ -57,17 +45,30 @@ export async function loadExtensionsFromConfig(): Promise<Hooks[]> {
 export async function runHook<K extends keyof Hooks>(hook: K, ...args: Parameters<NonNullable<Hooks[K]>>) {
   let result: ReturnType<NonNullable<Hooks[K]>> | boolean = true;
 
+  const errors: unknown[] = [];
   for (const ext of extensions) {
     const fn = ext[hook];
     let functionReturn;
-    if (fn) functionReturn = await (fn as any).call(ext, ...args);
+    try {
+      if (fn) functionReturn = await (fn as any).call(ext, ...args);
+    } catch (error) {
+      errors.push(error);
+      logger.error(`Extension hook ${hook} failed:`, error);
+    }
 
     if (typeof functionReturn === "boolean" && hook === "isOnStateCompute") {
       result = result && functionReturn;
     }
   }
 
+  if (errors.length) throw new Error(`${errors.length} extension(s) failed in ${hook}`);
   return result;
+}
+
+/** Observational hooks must never leave a rejected, unobserved promise. */
+export async function notifyHook<K extends keyof Hooks>(hook: K, ...args: Parameters<NonNullable<Hooks[K]>>) {
+  try { await runHook(hook, ...args); }
+  catch (error) { logger.error(`Notification hook ${hook} failed:`, error); }
 }
 
 /**
@@ -84,7 +85,7 @@ export async function loadUIExtensionsFromConfig(): Promise<Map<string, UIHooks>
 
   for (const [moduleId, modulePath] of Object.entries(config.uiModules)) {
     try {
-      const resolved = path.resolve(__dirname, modulePath);
+      const resolved = resolveModulePath(__dirname, modulePath);
       const mod = await import(resolved);
       const instance = new mod.default();
       uiExtensions.set(moduleId, instance);

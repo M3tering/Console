@@ -1,252 +1,184 @@
-import { connect } from 'mqtt';
+import { connect, MqttClient } from 'mqtt';
+import { randomUUID } from 'crypto';
+import { connectionState, ingestEvent } from '../m3ter/monitor';
+import { collectorAccepted } from '../m3ter/store';
+import { applicationId } from '../m3ter/chirpstack';
 import { enqueue } from './grpc';
 import { encode } from '../lib/encode';
 import {
-  getAllTransactionRecords,
-  getMeterByDevEui,
-  getMeterByPublicKey,
-  insertTransaction,
-  saveMeter,
-  updateMeterDevEui,
-  updateMeterNonce,
+  getAllTransactionRecords, getMeterByDevEui, getMeterByPublicKey,
+  getTransactionByNonce, recordMeterTransaction, saveMeter, updateMeterDevEui, updateMeterNonce,
 } from '../store/sqlite';
 import type { State, TransactionRecord } from '../types';
 import { decodePayload } from '../lib/decode';
-import { runHook, verifyPayloadSignature } from '../lib/utils';
-import { getLatestTransactionNonce, getCrossChainRevenue, getOwedFromPriceContext } from '../lib/sync';
+import { uplinkPayload } from '../lib/uplink-payload';
+import { runHook, notifyHook, verifyPayloadSignature } from '../lib/utils';
+import { getLatestTransactionNonce } from '../lib/sync';
 import { createMeterLogger, createLogger } from '../utils/logger';
 import { meterIdFromPublicKeyContractCall } from '../utils/contracts';
 
 const logger = createLogger('[mqtt]');
-const CHIRPSTACK_HOST = process.env.CHIRPSTACK_HOST;
-const deviceLocks = new Map<string, boolean>(); // Lock per devEUI to prevent concurrent message processing
+const deviceLocks = new Set<string>();
+const meterLocks = new Set<string>();
+let monitoringClient: MqttClient | undefined;
 
-export async function handleUplinks(): Promise<boolean> {
-  return new Promise(function (resolve, reject) {
-    const client = connect({
-      host: CHIRPSTACK_HOST,
-      port: 1883,
-      clean: true,
-      connectTimeout: 9000,
-      reconnectPeriod: 1000,
-    });
-
-    client.on('reconnect', () => {
-      runHook('onMqttReconnect', client);
-    });
-
-    client.on('message', async (_, blob) => {
-      return await handleMessage(blob);
-    });
-
-    client.on('connect', () => {
-      const topic = `application/${process.env.APPLICATION_ID}/device/+/event/up`;
-      client.subscribe(topic, () => {
-        logger.info(`\nConnected & Subscribed to CHIRPSTACK_HOST: ${CHIRPSTACK_HOST}\n`);
-
-        runHook('onMqttSubscribed', client, topic);
-        resolve(true);
-      });
-
-      runHook('onMqttConnect', client);
-    });
-
-    client.on('error', (err) => {
-      logger.error('Connection error: ', err);
-
-      runHook('onMqttError', err, client);
-
-      client.end();
-      reject(err);
-    });
+// One address for the existing process-level service and both consumers.
+export function mqttConnection(): string | { host: string; port: number } {
+  if (!process.env.MQTT_URL) return { host: process.env.CHIRPSTACK_HOST || 'localhost', port: 1883 };
+  try {
+    const url = new URL(process.env.MQTT_URL);
+    if (!['mqtt:', 'mqtts:', 'ws:', 'wss:'].includes(url.protocol) || !url.hostname || url.hash) throw new Error();
+    return process.env.MQTT_URL;
+  } catch { throw new Error('MQTT_URL must be a valid mqtt, mqtts, ws or wss broker URL.'); }
+}
+// Optional arguments are dependency injection for integration tests, not configuration.
+export async function handleUplinks(connection = mqttConnection(), collect = handleMessage): Promise<boolean> {
+  if (monitoringClient) return true;
+  const application = applicationId();
+  const topic = `application/${application}/device/+/event/+`;
+  const status = (state: string, message?: string) => {
+    try { connectionState(state, message); } catch { logger.error('Manager status update failed; MQTT collection continues'); }
+  };
+  status('connecting');
+  const options = { clientId: `console-${randomUUID()}`, clean: true, resubscribe: false, connectTimeout: 9000, reconnectPeriod: 2000 };
+  const client = monitoringClient = typeof connection === 'string' ? connect(connection, options) : connect({ ...connection, ...options });
+  client.on('reconnect', () => { status('reconnecting'); void notifyHook('onMqttReconnect', client); });
+  client.on('offline', () => status('disconnected'));
+  client.on('close', () => status('disconnected'));
+  client.on('message', (receivedTopic, blob) => {
+    // Fan out independently. Neither consumer owns the other's lifecycle or errors.
+    try {
+      const match = receivedTopic.match(/^application\/([^/]+)\/device\/([a-f0-9]{16})\/event\/up$/i);
+      if (match && match[1].toLowerCase() === application) {
+        const event = JSON.parse(blob.toString());
+        if ((event.fPort === undefined || event.fPort === 2) &&
+            String(event.deviceInfo?.devEui).toLowerCase() === match[2].toLowerCase() &&
+            (!event.deviceInfo?.applicationId || event.deviceInfo.applicationId.toLowerCase() === application)) {
+          void Promise.resolve().then(() => collect(blob)).catch(() => logger.error('Collector uplink handler failed'));
+        }
+      }
+    } catch { logger.warn('Invalid collector MQTT event ignored'); }
+    try { ingestEvent(receivedTopic, blob); }
+    catch { logger.error('Manager ingestion failed; collector delivery was preserved'); }
   });
+  client.on('connect', () => {
+    client.subscribe(topic, { qos: 1 }, (error, granted) => {
+      if (error || granted?.some(subscription => subscription.qos === 128)) {
+        logger.error('MQTT subscription rejected. Check broker permissions.');
+        status('error', 'MQTT subscription rejected. Check broker permissions.');
+        client.stream.destroy(); return; // reconnect, then subscribe exactly once again
+      }
+      logger.info('MQTT connected and subscribed for both collector and Manager');
+      status('connected'); void notifyHook('onMqttSubscribed', client, topic);
+    });
+    void notifyHook('onMqttConnect', client);
+  });
+  client.on('error', error => {
+    logger.error(`MQTT connection error: ${(error as NodeJS.ErrnoException).code || 'broker error'}`);
+    status('error', 'MQTT connection failed. Check the existing ChirpStack broker connection.');
+    void notifyHook('onMqttError', error, client);
+    // MQTT.js owns reconnection. Do not end the client on a transient error.
+  });
+  return true; // The dashboard stays available while MQTT is connecting/reconnecting.
 }
 
-export async function handleMessage(blob: Buffer) {
-  runHook('onMessageReceived', blob);
+export function stopUplinks(): void {
+  monitoringClient?.end(true); monitoringClient = undefined; connectionState('disconnected');
+}
 
-  const message = JSON.parse(blob.toString());
-  const devEui = message['deviceInfo']['devEui'] || null;
-
-  // Create a logger with devEui context
-  const logger = createMeterLogger({ devEui });
-
+export async function handleMessage(blob: Buffer): Promise<void> {
+  let devEui: string | undefined;
+  let lockedMeter: string | undefined;
+  let ownsDeviceLock = false;
+  let log = logger;
   try {
-    if (!devEui) {
-      logger.warn('Message dropped - no devEui found in message');
+    void notifyHook('onMessageReceived', blob);
+    const message = JSON.parse(blob.toString());
+    if (typeof message?.deviceInfo?.devEui !== 'string' || !message.deviceInfo.devEui) {
+      throw new Error('Message has no valid device EUI');
+    }
+    devEui = message.deviceInfo.devEui;
+    log = createMeterLogger({ devEui });
+    if (deviceLocks.has(devEui!)) {
+      void notifyHook('onMessageDropped', 'locked', devEui!);
       return;
     }
-
-    // Check if this specific device is already being processed
-    if (deviceLocks.get(devEui)) {
-      logger.warn(`Message dropped - device is already being processed`);
-      runHook('onMessageDropped', 'locked', devEui);
+    deviceLocks.add(devEui!);
+    ownsDeviceLock = true;
+    const transaction = uplinkPayload(message).bytes;
+    const decoded = decodePayload(transaction);
+    const payloadHadPublicKey = !!decoded.extensions.deviceId;
+    const publicKey = decoded.extensions.deviceId || getMeterByDevEui(devEui!)?.publicKey.replace(/^0x/, '');
+    if (!publicKey || !verifyPayloadSignature(transaction, Buffer.from(publicKey, 'hex'))) {
+      throw new Error('Unknown meter or invalid transaction signature');
+    }
+    const key = `0x${publicKey}`;
+    // Two device EUIs can identify the same meter. Serialize that identity too.
+    if (meterLocks.has(key)) {
+      void notifyHook('onMessageDropped', 'meter-locked', devEui!);
       return;
     }
-
-    let is_on = true;
-
-    // Set lock for this specific device
-    deviceLocks.set(devEui, true);
-
-    logger.info(`Received uplink from device: ${JSON.stringify(message)}`);
-
-    // encoded transaction in standard format (payload is hex string)
-    // format: nonce | energy | signature | voltage | device_id | longitude | latitude
-    const transactionHex = Buffer.from(message['data'], 'base64');
-    const decoded = decodePayload(transactionHex);
-    let publicKey = decoded.extensions.deviceId;
-    let payloadHadPublicKey = !!publicKey;
-
-    logger.info(`Decoded payload: ${JSON.stringify(decoded)}`);
-
-    if (!publicKey) {
-      // try to find public key by DevEui
-      const meterByDevEui = getMeterByDevEui(devEui);
-
-      if (!meterByDevEui) {
-        throw new Error('Device EUI not associated with any meter: ' + devEui);
-      }
-
-      publicKey = meterByDevEui.publicKey.replace('0x', '');
-    }
-
-    // verify transaction signature
-    const isValid = verifyPayloadSignature(transactionHex, Buffer.from(publicKey!, 'hex'));
-    if (!isValid) {
-      throw new Error('Invalid transaction signature for meter with public key: ' + publicKey);
-    }
-
-    logger.info('Verified signature');
-
+    meterLocks.add(key);
+    lockedMeter = key;
     if (payloadHadPublicKey) {
-      logger.info(`Payload contained public key: ${publicKey}`);
-      // save public key with device EUI mapping if not already saved
-      const existingMeter = getMeterByPublicKey(`0x${publicKey}`);
-
-      if (!existingMeter) {
-        const tokenId = await meterIdFromPublicKeyContractCall(`0x${publicKey}`);
-
+      const existing = getMeterByPublicKey(key);
+      if (!existing) {
+        const tokenId = await meterIdFromPublicKeyContractCall(key);
         const latestNonce = await getLatestTransactionNonce(tokenId);
-
-        logger.info(`Fetched tokenId and latestNonce from chain and local state: ${tokenId}, ${latestNonce}`);
-
-        // save new meter with devEui
-        const newMeter = {
-          publicKey: `0x${publicKey}`,
-          devEui: message['deviceInfo']['devEui'],
-          tokenId,
-          latestNonce,
-        };
-
-        saveMeter(newMeter);
-        logger.info(`Saved new meter: ${JSON.stringify(newMeter)}`);
-
-        runHook('onMeterCreated', newMeter);
+        const meter = { publicKey: key, devEui: devEui!, tokenId, latestNonce };
+        saveMeter(meter);
+        void notifyHook('onMeterCreated', meter);
       } else {
-        // update existing meter with devEui if not already set
-        if (!existingMeter.devEui || existingMeter.devEui !== message['deviceInfo']['devEui']) {
-          logger.info(`Updating meter with DevEui: ${message['deviceInfo']['devEui']}`);
-          updateMeterDevEui(`0x${publicKey}`, message['deviceInfo']['devEui']);
-        }
-
-        // fetch and update latest nonce from chain
-        const latestNonce = await getLatestTransactionNonce(existingMeter.tokenId);
-
-        logger.info(`Fetched latestNonce from chain and local state: ${latestNonce}`);
-
-        updateMeterNonce(`0x${publicKey}`, latestNonce);
+        if (existing.devEui !== devEui && !updateMeterDevEui(key, devEui!)) throw new Error('Could not update meter device EUI');
+        const latestNonce = await getLatestTransactionNonce(existing.tokenId);
+        if (!updateMeterNonce(key, latestNonce)) throw new Error('Could not synchronize meter nonce');
       }
     }
-
-    let m3ter = getMeterByPublicKey(`0x${publicKey}`) ?? null;
-
-    if (!m3ter) {
-      throw new Error('Meter not found for public key: ' + publicKey);
-    }
-
-    logger.info(`Found meter: ${JSON.stringify(m3ter)}`);
-
-    // If both latest nonce and received nonce are 0, enqueue 0 immediately
-    if (m3ter.latestNonce === 0 && decoded.nonce === 0) {
-      logger.info('Both latest nonce and received nonce are 0, enqueuing 0 immediately');
-
-      try {
-        is_on = true; // Always on
-        // (await getCrossChainRevenue(m3ter.tokenId)) >=
-        // (await getOwedFromPriceContext(m3ter.tokenId));
-      } catch (error) {
-        logger.error(`Error fetching cross chain revenue or owed amount: ${error}`);
-      }
-
-      const state = { nonce: 0, is_on };
-
-      logger.info(`Enqueuing state: ${JSON.stringify(state)}`);
-
-      enqueue(
-        message['deviceInfo']['devEui'],
-        encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0),
-      );
-
-      return; // Exit early without processing the transaction
-    }
-
-    const expectedNonce = m3ter.latestNonce + 1;
-
-    logger.info(`Received blob for meter ${m3ter?.tokenId}, expected nonce: ${expectedNonce}, got: ${decoded.nonce}`);
-
-    if (decoded.nonce !== expectedNonce && decoded.nonce !== 0) {
-      throw new Error(`Invalid nonce. Expected ${expectedNonce}, got ${decoded.nonce}. Public key: ${publicKey}`);
-    }
-
-    // if device nonce is correct
+    const meter = getMeterByPublicKey(key);
+    if (!meter) throw new Error('Meter not found');
+    const expectedNonce = meter.latestNonce + 1;
+    let newTransaction = false;
     if (decoded.nonce === expectedNonce) {
-      logger.info(`Nonce is valid: ${decoded.nonce}`);
-
-      // save transaction to local store
-      const transactionRecord = {
-        nonce: decoded.nonce,
-        identifier: m3ter.tokenId,
-        receivedAt: Date.now(),
-        raw: transactionHex.toString('hex'),
-      } as TransactionRecord;
-      insertTransaction(transactionRecord);
-      updateMeterNonce(`0x${publicKey}`, expectedNonce);
-
-      logger.info(`Updated meter nonce to: ${expectedNonce}`);
-
-      const pendingTransactions = getAllTransactionRecords();
-      logger.info(`${pendingTransactions.length} Pending transactions: ${JSON.stringify(pendingTransactions)}`);
-      await runHook('onTransactionDistribution', m3ter.tokenId, decoded, pendingTransactions);
+      const record: TransactionRecord = { nonce: decoded.nonce, identifier: meter.tokenId, receivedAt: Date.now(), raw: transaction.toString('hex') };
+      // Acknowledgement means both the transaction and its nonce are durable.
+      recordMeterTransaction(key, record);
+      newTransaction = true;
+      try { collectorAccepted(applicationId(), devEui!, decoded.nonce, transaction.readUInt32BE(4)); }
+      catch { log.warn('Manager collector observation unavailable; collection continues'); }
+    } else if (decoded.nonce !== 0) {
+      const previous = getTransactionByNonce(decoded.nonce, meter.tokenId);
+      if (decoded.nonce !== meter.latestNonce || !previous || decoded.energy < decodePayload(Buffer.from(previous.raw, 'hex')).energy) {
+        throw new Error(`Invalid nonce. Expected ${expectedNonce}, got ${decoded.nonce}`);
+      }
+      // A lost acknowledgment may leave the same signed accumulator increasing.
+      // Re-acknowledge the durable transaction; never store/bill it twice.
+      // Additional uncollected energy is not silently rewritten into that transaction.
     }
-
+    let is_on = false;
+    try { is_on = await runHook('isOnStateCompute', meter.tokenId); }
+    catch (error) {
+      log.error('Could not determine meter power state:', error);
+      void notifyHook('onIsOnStateComputeError', meter.tokenId, error);
+    }
+    void notifyHook('onIsOnStateComputed', meter.tokenId, is_on);
+    const state = decoded.nonce === 0 ? { nonce: meter.latestNonce, is_on } : { is_on };
     try {
-      is_on = await runHook('isOnStateCompute', m3ter.tokenId);
-    } catch (error) {
-      runHook('onIsOnStateComputeError', m3ter.tokenId, error);
-      logger.error(`Error in isOnStateCompute hook: ${error}`);
+      await enqueue(devEui!, encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0));
+      void notifyHook('onStateEnqueued', state, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0);
+    } finally {
+      // Delivery services run after the downlink attempt and cannot prevent it.
+      // notifyHook isolates failures so later delivery extensions still run.
+      if (newTransaction) void notifyHook('onTransactionDistribution', meter.tokenId, decoded, getAllTransactionRecords());
     }
-
-    runHook('onIsOnStateComputed', m3ter.tokenId, is_on);
-
-    const state = decoded.nonce === expectedNonce ? { is_on } : { nonce: m3ter.latestNonce, is_on };
-
-    logger.info(`Enqueuing state: ${JSON.stringify(state)}`);
-
-    enqueue(
-      message['deviceInfo']['devEui'],
-      encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0),
-    );
-    runHook('onStateEnqueued', state, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0);
   } catch (error) {
-    logger.error(`Error handling MQTT message: ${error}`);
-    runHook('onMessageError', error);
+    log.error('Error handling MQTT message:', error);
+    void notifyHook('onMessageError', error);
   } finally {
-    // Release lock for this specific device
-    if (devEui) {
+    if (lockedMeter) meterLocks.delete(lockedMeter);
+    if (ownsDeviceLock && devEui) {
       deviceLocks.delete(devEui);
-      runHook('onDeviceUnlocked', devEui);
+      void notifyHook('onDeviceUnlocked', devEui);
     }
-    runHook('onMessageProcessingComplete');
+    void notifyHook('onMessageProcessingComplete');
   }
 }

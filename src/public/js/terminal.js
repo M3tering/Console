@@ -1,207 +1,133 @@
-// Terminal connection variables
+// The existing SSH/WebSocket transport, fitted to a resizable desktop window.
 let terminal = null;
 let socket = null;
 let isConnected = false;
 let resizeObserver = null;
-
-// Initialize xterm with proper configuration and addons
+let terminalFitFrame = 0;
+let terminalSubscriptions = [];
 function initializeTerminal() {
-  if (terminal) return; // Already initialized
-  
-  const xtermContainer = document.getElementById('xterm-terminal');
-  
+  if (terminal) return;
+  if (typeof Terminal === 'undefined') throw new Error('Terminal could not load. Check your connection and try again.');
   terminal = new Terminal({
-    cursorBlink: true,
-    cursorStyle: 'block',
-    scrollback: 1000,
-    fontSize: 12,
+    cursorBlink: !window.Desktop?.getPreferences().reduceMotion,
+    cursorStyle: 'block', scrollback: 1000, fontSize: 12,
     fontFamily: 'Courier New, monospace',
-    theme: {
-      background: '#212529',
-      foreground: '#ffffff',
-      cursor: '#ffffff',
-      selection: 'rgba(255, 255, 255, 0.3)'
-    },
-    allowTransparency: false,
-    rendererType: 'canvas',
-    lineHeight: 1.2
+    theme: { background: '#15211e', foreground: '#e4eee7', cursor: '#d4eeb3', selectionBackground: '#ffffff44' },
+    allowTransparency: false, lineHeight: 1.2,
   });
-  
-  terminal.open(xtermContainer);
-  
-  // Fit terminal to container dimensions
-  fitTerminal();
-  
-  // Set up resize observer to fit terminal when container size changes
+  applyTerminalColors();
+  terminal.open(document.getElementById('xterm-terminal'));
+  // Register once per terminal instance, not again on every reconnect.
+  terminalSubscriptions = [
+    terminal.onData(data => { if (isConnected && socket?.readyState === WebSocket.OPEN) socket.send(data); }),
+    terminal.onResize(({ cols, rows }) => {
+      if (isConnected && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'resize', cols, rows }));
+    }),
+  ];
   resizeObserver = new ResizeObserver(() => {
-    if (terminal) {
-      fitTerminal();
-    }
+    cancelAnimationFrame(terminalFitFrame);
+    terminalFitFrame = requestAnimationFrame(fitTerminal);
   });
-  
-  resizeObserver.observe(xtermContainer);
+  resizeObserver.observe(document.getElementById('xterm-terminal'));
 }
-
-// Properly fit terminal to container
 function fitTerminal() {
   if (!terminal) return;
-  
   const container = document.getElementById('xterm-terminal');
-  if (!container) return;
-  
-  const { width, height } = container.getBoundingClientRect();
-  const charWidth = terminal._core._charWidth || 7;
-  const charHeight = terminal._core._charHeight || 14;
-  
-  const cols = Math.max(80, Math.floor(width / charWidth) - 2);
-  const rows = Math.max(24, Math.floor(height / charHeight) - 8);
-  
-  if (terminal.cols !== cols || terminal.rows !== rows) {
-    terminal.resize(cols, rows);
-  }
+  if (!container.clientWidth || !container.clientHeight) return;
+  // Prefer rendered cell dimensions; fall back to the configured font before
+  // the first render. Neither path depends on xterm's private APIs.
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  context.font = `${terminal.options.fontSize}px ${terminal.options.fontFamily}`;
+  const screen = container.querySelector('.xterm-screen');
+  const charWidth = screen?.clientWidth ? screen.clientWidth / terminal.cols : context.measureText('W').width || 7.2;
+  const charHeight = screen?.clientHeight ? screen.clientHeight / terminal.rows : Math.ceil(terminal.options.fontSize * terminal.options.lineHeight);
+  const cols = Math.max(10, Math.floor((container.clientWidth - 36) / charWidth));
+  const rows = Math.max(3, Math.floor((container.clientHeight - 20) / charHeight));
+  if (terminal.cols !== cols || terminal.rows !== rows) terminal.resize(cols, rows);
 }
-
 function connectTerminal(event) {
   event.preventDefault();
-  
+  const status = document.getElementById('status-message');
+  try { initializeTerminal(); } catch (error) { status.textContent = error.message; return; }
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
   const username = document.getElementById('username').value;
   const password = document.getElementById('password').value;
-  const statusMessage = document.getElementById('status-message');
-  const authForm = document.getElementById('terminal-auth');
-  const terminalContainer = document.getElementById('terminal-container');
-  
-  // Show connecting status
-  statusMessage.textContent = 'Connecting to terminal...';
-  
-  // Initialize xterm terminal if not already done
-  initializeTerminal();
-  
-  
-  // Determine protocol
-  const protocol = (location.protocol === 'https:') ? 'wss' : 'ws';
-  const cols = terminal.cols;
-  const rows = terminal.rows;
-  
-  // Create WebSocket connection with credentials and terminal size
-  const socketUrl = `${protocol}://${location.host}/?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&cols=${cols}&rows=${rows}`;
-  
-  socket = new WebSocket(socketUrl);
-  socket.binaryType = 'arraybuffer';
-  
-  socket.onopen = () => {
-    isConnected = true;
-    statusMessage.textContent = 'Connected to terminal';
-    authForm.style.display = 'none';
-    terminalContainer.style.display = 'block';
-    
-    terminal.write('Connected to M3tering Console Terminal.\r\n');
-    
-    // Send initial resize
-    socket.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }));
+  status.textContent = 'Connecting to terminal…';
+  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  const connection = new WebSocket(`${protocol}://${location.host}/terminal`);
+  socket = connection;
+  let failure = '';
+  const timeout = setTimeout(() => { failure = 'Terminal connection timed out. Check that SSH is running on the Console host.'; connection.close(); }, 35000);
+  connection.binaryType = 'arraybuffer';
+  connection.onopen = () => {
+    if (socket !== connection || !terminal) return;
+    status.textContent = 'Authenticating with the host…';
+    connection.send(JSON.stringify({ type: 'auth', username, password, cols: terminal.cols, rows: terminal.rows }));
   };
-  
-  socket.onmessage = (event) => {
-    // Handle incoming terminal data
-    if (typeof event.data === 'string') {
-      terminal.write(event.data);
-    } else {
-      terminal.write(new Uint8Array(event.data));
-    }
-  };
-  
-  socket.onclose = () => {
-    isConnected = false;
-    statusMessage.textContent = 'Terminal connection closed';
-    authForm.style.display = 'block';
-    terminalContainer.style.display = 'none';
-    
-    if (terminal) {
-      terminal.write('\r\nConnection closed.\r\n');
-    }
-  };
-  
-  socket.onerror = (error) => {
-    console.error('WebSocket error:', error);
-    statusMessage.textContent = 'Connection error. Please check credentials and try again.';
-    authForm.style.display = 'block';
-    terminalContainer.style.display = 'none';
-    isConnected = false;
-  };
-  
-  // Handle terminal input
-  if (terminal) {
-    terminal.onData(data => {
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(data);
-      }
-    });
-    
-    // Handle terminal resize
-    terminal.onResize(({ cols, rows }) => {
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'resize', cols, rows }));
-      }
-    });
-  }
-  
-  // Handle window resize
-  window.addEventListener('resize', () => {
-    if (terminal) {
+  connection.onmessage = event => {
+    if (socket !== connection || !terminal) return;
+    if (!isConnected) {
+      let control;
+      try { control = JSON.parse(event.data); } catch { failure = String(event.data); status.textContent = failure; return; }
+      if (control.type === 'error') { failure = control.message; status.textContent = failure; return; }
+      if (control.type !== 'ready') return;
+      clearTimeout(timeout);
+      document.getElementById('password').value = '';
+      isConnected = true;
+      status.textContent = 'Terminal session connected';
+      document.getElementById('terminal-auth').style.display = 'none';
+      document.getElementById('terminal-container').style.display = 'flex';
+      terminal.write('Connected to M3tering Console Terminal.\r\n');
       fitTerminal();
+      connection.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }));
+      terminal.focus();
+      return;
     }
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }));
-    }
-  });
+    terminal.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data));
+  };
+  connection.onclose = event => {
+    clearTimeout(timeout);
+    if (socket !== connection) return;
+    isConnected = false; socket = null;
+    document.getElementById('terminal-auth').style.display = 'block';
+    document.getElementById('terminal-container').style.display = 'none';
+    status.textContent = failure || event.reason || 'Terminal connection closed. Sign in again to reconnect.';
+    terminal?.write('\r\nConnection closed.\r\n');
+  };
+  connection.onerror = () => {
+    if (socket !== connection) return;
+    failure = 'Cannot reach the Terminal service. Check the Console connection and WebSocket proxy support.';
+    status.textContent = failure;
+  };
 }
-
 function disconnectTerminal() {
-  if (socket) {
-    socket.close();
-  }
-  
-  const authForm = document.getElementById('terminal-auth');
-  const terminalContainer = document.getElementById('terminal-container');
-  const statusMessage = document.getElementById('status-message');
-  
-  authForm.style.display = 'block';
-  terminalContainer.style.display = 'none';
-  statusMessage.textContent = 'Terminal disconnected';
-  
-  if (terminal) {
-    terminal.reset();
-  }
-  
-  isConnected = false;
+  const previous = socket;
+  socket = null; isConnected = false;
+  previous?.close();
+  document.getElementById('terminal-auth').style.display = 'block';
+  document.getElementById('terminal-container').style.display = 'none';
+  document.getElementById('status-message').textContent = 'Terminal disconnected';
+  terminal?.reset();
 }
-
-// Show terminal authentication form when terminal is opened
 function showTerminalAuth() {
-  const authForm = document.getElementById('terminal-auth');
-  const terminalContainer = document.getElementById('terminal-container');
-  const statusMessage = document.getElementById('status-message');
-  
-  // Reset UI to show auth form
-  authForm.style.display = 'block';
-  terminalContainer.style.display = 'none';
-  statusMessage.textContent = 'Enter credentials and click Connect to start terminal session';
-  
-  // Focus on username field
+  document.getElementById('terminal-auth').style.display = 'block';
+  document.getElementById('terminal-container').style.display = 'none';
+  document.getElementById('status-message').textContent = 'Enter your credentials to start a terminal session.';
   document.getElementById('username').focus();
 }
-
-// Clean up when terminal app is closed
 function cleanupTerminal() {
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-    resizeObserver = null;
-  }
-  if (socket) {
-    socket.close();
-  }
-  if (terminal) {
-    terminal.dispose();
-    terminal = null;
-  }
-  isConnected = false;
+  disconnectTerminal();
+  resizeObserver?.disconnect(); resizeObserver = null;
+  cancelAnimationFrame(terminalFitFrame);
+  terminalSubscriptions.forEach(subscription => subscription.dispose()); terminalSubscriptions = [];
+  terminal?.dispose(); terminal = null;
 }
+
+function applyTerminalColors() {
+  if (!terminal) return;
+  const style = getComputedStyle(document.getElementById('terminal'));
+  terminal.options.theme = { background: style.getPropertyValue('--surface').trim(), foreground: style.getPropertyValue('--text').trim(),
+    cursor: style.getPropertyValue('--accent').trim(), selectionBackground: '#6688aa66' };
+}
+window.addEventListener('desktop:app-mode', event => { if (event.detail.id === 'terminal') applyTerminalColors(); });

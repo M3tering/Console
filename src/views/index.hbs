@@ -1,295 +1,68 @@
-<div>
-  <div id="nav">
-    &#8192;&#8192;&#8192;&#8192;&#8192;&#8192;
-    <span>File</span>&#8192;&#8192;&#8192;&#8192;&#8192;&#8192;
-    <span>Edit</span>&#8192;&#8192;&#8192;&#8192;&#8192;&#8192;
-    <span>Help</span>
-    <div class="bbtn">
-      Time&#8192;&#8192;&#8192;&#8192;&#8192;&#8192;
+<a class="skip-link" href="#desktop-icons">Skip to applications</a>
+<div class="desktop-shell">
+  <header class="topbar">
+    <button class="brand" data-launcher-toggle aria-label="Open application launcher" aria-expanded="false" aria-controls="app-launcher"><span class="brand-mark" aria-hidden="true">m³</span><span>M3tering<span class="brand-secondary"> Console</span></span></button>
+    <div class="topbar-location"><span class="status-dot"></span><span id="active-app-name">Desktop</span></div>
+    <div class="topbar-trailing"><button class="quiet-button" data-open-settings title="Personalize desktop" aria-label="Open Settings"><span data-icon="settings"></span></button><time id="desktop-clock"></time></div>
+  </header>
+  <main id="desktop" aria-label="Desktop">
+    <div class="desktop-heading" aria-hidden="true"><span class="eyebrow">YOUR ENERGY. YOUR ENVIRONMENT.</span><h1>A little more<br>connected.</h1><p>M3tering Console <span> / </span> Provider workspace</p></div>
+    <div id="desktop-scroll"><div id="desktop-icons" tabindex="-1" aria-label="Applications">
+      <button class="desktop-icon" id="terminal-icon" data-app-id="terminal" data-app-label="Terminal" data-app-description="Connect to your console" data-icon-name="terminal"><span class="app-art" data-icon="terminal"></span><span class="icon-label">Terminal</span></button>
+      <button class="desktop-icon" id="browser-icon" data-app-id="browser" data-app-label="Browser" data-app-description="Explore the web" data-icon-name="browser"><span class="app-art" data-icon="browser"></span><span class="icon-label">Browser</span></button>
+      <button class="desktop-icon" id="paint-icon" data-app-id="paint" data-app-label="Paint" data-app-description="Draw and save a picture" data-icon-name="paint"><span class="app-art" data-icon="paint"></span><span class="icon-label">Paint</span></button>
+      <button class="desktop-icon" id="chirpstack-icon" data-app-id="chirpstack" data-app-label="ChirpStack" data-app-description="Manage your LoRaWAN network" data-icon-name="radio"><span class="app-art" data-icon="radio"></span><span class="icon-label">ChirpStack</span></button>
+      <button class="desktop-icon" id="m3ter-manager-icon" data-app-id="m3ter-manager" data-app-label="M3ter Manager" data-app-description="Live meter telemetry and downlink control" data-icon-name="manager"><span class="app-art" data-icon="manager"></span><span class="icon-label">M3ter Manager</span></button>
+      {{#each icons}}
+      <button class="desktop-icon" id="{{id}}-icon" data-app-id="{{id}}" data-app-label="{{label}}" data-app-description="Console extension"><span class="app-art extension-art">{{{iconHtml}}}</span><span class="icon-label">{{label}}</span></button>
+      {{/each}}
+      <button class="desktop-icon" id="settings-icon" data-app-id="settings" data-app-label="Settings" data-app-description="Make this desktop yours" data-icon-name="settings"><span class="app-art" data-icon="settings"></span><span class="icon-label">Settings</span></button>
+      <div id="drop-target" aria-hidden="true" hidden></div>
+    </div></div>
+    <div class="desktop-caption"><span class="status-dot"></span> A workspace for a connected world.</div>
+    <div id="window-layer">
+      <section class="app-window" id="terminal" data-window-title="Terminal" aria-label="Terminal" hidden>
+        <div class="window-content terminal-content">
+          <div id="terminal-auth"><div class="page-heading"><div><span class="eyebrow">CONSOLE ACCESS</span><h2>Welcome to Terminal</h2><p>Connect with your host credentials.</p></div><span class="terminal-emblem" data-icon="terminal"></span></div>
+            <form id="auth-form" onsubmit="connectTerminal(event)"><label for="username">Username</label><input type="text" id="username" class="nes-input" value="ubuntu" autocomplete="username" required /><label for="password">Password</label><input type="password" id="password" class="nes-input" autocomplete="current-password" required /><button type="submit" class="nes-btn is-primary">Connect to terminal <span aria-hidden="true">↗</span></button></form>
+          </div>
+          <div id="terminal-container" style="display:none"><div class="terminal-toolbar"><span><span class="status-dot"></span> Host session</span><button class="nes-btn" onclick="disconnectTerminal()">Disconnect</button></div><div id="xterm-terminal"></div></div>
+          <div id="terminal-status" role="status"><p id="status-message">Enter your credentials to start a terminal session.</p></div>
+        </div>
+      </section>
+      <section class="app-window" id="browser" data-window-title="Browser" aria-label="Browser" hidden>
+        <div class="browser-toolbar"><span data-icon="browser"></span><form id="browser-search" action="https://www.google.com/search" method="get" target="_blank" rel="noopener noreferrer"><label class="sr-only" for="browser-query">Search Google or enter a URL</label><input id="browser-query" class="nes-input" name="q" type="text" placeholder="Search Google or enter a URL" required /><button class="nes-btn" type="submit">Search</button></form><a id="browser-external" href="https://www.google.com/" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a></div>
+        <iframe src="/browser-home.html" name="browser" title="Internet Browser" loading="lazy"></iframe>
+      </section>
+      <section class="app-window" id="chirpstack" data-window-title="ChirpStack" aria-label="ChirpStack" hidden>
+        <div class="browser-toolbar chirpstack-toolbar"><span data-icon="radio"></span><span>ChirpStack <small>LoRaWAN network server</small></span><button class="nes-btn" id="chirpstack-reload" aria-label="Reload ChirpStack">Reload</button><a href="/chirpstack/" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a></div>
+        <iframe id="chirpstack-frame" title="ChirpStack network server" data-src="/chirpstack/" referrerpolicy="same-origin"></iframe>
+      </section>
+      <section class="app-window" id="paint" data-window-title="Paint" aria-label="Paint" data-window-width="900" data-window-height="650" hidden>
+        <div class="paint-tools"><label>Color <input id="paint-color" type="color" value="#173c39" /></label><label>Brush <input id="paint-size" type="range" min="1" max="40" value="5" /></label><button id="paint-undo" class="nes-btn">Undo</button><button id="paint-clear" class="nes-btn">Clear</button><button id="paint-save" class="nes-btn">Save PNG</button><a href="https://basepaint.xyz/" target="_blank" rel="noopener noreferrer">Open BasePaint ↗</a></div>
+        <p id="paint-status" role="status">Draw with a mouse, pen, or finger. Your drawing stays open when switching apps.</p>
+        <div class="paint-surface"><canvas id="paint-canvas" width="1200" height="800" aria-label="Drawing canvas">Drawing requires canvas support.</canvas></div>
+      </section>
+      {{> m3ter-manager}}
+      {{#each windows}}
+      <section class="app-window extension-window" id="{{id}}" data-window-title="{{title}}" aria-label="{{title}}" hidden><div class="window-content {{containerClass}}">{{{contentHtml}}}</div></section>
+      {{/each}}
+      <section class="app-window settings-window" id="settings" data-window-title="Settings" aria-label="Settings" hidden>
+        <div class="settings-layout">
+          <nav class="settings-nav" aria-label="Settings sections"><div class="settings-identity"><span class="brand-mark">m³</span><div><strong>Your workspace</strong><small>Make yourself at home</small></div></div><button data-settings-tab="appearance" aria-current="page"><span data-icon="appearance"></span>Appearance</button><button data-settings-tab="desktop"><span data-icon="grid"></span>Desktop</button><button data-settings-tab="general"><span data-icon="sliders"></span>General</button><p class="settings-footnote">M3tering Console<br><span>A desktop that feels like you.</span></p></nav>
+          <div class="settings-content">
+            <section data-settings-panel="appearance"><span class="eyebrow">PERSONALIZATION</span><h2>Make it your own.</h2><p class="section-description">Same workspace. A different point of view.</p><h3>Desktop theme</h3><div id="theme-cards" class="theme-grid"></div><h3>Background</h3><p class="setting-hint">Choose a mood for your desktop.</p><div class="background-options" role="group" aria-label="Desktop background"><button data-background="theme"><span class="wallpaper-swatch swatch-theme"></span>Theme default</button><button data-background="dusk"><span class="wallpaper-swatch swatch-dusk"></span>Dusk</button><button data-background="forest"><span class="wallpaper-swatch swatch-forest"></span>Forest</button><button data-background="plain"><span class="wallpaper-swatch swatch-plain"></span>Quiet</button></div></section>
+            <section data-settings-panel="desktop" hidden><span class="eyebrow">YOUR SPACE</span><h2>Everything in place.</h2><p class="section-description">Give every application a place to call home.</p><fieldset class="setting-block"><legend>Icon arrangement</legend><label class="choice-row"><input type="radio" name="arrangement" value="auto" /><span><strong>Automatic</strong><small>A tidy grid that adapts to your screen.</small></span></label><label class="choice-row"><input type="radio" name="arrangement" value="manual" /><span><strong>Arrange it yourself</strong><small>Drag icons to a grid position. On touch screens, hold to move. Use Alt + arrow keys with a focused icon.</small></span></label></fieldset><div class="setting-row"><label for="icon-size"><strong>Icon size</strong><small>A comfortable fit for your desktop.</small></label><select id="icon-size"><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></div><div class="setting-row"><div><strong>Fresh start</strong><small>Clear custom positions and arrange automatically.</small></div><button class="nes-btn" id="reset-layout">Reset layout</button></div></section>
+            <section data-settings-panel="general" hidden><span class="eyebrow">THE LITTLE THINGS</span><h2>Comfort comes first.</h2><p class="section-description">Small adjustments for the way you work.</p><label class="setting-row"><span><strong>Reduce motion</strong><small>Keep animations to a minimum. Your device preference is always respected.</small></span><input id="reduce-motion" class="switch" type="checkbox" role="switch" /></label><label class="setting-row"><span><strong>Interface sounds</strong><small>A little retro feedback when opening applications.</small></span><input id="interface-sounds" class="switch" type="checkbox" role="switch" /></label><label class="setting-row"><span><strong>24-hour clock</strong><small>Use 24-hour time in the desktop panel.</small></span><input id="clock-24" class="switch" type="checkbox" role="switch" /></label><div class="settings-note"><span data-icon="settings"></span><p>Your preferences are saved in this browser. Switching themes keeps your open applications and custom layout intact.</p></div></section>
+          </div>
+        </div>
+      </section>
     </div>
-  </div>
-  <div>
-    {{! {/* Apps */} }}
-    <div class="nes-container subtle">
-      <div>
-        {{! {/* M3ters Icon */} }}
-        <div id="m3ters-icon">
-          <div>
-            <div>
-              <div
-                class="nes-btn"
-                style="background-color: #eee"
-                onclick="clickButton(); toggleApp('m3ters', true)"
-              >
-                <div>
-                  <img
-                    alt="M3ter"
-                    src="https://m3ters.ichristwin.com/api/m3ter-head/pretty"
-                    class="nes-avatar"
-                  />
-                  <img
-                    alt="M3ter"
-                    src="https://m3ters.ichristwin.com/api/m3ter-head/new"
-                    class="nes-avatar"
-                  />
-                </div>
-                <div>
-                  <img
-                    alt="M3ter"
-                    width="60"
-                    height="60"
-                    src="https://m3ters.ichristwin.com/api/m3ter-head/blob"
-                    class="nes-avatar"
-                  />
-                  <img
-                    alt="M3ter"
-                    width="60"
-                    height="60"
-                    src="https://m3ters.ichristwin.com/api/m3ter-head/now"
-                    class="nes-avatar"
-                  />
-                </div>
-              </div>
-              <p>M3ters</p>
-            </div>
-          </div>
-        </div>
-
-        {{! {/* Paint Icon */} }}
-        <div id="paint-icon">
-          <div style="float:right">
-            <a
-              class="nes-btn is-warning"
-              target="browser"
-              onclick="clickButton(); toggleApp('browser', true)"
-              href="https://basepaint.xyz/"
-            >
-              <i class="nes-icon heart is-medium"></i>
-            </a>
-            <p>Paint</p>
-          </div>
-        </div>
-
-        {{! {/* terminal Icon */} }}
-        <div id="terminal-icon">
-          <div>
-            <button
-              class="nes-btn is-success"
-              style="background-color: black"
-              onclick="clickButton(); toggleApp('terminal', true); showTerminalAuth()"
-            >
-              <h1 style="fontSize: 26">&gt;_</h1>
-            </button>
-            <p>Terminal</p>
-          </div>
-        </div>
-
-        {{! {/* Browser Icon */} }}
-        <div id="browser-icon">
-          <div style="float: right">
-            <button
-              class="nes-btn"
-              onclick="clickButton(); toggleApp('browser', true)"
-            >
-              <i class="nes-icon google is-medium"></i>
-            </button>
-            <p>browse</p>
-          </div>
-        </div>
-
-        {{! {/* Dynamic Module Icons */} }}
-        {{#each icons}}
-        <div id="{{id}}-icon">
-          <div>
-            <button
-              class="nes-btn {{buttonClass}}"
-              onclick="clickButton(); toggleApp('{{id}}', true)"
-            >
-              {{{iconHtml}}}
-            </button>
-            <p>{{label}}</p>
-          </div>
-        </div>
-        {{/each}}
-
-        {{! {/* M3ters Table */} }}
-        <div
-          class="nes-table-responsive nes-container hidden"
-          id="m3ters"
-          style="background-color: white;float:left"
-        >
-          <div>
-            <button
-              class="nes-btn is-error"
-              onclick="clickButton(); toggleApp('m3ters', false)"
-            >
-              <i class="nes-icon close is-small"></i>
-            </button>
-            <button
-              class="nes-btn"
-              style="font-size: 12px;"
-              onclick="clickButton(); toggleApp('m3ters', false)"
-            >
-              _
-            </button>
-          </div>
-          <form method="post" action="/">
-            <div class="nes-field is-inline">
-              <input
-                name="tokenId"
-                type="text"
-                class="nes-input"
-                placeholder="tokenId"
-              />
-              <button
-                type="submit"
-                onclick="clickButton()"
-                class="nes-btn is-warning"
-              >
-                + Add M3ter
-              </button>
-            </div>
-          </form>
-
-          <table class="nes-table is-bordered">
-            <thead class="nes-container is-centered">
-              <tr>
-                <th>TokenId</th>
-                <th>Public Key</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {{#each m3ters}}
-                <tr>
-                  <td>
-                    <img
-                      alt="M3ter"
-                      src="https://m3ters.ichristwin.com/api/m3ter-head/{{encodeURIComponent publicKey}}"
-                      class="nes-avatar"
-                    />
-                    <span> #{{tokenId}}</span>
-                  </td>
-                  <td>
-                    <span>
-                      {{publicKey}}
-                    </span>
-                  </td>
-                  <td>
-                      <button
-                        onclick="deleteMeter(`{{encodeURIComponent publicKey}}`)"
-                        class="nes-btn is-error"
-                      >
-                        <i class="nes-icon close is-small"></i>
-                      </button>
-                  </td>
-                </tr>
-              {{/each}}
-            </tbody>
-          </table>
-        </div>
-
-        {{! {/* Terminal */} }}
-        <div class="nes-container is-dark hidden" id="terminal">
-          <button
-            class="nes-btn is-error"
-            onclick="clickButton(); toggleApp('terminal', false)"
-          >
-            <i class="nes-icon close is-small"></i>
-          </button>
-          <button
-            class="nes-btn"
-            style="font-size: 12px;"
-            onclick="clickButton(); toggleApp('terminal', false) "
-          >
-            _
-          </button>
-          
-          {{! Authentication Form }}
-          <div class="nes-container is-dark" id="terminal-auth" style="margin-bottom: 10px;">
-            <h4>Terminal Authentication</h4>
-            <form id="auth-form" onsubmit="clickButton(); connectTerminal(event);">
-              <div class="nes-field" style="margin-bottom: 10px;">
-                <label for="username">Username:</label>
-                <input type="text" id="username" class="nes-input is-dark" value="ubuntu" required>
-              </div>
-              <div class="nes-field" style="margin-bottom: 10px;">
-                <label for="password">Password:</label>
-                <input type="password" id="password" class="nes-input is-dark" value="Mauchly92618" required>
-              </div>
-              <button type="submit" class="nes-btn is-success">Connect</button>
-              <button type="button" class="nes-btn is-warning" onclick="clickButton(); disconnectTerminal()">Disconnect</button>
-            </form>
-          </div>
-          
-          {{! Terminal Container }}
-          <div class="nes-container is-dark" id="terminal-container" style="display: none;">
-            <div id="xterm-terminal"></div>
-          </div>
-          
-          {{! Status Messages }}
-          <div class="nes-container is-dark" id="terminal-status">
-            <p id="status-message">Enter credentials and click Connect to start terminal session</p>
-          </div>
-        </div>
-
-        {{! {/* Dynamic Module Windows */} }}
-        {{#each windows}}
-        <div class="nes-container {{containerClass}} hidden" id="{{id}}" style="background-color: white; margin-top: 10px;">
-          <div>
-            <button
-              class="nes-btn is-error"
-              onclick="clickButton(); toggleApp('{{id}}', false)"
-            >
-              <i class="nes-icon close is-small"></i>
-            </button>
-            <button
-              class="nes-btn"
-              style="font-size: 12px;"
-              onclick="clickButton(); toggleApp('{{id}}', false)"
-            >
-              _
-            </button>
-            <h3 style="display: inline; margin-left: 10px;">{{title}}</h3>
-          </div>
-          <div style="margin-top: 10px;">
-            {{{contentHtml}}}
-          </div>
-        </div>
-        {{/each}}
-      </div>
-    </div>
-
-    {{! {/* google app */} }}
-    <div class="nes-container subtle hidden" id="browser">
-      <div class="nes-container is-dark">
-        <button
-          class="nes-btn is-error"
-          onclick="clickButton(); toggleApp('browser', false)"
-        >
-          <i class="nes-icon close is-small"></i>
-        </button>
-        <button
-          class="nes-btn"
-          style="font-size: 12px;"
-          onclick="clickButton(); toggleApp('browser', false)"
-        >
-          _
-        </button>
-        <iframe
-          src="https://www.wikipedia.org/"
-          name="browser"
-          title="Internet Browser"
-        ></iframe>
-      </div>
-    </div>
-
-    {{! <button
-      type="button"
-      class="top nes-btn"
-      style="--offset: 50px; position: sticky; bottom: 20px; margin-right: 10px; place-self: end; margin-top: calc(100vh + var(--offset)); float: right"
-    >
-      <span>&#8593;</span>
-    </button> }}
-  </div>
+  </main>
+  <aside id="app-launcher" class="launcher" aria-label="Application launcher" hidden><div class="launcher-heading"><div><span class="eyebrow">M3TERING CONSOLE</span><h2>Your applications</h2></div><button class="quiet-button" id="close-launcher" aria-label="Close launcher">×</button></div><label class="launcher-search"><span data-icon="search"></span><input id="app-search" type="search" placeholder="Find an application…" autocomplete="off" aria-label="Find an application" /></label><div id="launcher-apps"></div><p id="launcher-empty" hidden>No applications found. Try another name.</p><div class="launcher-footer"><span class="status-dot"></span> Your provider workspace <button class="quiet-button" data-open-settings>Settings ↗</button></div></aside>
+  <footer class="taskbar" aria-label="Desktop taskbar"><button class="launcher-toggle" data-launcher-toggle aria-label="Open application launcher" aria-expanded="false" aria-controls="app-launcher"><span data-icon="grid"></span><span class="launcher-label">Applications</span></button><span class="dock-divider"></span><div id="dock-apps"></div><span class="dock-divider"></span><button class="show-desktop quiet-button" id="show-desktop" aria-label="Show desktop" title="Show desktop"><span data-icon="desktop"></span></button></footer>
+  <div id="desktop-context" class="context-menu" aria-label="Desktop options" hidden><button data-open-settings>Personalize desktop</button><button id="context-arrange">Arrange icons manually</button><button id="context-reset">Reset icon layout</button></div>
+  <dialog id="reset-dialog"><form method="dialog"><span class="dialog-symbol" data-icon="grid"></span><h2>Reset your desktop?</h2><p>Your custom icon positions will be cleared. Your applications and other preferences will stay as they are.</p><div class="dialog-actions"><button class="nes-btn" value="cancel" autofocus>Keep my layout</button><button class="nes-btn is-primary" value="reset">Reset layout</button></div></form></dialog>
+  <div id="desktop-announcement" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+  <div id="notification-area" aria-live="polite" aria-atomic="true"></div>
 </div>

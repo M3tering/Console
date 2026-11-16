@@ -1,9 +1,9 @@
 import cron from "node-cron";
 import { StreamrClient } from "@streamr/sdk";
-import { getAllMeterRecords, getAllTransactionRecords } from "../../../store/sqlite";
+import { getAllTransactionRecords } from "../../../store/sqlite";
 import { buildBatchPayload, retry } from "../../utils";
 import type { Hooks, TransactionRecord } from "../../../types";
-import { pruneAndSyncOnchain } from "../../sync";
+import { getSyncedPendingTransactions } from "../../sync";
 import { createLogger } from "../../../utils/logger";
 
 const logger = createLogger("[streamr]");
@@ -31,18 +31,7 @@ export default class implements Hooks {
       this.cronSchedule,
       async () => {
         logger.info("Streamr cron job started: Pruning meters and publishing pending transactions...");
-        const m3ters = getAllMeterRecords();
-        for (const m3ter of m3ters) {
-          try {
-            pruneAndSyncOnchain(m3ter.publicKey);
-          } catch (error) {
-            logger.error(`Error pruning and syncing meter ${m3ter.publicKey}:`, error);
-          }
-        }
-
-        logger.info("Publishing pending transactions to Streamr...");
-
-        const pendingTransactions = await this.getPendingTransactions();
+        const pendingTransactions = await getSyncedPendingTransactions();
         if (pendingTransactions.length > 0) {
           await Promise.all(
             this.streamIds.map(async (STREAMR_STREAM_ID) => {

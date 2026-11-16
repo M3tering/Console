@@ -1,0 +1,25 @@
+const {test,expect}=require('@playwright/test');
+const base='http://127.0.0.1:4174',api='/api/m3ter-manager';
+test.use({baseURL:base});
+test('manager login protects data and live stream; logout revokes every open app session',async({page,context})=>{
+  await page.route(/https:\/\//,route=>route.abort());
+  for(const path of ['/config','/devices','/devices/0102030405060708/history','/devices/0102030405060708/queue']) expect((await context.request.get(api+path)).status()).toBe(401);
+  expect((await context.request.post(api+'/commands/preview',{data:{commandId:'relay-on'}})).status()).toBe(401);
+  await page.goto('/'); await page.evaluate(()=>Desktop.launch('m3ter-manager'));
+  await expect(page.locator('#mm-login')).toBeVisible(); await expect(page.locator('#mm-workspace')).toBeHidden();
+  const anonymousStream=await page.evaluate(()=>new Promise(resolve=>{let opened=false;const ws=new WebSocket('ws://127.0.0.1:4174/m3ter-manager/live');ws.onopen=()=>{opened=true;ws.close();};ws.onclose=()=>resolve(opened);}));
+  expect(anonymousStream).toBe(false);
+  await page.locator('#mm-username').fill('test-manager');await page.locator('#mm-password').fill('wrong');await page.locator('#mm-login-submit').click();
+  await expect(page.locator('#mm-login-error')).toHaveText('Incorrect username or password.');
+  await page.locator('#mm-password').fill('test-only-manager-password');await page.locator('#mm-login-submit').click();
+  await expect(page.locator('#mm-workspace')).toBeVisible();await expect(page.locator('#mm-feed')).toHaveText('Live feed connected');
+  expect((await context.request.get(api+'/devices')).status()).toBe(200);
+  expect(await page.evaluate(()=>document.cookie)).not.toContain('m3ter_manager_session');
+  const cookies=await context.cookies();expect(cookies.find(c=>c.name==='m3ter_manager_session')).toMatchObject({httpOnly:true,sameSite:'Strict'});
+  await page.reload();await page.evaluate(()=>Desktop.launch('m3ter-manager'));await expect(page.locator('#mm-workspace')).toBeVisible();
+  const second=await context.newPage();await second.route(/https:\/\//,route=>route.abort());await second.goto('/');await second.evaluate(()=>Desktop.launch('m3ter-manager'));
+  await expect(second.locator('#mm-feed')).toHaveText('Live feed connected');
+  await page.locator('#mm-logout').click();await expect(page.locator('#mm-login')).toBeVisible();
+  await expect(second.locator('#mm-login')).toBeVisible();expect((await context.request.get(api+'/devices')).status()).toBe(401);
+  expect(await page.evaluate(()=>JSON.stringify(localStorage))).not.toContain('test-only-manager-password');
+});

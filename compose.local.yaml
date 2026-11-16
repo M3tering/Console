@@ -1,0 +1,13 @@
+# Optional local source build override; auto-compose.sh deploys published images using compose.yaml.
+services:
+  console:
+    image: m3tering-console:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    healthcheck:
+      test: ["CMD", "node", "scripts/healthcheck.cjs"]
+      interval: 5s
+      timeout: 4s
+      start_period: 30s
+      retries: 24
