@@ -62,6 +62,13 @@ module.exports = async function managerFixture(app) {
   await handleUplinks(undefined, async () => { collectorCount++; });
   function uplink(input = {}) {
     const id = input.devEui || devices[0].devEui, key = keys.get(id);
+    if (input.fPort === 4) {
+      const bytes = require('../fixtures/electrical.cjs')(input);
+      return {deduplicationId:input.eventId || randomUUID(),time:new Date(input.timestamp || Date.now()).toISOString(),
+        deviceInfo:{devEui:id,applicationId:application,deviceName:devices.find(d=>d.devEui===id).name},
+        data:bytes.toString('base64'),fPort:4,fCnt:input.fCnt ?? 1,
+        ...(input.object ? {object:require('../../dist/m3ter/electrical').decodeElectrical(bytes)} : {}),rxInfo:[{rssi:-70,snr:9.5,gatewayId:'aabbccddeeff0011'}]};
+    }
     const bytes = Buffer.alloc(input.length || ((input.nonce ?? 0) === 0 ? 106 : 74)); if (bytes.length >= 74) {
       bytes.writeUInt32BE(input.nonce ?? 0,0); bytes.writeUInt32BE(Math.round((input.energy ?? 12.345678)*1e6),4);
       sign(null,bytes.subarray(0,8),key.privateKey).copy(bytes,8); bytes.writeUInt16BE(Math.round((input.voltage ?? 230.1)*10),72);

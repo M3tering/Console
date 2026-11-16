@@ -1,5 +1,5 @@
 import { generateKeyPairSync, sign } from 'crypto';
-import { decodeTelemetry } from '../../src/m3ter/decoder';
+import { decodeTelemetry, reportObject } from '../../src/m3ter/decoder';
 import { decodePayload } from '../../src/lib/decode';
 const keys = generateKeyPairSync('ed25519');
 const publicKey = keys.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
@@ -25,3 +25,11 @@ test('voltage is explicitly outside the verified signature region', () => {
 });
 test.each([0,1,72,73,75,105,107,112,256])('rejects invalid length %d', length => { expect(() => decodeTelemetry(2,Buffer.alloc(length))).toThrow(); });
 test.each([0,1,3,200,201,202])('does not decode unrelated FPort %d', port => { expect(() => decodeTelemetry(port,payload(74))).toThrow(); });
+test('report codec objects retain independent raw-byte signature verification', () => {
+  const bytes=payload(106), raw=decodeTelemetry(2,bytes);
+  expect(reportObject({type:'report',...raw},bytes)).toEqual(raw);
+  expect(reportObject({type:'telemetry',...raw},bytes)).toBeNull();
+  expect(reportObject({type:'report',...raw,energy:999},bytes)).toBeNull();
+  bytes[8]^=1;
+  expect(reportObject({type:'report',...raw,signature:bytes.subarray(8,72).toString('hex'),verification:'verified'},bytes)?.verification).toBe('invalid');
+});

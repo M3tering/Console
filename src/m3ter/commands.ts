@@ -2,6 +2,7 @@ export type CommandDefinition = {
   id: string; name: string; category: string; fPort: 2 | 3; code: number;
   description: string; confirmation?: string; options?: { value: number; label: string }[];
   min?: number; max?: number; defaultValue?: number;
+  fixedValue?: number;
 };
 const gain = [1, 2, 4].map(value => ({ value, label: `×${value}` }));
 const billing = 'The relay will change state, the energy accumulator will reset to zero, and the nonce will increment.';
@@ -19,6 +20,10 @@ export const commandCatalogue: CommandDefinition[] = [
   { id: 'phase-mode', name: 'Phase mode', category: 'Phase configuration', fPort: 2, code: 0x22, options: [{ value: 0, label: 'Three-phase' }, { value: 1, label: 'Phase A' }, { value: 2, label: 'Phase B' }, { value: 3, label: 'Phase C' }], description: 'Select reported phases without resetting energy. Three-phase reports total energy and the SUM of phase voltages (about 690 V on a 230 V system). A queued mode is not verified configuration.' },
   { id: 'class-a', name: 'Switch to Class A', category: 'LoRaWAN class', fPort: 3, code: 0, description: 'Downlinks become available only after an uplink.', confirmation: 'Switch to Class A? Future downlinks must wait for an uplink. Class C is the normal operating mode.' },
   { id: 'class-c', name: 'Switch to Class C', category: 'LoRaWAN class', fPort: 3, code: 2, description: 'Request the normal Class C operating mode. A reachable Class C meter can receive downlinks without waiting for an uplink.' },
+  { id: 'telemetry-enable', name: 'Enable telemetry', category: 'Monitoring telemetry', fPort: 2, code: 0x23, fixedValue: 1, description: 'Enable periodic FPort 4 electrical monitoring (firmware v1.0.4+). Subsequent frames provide evidence of operation; queue acceptance is not confirmation.' },
+  { id: 'telemetry-disable', name: 'Disable telemetry', category: 'Monitoring telemetry', fPort: 2, code: 0x23, fixedValue: 0, description: 'Stop periodic monitoring; FPort 2 usage reports continue.', confirmation: 'Disable periodic FPort 4 telemetry? Monitoring will become stale. Silence alone cannot confirm that the setting was applied.' },
+  { id: 'telemetry-interval', name: 'Set telemetry interval', category: 'Monitoring telemetry', fPort: 2, code: 0x24, min: 10, max: 65535, defaultValue: 60, description: 'Set the FPort 4 monitoring interval in seconds. Below 60 seconds uses more LoRaWAN airtime. This does not change the FPort 2 usage-report interval.' },
+  { id: 'telemetry-now', name: 'Request Telemetry Now', category: 'Monitoring telemetry', fPort: 2, code: 0x25, description: 'Request one FPort 4 frame immediately, even when periodic monitoring is disabled (firmware v1.0.4+).' },
 ];
 
 export function generateCommand(id: unknown, value?: unknown) {
@@ -35,7 +40,8 @@ export function generateCommand(id: unknown, value?: unknown) {
       bytes.push(value >> 8, value & 255);
     }
   } else if (value !== undefined && value !== null) throw new Error('This command takes no parameters');
-  const expectedLength = command.min !== undefined ? 3 : command.options ? 2 : 1;
+  if (command.fixedValue !== undefined) bytes.push(command.fixedValue);
+  const expectedLength = command.min !== undefined ? 3 : command.options || command.fixedValue !== undefined ? 2 : 1;
   if (bytes.length !== expectedLength || ![2, 3].includes(command.fPort)) throw new Error('Invalid command frame');
   const payload = Buffer.from(bytes);
   return { id: command.id, name: command.name, description: command.description, fPort: command.fPort,

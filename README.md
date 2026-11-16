@@ -129,6 +129,15 @@ npm start
 Then open the console on its configured port (3000 by default) and
 launch **M3ter Manager**. The dashboard stays accessible while MQTT reconnects.
 
+If a relay rejects, stalls, or interrupts Manager's WebSocket, the dashboard
+falls back to authenticated HTTP updates, waiting five seconds between completed
+refreshes. The connection indicator identifies this fallback separately from
+MQTT connectivity. WebSockets retry in the background every 30 seconds; receiving
+a valid stream update restores live mode and stops polling. Closing Manager or
+ending its session stops these retries. Requests time out after 15 seconds so a
+stalled relay cannot leave a refresh pending indefinitely. This requires no new
+configuration and does not change the Console's MQTT connection or authentication.
+
 ### Architecture and API
 
 Console is public. Only Manager's API and live stream require a Manager session.
@@ -181,7 +190,7 @@ event identity, handles `up`, `ack`, `txack`, `join`, `location`, `log`, and `st
 and reconnects/resubscribes without creating another client when a meter changes.
 Monitoring persistence and the existing collector are isolated consumers. A unique client ID is generated for each Console process.
 
-The current decoder accepts **only FPort 2, 74 or 106 bytes**. It wraps the
+The usage-report decoder accepts **FPort 2, 74 or 106 bytes**. It wraps the
 existing `decodePayload` implementation: uint32 BE nonce; uint32 BE energy divided
 by 1,000,000; 64-byte Ed25519 signature; uint16 BE voltage divided by 10; optional
 32-byte public key. Existing console keys and subsequently learned keys support
@@ -200,9 +209,9 @@ bounded queries. Uplinks deduplicate by ChirpStack event ID, or by a stable tupl
 of device/event type/source time/frame counter/payload when an ID is absent.
 Identical values with distinct events are preserved. Without an event ID or
 source timestamp, events are retained separately rather than risking data loss.
-Source timestamps are preserved in metadata; invalid timestamps use receipt time. The Overview's
+Usage-report source timestamps are preserved in metadata; invalid timestamps use receipt time. The Overview's
 Last Uplink uses the persisted console reception time of a successfully decoded,
-non-duplicate uplink. MQTT heartbeats, connection events, UI refreshes and decode
+non-duplicate FPort 2 uplink. FPort 4, MQTT heartbeats, connection events, UI refreshes and decode
 errors cannot reset it. Source timestamps still drive the existing Analytics.
 
 MQTT payload transport is explicit: native ChirpStack `data` remains Base64;
@@ -210,7 +219,64 @@ hex producers supply `dataHex` or `data` with `dataEncoding: "hex"`. Hex must co
 complete byte pairs, without separators or a `0x` prefix. No alphabet guessing is
 used. Both collector and Manager use the same byte conversion. Live Monitoring
 shows the hexadecimal bytes and preserves the original field, encoding, and text
-for inspection. Downlink encoding and firmware decoders are unchanged.
+for inspection. The collector still receives only usage reports; monitoring never
+causes an energy acknowledgment or a blockchain operation.
+
+#### FPort 4 electrical monitoring
+
+`src/m3ter/electrical.ts` implements the supplied Switch Cumulus version 1 layout:
+exactly 97 bytes, big-endian, with signed active/reactive power, power factor, and
+temperature. Other lengths/versions are retained as diagnostics without updating
+meter state. Unsupported uplink ports are ignored. FPort 4 is never a downlink port.
+Live Monitoring displays per-phase voltage/current/power/power factor, neutral
+currents, frequency, temperature, cumulative forward/reverse counters, and reported
+relay/phase/PGA status. No FPort 2 value substitutes for missing FPort 4 data.
+
+Native ChirpStack `data` is Base64. A valid `object` with `type: "telemetry"` is
+preferred; unknown/incomplete schemas fall back to raw bytes. The current normalized
+object adapter accepts `version`, `flags`, `uptime`, `voltage`/`current` (`a,b,c`),
+`activePower`/`reactivePower`/`powerFactor`/`forwardEnergy`/`reverseEnergy`
+(`a,b,c,total`), `neutralMeasured`, `neutralCalculated`, `frequency`, and `temperature`.
+All values are already scaled in the units displayed. `type: "report"` objects
+can supply `nonce`, `energy` (kWh), `voltage` (V), and `signature` (hex); raw report
+bytes are still required for independent signature verification. Values are never
+rescaled a second time. Original codec objects, payload text, and encoding are retained
+for inspection. The referenced firmware files, `telemetry.md`, and upstream
+`tools/chirpstack-codec.js` were not available in this checkout during implementation;
+the adapter's compatibility with that codec's actual field names still needs verification.
+Raw-byte support follows the complete layout supplied in the development request.
+
+Monitoring uses the actual ChirpStack `time`, retaining Console receipt time
+separately. A missing/invalid measurement timestamp rejects that frame as a
+diagnostic rather than substituting a UI refresh clock. Metadata includes device,
+application, frame counter, deduplication ID, gateways, RSSI/SNR, and decoder source.
+Deduplication uses the event ID, otherwise device/frame counter and observed boot
+session (allowing counters to restart); a bounded persistent recent-key window
+also protects against replay after history eviction. Delayed/equal-time frames
+cannot replace the latest state or add energy.
+
+Per-channel forward/reverse differences are calculated in integer counter units.
+The first frame establishes a baseline. Lower uptime starts a new boot baseline
+without adding reset energy or erasing observed totals. An unexplained counter
+decrease retains that channel's high-water baseline until recovery or reboot,
+avoiding artificial consumption. Persistent totals mean **observed increases since
+monitoring began**, not complete lifetime or billing totals. Gaps may omit power
+samples but do not invalidate later counter differences. Average positive total
+power × elapsed time / 3,600,000 is an advisory cross-check; a discrepancy greater
+than max(0.01 kWh, 50% of the estimate) is explained, never used to rewrite counters.
+
+Freshness is separate from MQTT status and FPort 2 activity: stale after three
+estimated intervals. Three consistent observed gaps establish cadence; otherwise
+the last requested interval is explicitly provisional, or the 60-second firmware
+default is labeled as cadence unknown. Enable/disable requests remain unverified;
+subsequent frames provide evidence, and silence alone never proves disablement.
+
+Additive `manager_electrical_readings` and `manager_electrical_state` tables keep
+monitoring separate from usage accounting. Raw frames remain in `manager_events`.
+Both new tables are initialized safely on an existing database; no original table
+is rebuilt. `GET /api/m3ter-manager/devices/:devEui/telemetry` provides the latest
+state and paginated monitoring history (50 rows, `offset` parameter), protected by
+the existing Manager session and application scope.
 
 Charts plot **raw accumulator snapshots**, not independent interval consumption.
 Repeated and growing values with the same nonce stay pending. A consecutive nonce
@@ -222,7 +288,7 @@ are flagged, not credited as fresh consumption. Manager sends no automatic ackno
 Firmware source is not present here: observed transitions cannot establish unobserved
 energy, reset causes, downlink execution, or blockchain settlement.
 
-The database retains **100 uplink records globally by default**, including malformed
+The database retains **100 usage-report records globally by default**, including malformed
 payloads. Set optional `M3TER_TELEMETRY_LIMIT` to a positive integer to change this
 limit. Invalid values log a warning and safely fall back to 100. The limit applies
 on startup and after every insertion, and prunes their raw event copies too. A separate small per-device state
@@ -230,10 +296,30 @@ preserves the pending nonce/high-water mark and latest reading after eviction or
 restart. Existing history is replayed once before migration trims it. Non-telemetry activity, command history, device configuration and all
 original Console tables are preserved. SQLite reuses freed pages; migration does
 not rewrite or vacuum unrelated tables. Date ranges cover the retained window only.
+FPort 4 has a separate **global cap using the same `M3TER_TELEMETRY_LIMIT`** (default
+100), including monitoring decode failures and raw event copies. Thus up to 100
+usage reports plus 100 monitoring records are retained by default. FPort 4 cannot
+evict usage history. Monitoring baselines, latest sample, and observed totals survive
+both pruning and process restarts. Command records and original Console data are untouched.
 
 ### Command safety and delivery evidence
 
-All 13 command types and their listed parameter variations are defined centrally.
+All existing command types remain, with four additional telemetry actions (three
+firmware command codes) defined centrally:
+
+| Action | FPort | Hex | Base64 |
+| --- | --- | --- | --- |
+| Enable telemetry | 2 | `2301` | `IwE=` |
+| Disable telemetry | 2 | `2300` | `IwA=` |
+| Telemetry interval: 60 seconds | 2 | `24003C` | `JAA8` |
+| Telemetry interval: 300 seconds | 2 | `24012C` | `JAEs` |
+| Request Telemetry Now | 2 | `25` | `JQ==` |
+
+Intervals are 10–65535 seconds; disable requires confirmation. Firmware v1.0.4+
+is required for these new operations, and older-meter support is not inferred
+merely from device discovery. Existing preview, idempotency, history, and queue
+controls apply to all new actions.
+
 The backend reconstructs payloads from IDs and validated integer parameters,
 enforces lengths and FPorts 2/3, and rejects raw payload/FPort overrides. Class B,
 calibration, and FUOTA ports 200–202 are not exposed. Billing, restart, relay

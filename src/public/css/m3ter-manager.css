@@ -83,3 +83,10 @@
 .mm-login-card input { width:100%; min-width:0; min-height:44px; background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:var(--small-radius); padding:10px 12px; }
 .mm-login-card #mm-login-error { color:var(--text); border-left:3px solid #d45f69; padding-left:12px; }
 .mm-login-card .mm-mark { width:52px; height:52px; }
+
+.mm-phase-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.mm-phase-grid .mm-info { grid-template-columns:1fr; }
+.mm-phase-grid .mm-info dt { border:0; padding-bottom:0; }
+#mm-electrical-main { margin-top:18px; }
+#mm-electrical-tracking { overflow-wrap:anywhere; }
+@container (max-width:520px) { .mm-phase-grid { grid-template-columns:1fr; } }

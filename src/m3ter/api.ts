@@ -6,6 +6,7 @@ import { applicationId, chirpstackRest, deviceDetails, deviceId, getDevice, list
 import { commandCatalogue, generateCommand } from './commands';
 import { checkActivity, inactiveMilliseconds, managerEvents, monitoring } from './monitor';
 import * as store from './store';
+import { electricalSnapshot, electricalHistory } from './electrical-store';
 import { managerAuthRouter, requireManagerAuth, managerAuthenticated, managerSessions } from './auth';
 
 export const managerRouter = Router();
@@ -42,7 +43,7 @@ managerRouter.get('/devices/:devEui', wrap(async (req, res) => {
   const devEui = deviceId(req.params.devEui), application = applicationId();
   const details = await deviceDetails(devEui);
   store.updateDevice(application, devEui, details);
-  res.json({ device: details, state: store.deviceState(application, devEui), latest: store.latestReading(application, devEui) });
+  res.json({ device: details, state: store.deviceState(application, devEui), latest: store.latestReading(application, devEui), electrical: electricalSnapshot(application, devEui) });
 }));
 managerRouter.get('/devices/:devEui/history', wrap((req, res) => {
   const devEui = deviceId(req.params.devEui), application = applicationId();
@@ -50,7 +51,11 @@ managerRouter.get('/devices/:devEui/history', wrap((req, res) => {
   const from = integer(req.query.from, to - 86400000, 0, to);
   if (to - from > 366 * 86400000) throw new ManagerError('Choose a range of at most 366 days.');
   res.json({ ...store.history(application, devEui, from, to, integer(req.query.offset, 0, 0, 1_000_000), integer(req.query.limit, 50, 1, 100)),
-    latest: store.latestReading(application, devEui), state: store.deviceState(application, devEui), monitoring });
+    latest: store.latestReading(application, devEui), state: store.deviceState(application, devEui), monitoring, electrical: electricalSnapshot(application, devEui) });
+}));
+managerRouter.get('/devices/:devEui/telemetry', wrap((req, res) => {
+  const application = applicationId(), devEui = deviceId(req.params.devEui);
+  res.json({ ...electricalSnapshot(application,devEui), ...electricalHistory(application,devEui,integer(req.query.offset,0,0,1_000_000)) });
 }));
 managerRouter.get('/devices/:devEui/events', wrap((req, res) => {
   res.json({ events: store.events(applicationId(), deviceId(req.params.devEui), integer(req.query.offset, 0, 0, 1_000_000)) });
