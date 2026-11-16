@@ -31,7 +31,7 @@ async function exclusive(devEui: string, work: () => Promise<void>) {
 }
 managerRouter.get('/config', wrap((_req, res) => {
   res.json({ commands: commandCatalogue, monitoring, inactiveMilliseconds: inactiveMilliseconds(), applicationId: applicationId(),
-    billingAutomationActive: process.env.CONSOLE_MONITOR_ONLY !== 'true' });
+    billingAutomationActive: true });
 }));
 managerRouter.get('/devices', wrap(async (req, res) => {
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';

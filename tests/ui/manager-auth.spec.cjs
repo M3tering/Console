@@ -1,6 +1,6 @@
 const {test,expect}=require('@playwright/test');
 const base='http://127.0.0.1:4174',api='/api/m3ter-manager';
-test.use({baseURL:base,httpCredentials:{username:'test-console',password:'test-only-browser-password'}});
+test.use({baseURL:base});
 test('manager login protects data and live stream; logout revokes every open app session',async({page,context})=>{
   await page.route(/https:\/\//,route=>route.abort());
   for(const path of ['/config','/devices','/devices/0102030405060708/history','/devices/0102030405060708/queue']) expect((await context.request.get(api+path)).status()).toBe(401);

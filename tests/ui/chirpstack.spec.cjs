@@ -32,24 +32,24 @@ test('ChirpStack launches inside the desktop, proxies assets and Bearer requests
   await page.getByRole('button', { name: 'Reload ChirpStack', exact: true }).click();
   await expect(frame.locator('#draft')).toHaveValue('');
   const cookies = await context.cookies(base + '/chirpstack/');
-  expect(cookies.find(cookie => cookie.name === 'console_chirpstack')).toMatchObject({ httpOnly: true, sameSite: 'Strict', path: '/chirpstack' });
+  expect(cookies.find(cookie => cookie.name === 'console_chirpstack')).toBeUndefined();
   await context.close();
 });
 
 test('proxy scopes authorization, preserves binary transport and redirects, and reports unavailable upstream', async ({ playwright }) => {
   const anonymous = await playwright.request.newContext();
-  expect((await anonymous.get(base + '/chirpstack/')).status()).toBe(401);
+  expect((await anonymous.get(base + '/chirpstack/')).status()).toBe(200);
   const auth = await playwright.request.newContext({ httpCredentials: credentials });
   const html = await auth.get(base + '/chirpstack/');
   expect(html.status()).toBe(200);
   expect(html.headers()['x-frame-options']).toBe('SAMEORIGIN');
-  const cookie = html.headers()['set-cookie'].split(';')[0];
+  const cookie = 'irrelevant=not-forwarded';
   const headers = { cookie, authorization: 'Bearer fixture-token', origin: base, 'content-type': 'application/grpc-web+proto' };
   const binary = await anonymous.post(base + '/chirpstack/api.InternalService/Test?limit=2', { headers, data: Buffer.from([0,255,0,10]) });
   expect(await binary.json()).toEqual({ authorization: 'Bearer fixture-token', cookie: null, bytes: [0,255,0,10], url: '/api.InternalService/Test?limit=2' });
   expect((await anonymous.post(base + '/chirpstack/api.InternalService/Test', { headers: { ...headers, origin: 'https://foreign.example' } })).status()).toBe(403);
-  expect((await anonymous.get(base + '/', { headers: { cookie } })).status()).toBe(401);
-  expect((await anonymous.get(base + '/chirpstack/', { headers: { cookie: cookie + 'broken' } })).status()).toBe(401);
+  expect((await anonymous.get(base + '/', { headers: { cookie } })).status()).toBe(200);
+  expect((await anonymous.get(base + '/chirpstack/', { headers: { cookie: cookie + 'broken' } })).status()).toBe(200);
   const noLeak = await auth.post(base + '/chirpstack/api.InternalService/Test', { headers: { origin: base } });
   expect((await noLeak.json()).authorization).toBeNull();
   const redirect = await auth.get(base + '/chirpstack/redirect', { maxRedirects: 0 });

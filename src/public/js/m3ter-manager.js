@@ -17,7 +17,10 @@
     const version = authVersion;
     const response = await fetch('/api/m3ter-manager' + path, { ...options, headers: { 'Content-Type': 'application/json' },
       body: options.body === undefined ? undefined : JSON.stringify(options.body) });
-    let data; try { data = await response.json(); } catch { throw new Error('Meter service is unavailable. Open M3ter Manager in the running console and retry.'); }
+    let data; try { data = await response.json(); } catch {
+      const detail = response.status === 403 ? 'Request rejected by the server. Reload Console at its current address and retry.' : response.status === 404 ? 'The running backend does not have the Manager API. Deploy the matching Console build.' : 'Check the Console backend and proxy connection.';
+      throw new Error(`Meter API returned HTTP ${response.status}. ${detail}`);
+    }
     if (path !== '/session' && version !== authVersion) throw new DOMException('Session changed', 'AbortError');
     if (response.status === 401 && path !== '/session') lock('Your session ended. Sign in again.');
     if (!response.ok) throw new Error(data.error || 'Meter request failed. Please retry.'); return data;
@@ -47,14 +50,14 @@
     if (!device) return;
     text('mm-name', device.name || device.devEui); text('mm-eui', device.devEui);
     text('mm-energy', fixed(latest?.energy, 6)); text('mm-voltage', fixed(latest?.voltage, 1)); text('mm-nonce', latest?.nonce ?? '—');
-    text('mm-energy-time', latest ? `${date(latest.timestamp)} · signed fields ${latest.verification}` : 'Awaiting telemetry');
+    text('mm-energy-time', latest ? `${date(latest.timestamp)} · ${state?.accumulation?.uncertain ? 'Uncertain cycle' : 'Pending snapshot'} · signed fields ${latest.verification}` : 'Awaiting telemetry');
     text('mm-voltage-note', device.phaseMode === 'three-phase' && latest ? `Sum of phases · calculated mean ${fixed(latest.voltage / 3, 1)} V (metadata mode)` : `Transmitted value · ${device.phaseMode || 'phase mode unknown'}`);
     const values = [
       ['Meter', device.name], ['DevEUI', device.devEui], ['Application', device.applicationName || state?.metadata?.applicationName],
       ['Device profile', device.deviceProfileName || state?.metadata?.deviceProfileName], ['LoRaWAN class (ChirpStack)', device.enabledClass],
       ['Device enabled', device.isDisabled === undefined ? null : device.isDisabled ? 'Disabled in ChirpStack' : 'Enabled in ChirpStack'],
       ['Last observed uplink', date(state?.lastUplink)], ['ChirpStack last seen', date(device.lastSeenAt)], ['Energy', latest ? `${fixed(latest.energy,6)} kWh` : null],
-      ['Voltage', latest ? `${fixed(latest.voltage,1)} V` : null], ['Nonce', latest?.nonce], ['Phase mode (metadata)', device.phaseMode],
+      ['Voltage', latest ? `${fixed(latest.voltage,1)} V` : null], ['Nonce', latest?.nonce], ['Accumulation', state?.accumulation?.uncertain ? 'Uncertain reset or gap; awaiting a new cycle' : 'Pending acknowledgement; repeated snapshots are not separate consumption'], ['Pending cycle high-water (kWh)', state?.accumulation ? fixed(state.accumulation.highWater / 1e6,6) : null], ['Phase mode (metadata)', device.phaseMode],
     ];
     $('mm-info').replaceChildren(...values.flatMap(([name, value]) => [node('dt', name), node('dd', value === null || value === undefined || value === '' ? 'Unavailable' : String(value))]));
     const key = state?.publicKey || latest?.publicKey;
@@ -71,12 +74,12 @@
     if (!historyData) return;
     for (const view of ['overview', 'history']) for (const field of ['energy','voltage']) M3terCharts.render($(`mm-${view}-${field}`), historyData.chart, field);
     const summary = historyData.summary;
-    text('mm-summary', `${historyData.total} accumulator reports${historyData.sampled ? ' · chart sampled to at most 401 points' : ''}. Observed incremental energy: ${fixed(summary?.observedConsumption || 0, 6)} kWh. ${summary?.resets || 0} new nonce cycle(s), ${summary?.repeatedReports || 0} repeated total(s), ${summary?.uncertainReports || 0} uncertain report(s). Same-cycle repeats add zero; new cycles count their own accumulator. Initial baselines, missed cycles, and nonce regressions are not estimated. This is observed energy, not the collector’s acknowledged billing total.`);
+    text('mm-summary', `${historyData.total} retained reports (100 globally). Completed-cycle observed lower bounds: ${fixed(summary?.observedConsumption || 0, 6)} kWh. Collector-recorded energy in those completed cycles: ${fixed(summary?.collectedEnergy || 0, 6)} kWh. These are not blockchain settlement totals. Pending snapshots are not added. ${summary?.uncertainReports || 0} uncertain or delayed reports.`);
     const parent = $('mm-readings'); parent.replaceChildren();
     historyData.rows.forEach(row => {
       const tr = node('tr'); [date(row.timestamp), fixed(row.energy,6), fixed(row.voltage,1), row.nonce, row.fPort].forEach(value => tr.append(node('td', String(value))));
       const td = node('td'), button = node('button', 'Inspect', 'nes-btn'); button.addEventListener('click', () => commands.inspect('Uplink details',
-        `Meter: ${row.devEui}\nUTC: ${new Date(row.timestamp).toISOString()}\nReceived: ${new Date(row.receivedAt).toISOString()}\nFPort: ${row.fPort}\nNonce: ${row.nonce}\nRaw energy: ${row.rawEnergy}\nAccumulator: ${row.energy} kWh\nIncremental energy: ${row.intervalEnergy ?? 'Unknown baseline'} kWh\nAccounting: ${row.accounting}\nRaw voltage: ${row.rawVoltage}\nVoltage: ${row.voltage} V\nSignature status: ${row.verification}\nSignature (hex): ${row.signature}\nPublic key: ${row.publicKey || 'Not present in this uplink'}\nRaw payload (Base64): ${row.rawPayload}\nRadio metadata: ${row.metadata}`)); td.append(button); tr.append(td); parent.append(tr);
+        `Meter: ${row.devEui}\nUTC: ${new Date(row.timestamp).toISOString()}\nReceived: ${new Date(row.receivedAt).toISOString()}\nFPort: ${row.fPort}\nNonce: ${row.nonce}\nRaw energy: ${row.rawEnergy}\nAccumulator: ${row.energy} kWh\nCompleted previous cycle lower bound: ${row.intervalEnergy ?? 'Pending / uncertain'} kWh\nCollector-recorded energy for completed cycle: ${row.collectedEnergy ?? 'Unavailable'} kWh\nCompleted nonce: ${row.completedNonce ?? 'None'}\nAccounting: ${row.accounting}\nRaw voltage: ${row.rawVoltage}\nVoltage: ${row.voltage} V\nSignature status: ${row.verification}\nSignature (hex): ${row.signature}\nPublic key: ${row.publicKey || 'Not present in this uplink'}\nRaw payload (Base64): ${row.rawPayload}\nRadio metadata: ${row.metadata}`)); td.append(button); tr.append(td); parent.append(tr);
     });
     if (!historyData.rows.length) { const tr = node('tr'), cell = node('td', 'No readings in this range.'); cell.colSpan = 6; tr.append(cell); parent.append(tr); }
     text('mm-history-count', `${historyData.total ? historyOffset + 1 : 0}–${Math.min(historyOffset + historyData.rows.length, historyData.total)} of ${historyData.total}`);
@@ -176,7 +179,7 @@
     try { config = await api('/config'); if (!active || version !== authVersion) return; monitoring = config.monitoring; commands.renderCatalogue(config.commands);
       if (config.demo) root.querySelector('.mm-brand small').textContent = 'Demo network · simulated meters';
       await loadDevices(); if (!active || version !== authVersion) return;
-      notice(config.billingAutomationActive ? 'Existing console billing automation is enabled and may also control these meters. M3ter Manager only observes telemetry; it does not acknowledge energy reports automatically.' : '');
+      notice(config.billingAutomationActive ? 'Existing console billing automation is enabled and may also control these meters. M3TER Manager only observes telemetry; it does not acknowledge energy reports automatically.' : '');
       connectStream(); clockTimer = setInterval(renderActivity, 1000); if (device) await refresh();
     } catch (error) { notice(''); showError(error); }
   }
@@ -185,7 +188,7 @@
     const version = authVersion;
     try {
       const session = await api('/session'); if (!active || version !== authVersion) return;
-      text('mm-login-help', session.configured ? 'Use the manager credentials configured by your console administrator.' : 'Set M3TER_MANAGER_USERNAME and M3TER_MANAGER_PASSWORD in .env, then restart the console.');
+      text('mm-login-help', session.configured ? 'Use the manager credentials configured by your console administrator.' : 'Set M3TER_MANAGER_PASSWORD in .env, then restart the console. The username defaults to admin.');
       if (session.authenticated) await startSession();
     } catch (error) { text('mm-login-error', error.message); $('mm-login-error').hidden = false; }
   }

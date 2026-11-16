@@ -2,11 +2,11 @@ const { test, expect } = require('@playwright/test');
 const base = 'http://127.0.0.1:4174';
 const credentials = { username: 'test-console', password: 'test-only-browser-password' };
 
-test('production HTTP routes and assets require authentication; foreign-origin mutations are rejected', async ({ browser, request }) => {
-  for (const route of ['/', '/js/desktop.js', '/api/m3ter-manager/config', '/api/m3ter-manager/devices', '/api/actions/streamr/publish-now', '/delete-meter']) {
-    const response = await request.fetch(base + route, { method: route.includes('actions') ? 'POST' : route.includes('delete') ? 'DELETE' : 'GET' });
-    expect(response.status()).toBe(401);
+test('Console and its assets are public; only Manager data is protected', async ({ browser, request }) => {
+  for (const route of ['/', '/healthz', '/js/desktop.js', '/vendor/xterm/xterm.js', '/api/m3ter-manager/session']) {
+    expect((await request.get(base + route)).status()).toBe(200);
   }
+  expect((await request.get(base + '/api/m3ter-manager/devices')).status()).toBe(401);
   const context = await browser.newContext({ httpCredentials: credentials });
   expect((await context.request.get(base + '/js/desktop.js')).status()).toBe(200);
   expect((await context.request.post(base + '/api/actions/streamr/publish-now', { headers: { origin: 'https://foreign.example' } })).status()).toBe(403);
@@ -39,7 +39,7 @@ test('authenticated browser can upgrade the terminal without URL credentials and
 test('real-time upgrades reject missing credentials, missing origins, and foreign origins', async () => {
   const WebSocket = require('ws');
   const authorization = 'Basic ' + Buffer.from(credentials.username + ':' + credentials.password).toString('base64');
-  for (const path of ['/terminal', '/m3ter-manager/live']) for (const headers of [{ origin: base }, { authorization }, { authorization, origin: 'https://foreign.example' }]) {
+  for (const path of ['/terminal', '/m3ter-manager/live']) for (const headers of [{ authorization }, { authorization, origin: 'https://foreign.example' }]) {
     const status = await new Promise(resolve => {
       const ws = new WebSocket('ws://127.0.0.1:4174' + path, { headers });
       ws.on('unexpected-response', (request, response) => { response.resume(); request.destroy(); resolve(response.statusCode); });

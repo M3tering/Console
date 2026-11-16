@@ -1,4 +1,4 @@
-import { chirpstackTarget, hasChirpstackSession, rewriteChirpstackText } from '../../src/services/chirpstack';
+import { chirpstackTarget, rewriteChirpstackText } from '../../src/services/chirpstack';
 
 const originalEnv = process.env;
 afterEach(() => { process.env = originalEnv; });
@@ -25,11 +25,4 @@ test('HTML bootstraps the compatibility bridge before app assets and preserves e
   expect(output).toContain('href="#/login"');
   expect(rewriteChirpstackText('import("/assets/chunk.js");url(/static/font.woff)', false)).toBe('import("/chirpstack/assets/chunk.js");url(/chirpstack/static/font.woff)');
   expect(rewriteChirpstackText('src:"/logo.png",path:"/tenants"', false)).toBe('src:"/chirpstack/logo.png",path:"/tenants"');
-});
-
-test('proxy sessions reject malformed, forged and expired tokens', () => {
-  process.env = { ...originalEnv, CONSOLE_USERNAME: 'admin', CONSOLE_PASSWORD: 'test' };
-  for (const value of [undefined, '', 'console_chirpstack=oops', 'console_chirpstack=1.' + 'a'.repeat(64), `console_chirpstack=${Math.floor(Date.now()/1000)+3600}.${'b'.repeat(64)}`]) {
-    expect(hasChirpstackSession(value)).toBe(false);
-  }
 });

@@ -76,9 +76,9 @@ npm install
 npm run dev
 ```
 
-## M3ter Manager
+## M3TER Manager
 
-**M3ter Manager** is a built-in desktop application for Switch Cumulus telemetry
+**M3TER Manager** is a built-in desktop application for Switch Cumulus telemetry
 and technician downlinks. Launch it from the desktop, dock, or application
 launcher. Its Overview, Live monitoring, Analytics, Commands, Queue, and Meter
 information sections share the selected device, desktop theme, and responsive
@@ -86,20 +86,15 @@ window environment. On phones the desktop presents one active full-screen window
 
 ### Configuration and startup
 
-Configure the console credentials, separate manager login, and existing ChirpStack connection:
+Configure only the Manager login and existing ChirpStack connection:
 
 ```dotenv
-CONSOLE_USERNAME=admin
-CONSOLE_PASSWORD=your-strong-console-password
 M3TER_MANAGER_USERNAME=operator
 M3TER_MANAGER_PASSWORD=your-strong-manager-password
 APPLICATION_ID=your-chirpstack-application-uuid
 CHIRPSTACK_HOST=localhost
 API_TOKEN=your-server-side-chirpstack-api-token
 CHIRPSTACK_REST_URL=http://localhost:8090
-MQTT_URL=mqtt://localhost:1883
-# MQTT_USERNAME=your-broker-user
-# MQTT_PASSWORD=your-broker-password
 M3TER_INACTIVE_SECONDS=300
 ```
 
@@ -118,33 +113,28 @@ for installation and TLS options. No browser CORS or direct access to port 8090
 is needed. The API token needs device/application/profile read access and device
 queue enqueue/read/flush access for the configured application. MQTT requires
 permission to subscribe to that application's events. Configure ChirpStack's
-MQTT integration to publish JSON. `mqtts://` URLs use normal certificate
-verification; broker credentials remain on the backend.
-
-For monitoring and technician control **without the existing billing/blockchain
-workflow**, set `CONSOLE_MONITOR_ONLY=true`. This skips backend/UI extension
-loading, contract initialization, and the legacy billing uplink consumer. Built-in
-desktop applications remain available. The default is false to preserve existing
-console installations. When false, existing billing automation can still send
-its own commands; M3ter Manager displays this explicitly. Manager itself never
-initiates blockchain, wallet, payment, or tokenization operations.
+MQTT integration to publish JSON. Manager reuses the Console's original
+`CHIRPSTACK_HOST` connection on port 1883. No new MQTT settings or separate client
+are required. Opening or closing Manager does not own or stop this connection.
+Both consumers receive messages independently; monitoring errors cannot disable
+the collector. The old monitor-only toggle has been removed: collection remains enabled.
 
 ```sh
 npm run build
 npm start
 ```
 
-Then open the console on its configured port (3000 by default), sign in, and
-launch **M3ter Manager**. The dashboard stays accessible while MQTT reconnects.
+Then open the console on its configured port (3000 by default) and
+launch **M3TER Manager**. The dashboard stays accessible while MQTT reconnects.
 
 ### Architecture and API
 
-The application uses the same Express authentication boundary and SQLite
-connection as the console. Manager access additionally requires its own username/password
-from `.env`. Missing manager credentials leave the app locked. The login uses an
-eight-hour HttpOnly, SameSite cookie; logout, expiry, credential changes, and server
-restarts invalidate sessions. Failed sign-ins are rate limited. The API and live
-stream enforce both access checks; credentials never enter browser storage.
+Console is public. Only Manager's API and live stream require a Manager session.
+Set `M3TER_MANAGER_PASSWORD`; the optional username defaults to `admin`.
+Missing passwords leave only Manager locked. Sessions use eight-hour HttpOnly,
+SameSite cookies; logout, expiry, password changes and server restarts revoke them.
+Credentials are never returned in API responses or browser storage.
+
 All manager operators share the configured administrator identity. Records and operations are scoped to `APPLICATION_ID`;
 this does not introduce a separate multi-user/tenant authorization system.
 
@@ -161,11 +151,9 @@ this does not introduce a separate multi-user/tenant authorization system.
 | Command catalogue and exact frame generation | `src/m3ter/commands.ts` |
 | Authenticated API and real-time stream | `src/m3ter/api.ts`, `src/services/socket-router.ts` |
 
-The shared WebSocket upgrade router protects both `/terminal` and
-`/m3ter-manager/live` with console authentication and an exact-origin check.
-The manager stream additionally requires a manager session and closes on logout or expiry.
-The manager stream carries sanitized change notifications; the browser retrieves
-the selected device's data from authenticated, bounded HTTP endpoints.
+The shared WebSocket router checks browser request provenance without any origin
+environment variable. `/m3ter-manager/live` also requires a Manager session;
+`/terminal` uses the SSH credentials supplied inside its own application.
 
 All HTTP routes below are prefixed with `/api/m3ter-manager`:
 
@@ -189,7 +177,7 @@ One MQTT client subscribes to
 `application/{APPLICATION_ID}/device/+/event/+`. It validates both the topic and
 event identity, handles `up`, `ack`, `txack`, `join`, `location`, `log`, and `status`,
 and reconnects/resubscribes without creating another client when a meter changes.
-Telemetry is persisted before the optional legacy billing consumer runs.
+Monitoring persistence and the existing collector are isolated consumers. A unique client ID is generated for each Console process.
 
 The current decoder accepts **only FPort 2, 74 or 106 bytes**. It wraps the
 existing `decodePayload` implementation: uint32 BE nonce; uint32 BE energy divided
@@ -212,25 +200,22 @@ Identical values with distinct events are preserved. Without an event ID or
 source timestamp, events are retained separately rather than risking data loss.
 Source timestamps are preserved in metadata; invalid timestamps use receipt time.
 
-Charts plot **accumulator snapshots**, not interval consumption, and sample to at
-most 401 points. A nonce identifies an accumulation cycle ending when the main
-collector acknowledges/reset commands advance the nonce. Within a cycle only
-increases above its previous highest total add observed energy: repeated totals
-add zero, even with different MQTT event IDs. A higher nonce starts a fresh cycle
-and contributes its own accumulator, even when greater than the preceding total.
-The first observed report establishes a baseline. Lower totals without a nonce
-advance and regressed nonces (including ambiguous reboot/wrap behavior) are flagged
-as uncertain and never credited as a fresh reset. Charts split at cycle changes
-and decreases. Calculations include prior history before applying date filters,
-so pagination/range changes do not erase the baseline. Raw reports are preserved.
-This is observed incremental energy, **not the collector's acknowledged billing
-total**. Missing cycles, unobserved consumption before resets, and ambiguous nonce
-resets cannot be reconstructed. Manager never automatically acknowledges reports.
+Charts plot **raw accumulator snapshots**, not independent interval consumption.
+Repeated and growing values with the same nonce stay pending. A consecutive nonce
+advance closes the previous observed cycle: its high-water mark is a **lower bound**,
+not proof of a billed or settled amount. Where the local collector recorded that
+cycle, its exact accepted energy is shown separately. Nonce zero is not repeatedly
+credited. Decreases, nonce gaps/regressions, invalid signatures and delayed reports
+are flagged, not credited as fresh consumption. Manager sends no automatic acknowledgments.
+Firmware source is not present here: observed transitions cannot establish unobserved
+energy, reset causes, downlink execution, or blockchain settlement.
 
-Reading pages contain at most
-100 records (50 in the UI), activity pages 100, and command-history pages 50.
-History ranges are capped at 366 days. Data is retained until an operator manages
-the database; no automatic deletion policy is introduced.
+The database retains at most **100 uplink records globally**, including malformed
+payloads, and prunes their raw event copies too. A separate small per-device state
+preserves the pending nonce/high-water mark and latest reading after eviction or
+restart. Existing history is replayed once before migration trims it. Non-telemetry activity, command history, device configuration and all
+original Console tables are preserved. SQLite reuses freed pages; migration does
+not rewrite or vacuum unrelated tables. Date ranges cover the retained window only.
 
 ### Command safety and delivery evidence
 
@@ -292,11 +277,9 @@ console's own port. The console server connects to
 or use an HTTPS origin. Only an origin is supported, without credentials or a
 subpath. In Docker this address must be reachable from the console container.
 
-Sign in with your **ChirpStack credentials** inside the app. The console login
-protects the proxy; neither console credentials nor the server's `API_TOKEN` are
-forwarded as ChirpStack credentials. An HttpOnly, SameSite cookie scoped to
-`/chirpstack` allows ChirpStack's own Bearer authentication. It expires after
-eight hours; use **Reload** to renew access. Console restarts invalidate it.
+Sign in with your **ChirpStack credentials** inside the app. There is no Console
+login wrapping the proxy. Its Bearer token is forwarded; Manager cookies and the
+server's `API_TOKEN` are never forwarded as browser credentials.
 ChirpStack browser storage is namespaced so its logout cannot erase desktop
 preferences. Reload restarts the embedded page; theme changes and minimizing
 preserve it. The toolbar also opens the proxied interface in a new tab.
@@ -311,22 +294,27 @@ does not connect to a real ChirpStack server.
 
 ## Console access and reliability
 
-The production console requires `CONSOLE_USERNAME` and `CONSOLE_PASSWORD` and
-binds to `127.0.0.1` by default. The browser prompts for these credentials before
-loading the desktop; API routes and terminal upgrades require the same login.
-For remote access, use an SSH tunnel or a TLS reverse proxy. Set `CONSOLE_ORIGIN`
-to the proxy's exact public origin (for example `https://console.example.com`,
-without a trailing slash). Set `CONSOLE_HOST` only if the proxy needs a different
-bind address, and keep the backend port private.
+Console opens without a password at `http://localhost:3000` and the host's LAN IP.
+The default bind address is `0.0.0.0`; remove an old `CONSOLE_HOST=127.0.0.1` setting
+or change it to `0.0.0.0` for LAN access. `CONSOLE_USERNAME`, `CONSOLE_PASSWORD` and
+`CONSOLE_ORIGIN` are no longer used. No replacement origin setting is needed.
+Browser requests use relative URLs. Cross-site writes/upgrades are rejected using
+browser Fetch Metadata, with Host matching for older clients. Forwarded headers
+are not blindly trusted. The existing host-network Compose design is preserved;
+port mappings are omitted because host networking ignores them. A second service
+cannot bind the same host port: startup now logs an explicit `EADDRINUSE` diagnosis.
 
-Terminal host credentials are separate from the console login. They are sent in
-the first authenticated WebSocket message to `/terminal`, never in the URL or
-connection logs. There is no built-in SSH password. Cross-origin browser writes
-and terminal upgrades are rejected.
+Terminal connects to the host SSH service at `127.0.0.1:22` using its own supplied
+credentials. It bundles xterm locally, checks readiness, resizes the SSH PTY,
+cleans up sockets/channels, and retains meaningful failure messages. There is no
+Console password requirement. SSH itself must be running on the receiving device.
+Paint now provides a local canvas with touch drawing, undo, clear and PNG export.
+BasePaint forbids iframe embedding; its existing experience remains available
+through an explicit external link.
 
 Meter transactions and their local nonces commit atomically. Device downlinks
 are attempted before external delivery hooks; a delivery failure does not block
-acknowledgement or later delivery extensions. Exact retransmissions can be
+acknowledgement or later delivery extensions. Same-nonce retransmissions, including an increased signed accumulator, can be
 acknowledged without storing or distributing the same transaction twice.
 Transactions remain in SQLite for chain synchronization and scheduled publishing;
 this does not provide an exactly-once delivery guarantee for external services.
@@ -844,25 +832,24 @@ survive desktop theme changes and reloads. Native content, dialogs, and terminal
 colors follow the chosen palette. Embedded external websites retain their own
 appearance controls; the containing window follows the application setting.
 
-To build and install the current checkout on the existing Linux Docker host:
+To update the existing Docker deployment from GitHub Actions images:
 
 ```sh
-# First-time setup only: copy .env.example to .env and fill in your settings.
 ./install.sh
-# If the existing deployment used a custom Compose project name:
 ./install.sh --project-name your-existing-project
+# To select a fork/branch image published by the existing workflow:
+./install.sh --image ghcr.io/fluxion9/console:feat-revamp
 ```
 
-Requires Docker with a current Compose plugin (`up --wait`). The script uses
-`compose.yaml` plus `compose.local.yaml`, builds `m3tering-console:local` first,
-then recreates **only the console service** and waits up to 240 seconds for the
-HTTP authentication boundary to be ready. Mounted database and extension volumes,
-`.env`, and other services are preserved. A build failure leaves the running
-container untouched. A startup failure is reported; the script does not claim
-success or delete data, and does not automatically roll back. Readiness does not
-verify connectivity to external ChirpStack, MQTT, or chain services.
-
-Use the same Compose project name and checkout/data directory as the existing
-installation so Compose replaces the intended service and reuses its volumes.
-Standalone `docker run` containers are not removed by this script. The replacement
-uses Compose's [documented recreate behavior](https://docs.docker.com/reference/cli/docker/compose/up/).
+Docker and its Compose plugin must already be installed. The script identifies
+this checkout's Compose project and running Console image, preserves its GHCR tag
+by default (otherwise `ghcr.io/m3tering/console:main`), and lets Docker select the
+native architecture from the published manifest. It pulls before stopping Console,
+then stops/removes only that service, starts the updated image and waits for
+`/healthz`. Failed readiness prints logs and restores the previous image when
+available. Old images are removed only after success and only if no container
+still uses them; Docker refuses removal if other tags reference them. No packages,
+volumes, database files or `.env` are removed. Other services are never brought down.
+`compose.local.yaml` remains available for deliberate developer builds; the update
+script does not use it. Readiness does not certify broker or blockchain availability.
+Use the original project name and data directory to preserve the same volumes.

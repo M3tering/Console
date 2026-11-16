@@ -27,9 +27,9 @@ test('history survives reopening and timestamps/raw payload remain intact', () =
 test('new nonce cycles count their own accumulator while repeats add zero', () => {
   const time = Date.now()-10000; [1,2,.1,.3].forEach((energy,index) => ingest(event(a,energy*1000000,time+index*1000,randomUUID(),2,74,index<2?7:8)));
   const result = store.history(app,a,0,Date.now(),0,50);
-  expect(result.summary).toMatchObject({ observedConsumption:1.3, resets:1 });
+  expect(result.summary).toMatchObject({ observedConsumption:2, resets:1 });
   expect(result.chart.map((row:any) => row.segment)).toEqual([0,0,1,1]);
-  expect(result.chart.map((row:any) => row.intervalEnergy)).toEqual([null,1,.1,.2]);
+  expect(result.chart.map((row:any) => row.intervalEnergy)).toEqual([null,null,2,null]);
 });
 test('malformed lengths, FPorts and identity mismatches do not create readings', () => {
   ingest(event(a,1,Date.now(),randomUUID(),2,73)); ingest(event(a,1,Date.now(),randomUUID(),3));
@@ -53,8 +53,8 @@ test('pagination and sampled charts stay bounded and preserve reset segments', (
   const start = Date.now()-1000000;
   for (let index=0;index<901;index++) ingest(event(a,(index%450)*1000,start+index*1000,randomUUID(),2,74,Math.floor(index/450)));
   const result = store.history(app,a,0,Date.now(),50,50);
-  expect(result.rows).toHaveLength(50); expect(result.total).toBe(901); expect(result.chart.length).toBeLessThanOrEqual(401);
-  expect((result.summary as any).resets).toBe(2);
+  expect(result.rows).toHaveLength(50); expect(result.total).toBe(100); expect(result.chart.length).toBeLessThanOrEqual(401);
+  expect((result.summary as any).resets).toBe(1);
 });
 test('normal uplinks reuse an existing console key without requiring another bootstrap', () => {
   const keys = generateKeyPairSync('ed25519'), key = keys.publicKey.export({format:'der',type:'spki'}).subarray(-32).toString('hex');
@@ -84,17 +84,64 @@ test('acknowledgment cycles, high-water marks and range boundaries prevent doubl
   const reports = [[10,5],[10,6],[10,6],[11,8],[10,9],[11,7],[11,8],[11,9]];
   reports.forEach(([nonce,energy],index)=>ingest(event(a,energy*1e6,time+index*1000,randomUUID(),2,74,nonce)));
   const full = store.history(app,a,0,Date.now(),0,50);
-  expect(full.chart.map((row:any)=>row.intervalEnergy)).toEqual([null,1,0,8,null,0,0,1]);
-  expect(full.summary).toMatchObject({observedConsumption:10,resets:1,repeatedReports:2,uncertainReports:2});
+  expect(full.chart.map((row:any)=>row.intervalEnergy)).toEqual([null,null,null,6,null,null,null,null]);
+  expect(full.summary).toMatchObject({observedConsumption:6,resets:1,repeatedReports:1,uncertainReports:2});
   const ranged = store.history(app,a,time+2000,Date.now(),0,2);
-  expect(ranged.summary.observedConsumption).toBe(9); // baseline comes from before the range
+  expect(ranged.summary.observedConsumption).toBe(6); // baseline comes from before the range
   expect(ranged.rows).toHaveLength(2);
   // A delayed report sorts into its source time and cannot create duplicate energy.
   ingest(event(a,5500000,time+500,randomUUID(),2,74,10));
-  expect(store.history(app,a,0,Date.now(),0,50).summary.observedConsumption).toBe(10);
+  expect(store.history(app,a,0,Date.now(),0,50).summary.observedConsumption).toBe(6);
 });
 test('unexplained same-nonce decreases and nonce rollback are not fresh consumption', () => {
   const time=Date.now()-10000;
   [[8,2],[8,1],[8,2],[0,3],[1,4]].forEach(([nonce,energy],index)=>ingest(event(a,energy*1e6,time+index*1000,randomUUID(),2,74,nonce)));
   expect(store.history(app,a,0,Date.now(),0,50).summary).toMatchObject({observedConsumption:0,resets:0,uncertainReports:3});
+});
+
+test('nonce zero snapshots remain pending; only advance closes the previous observed cycle', () => {
+  const time=Date.now()-10000;
+  [1,1.5,2].forEach((energy,i)=>ingest(event(a,energy*1e6,time+i*1000)));
+  expect(store.history(app,a,0,Date.now(),0,100).summary.observedConsumption).toBe(0);
+  expect(store.accumulatorState(app,a)).toMatchObject({nonce:0,highWater:2000000});
+  setupDatabase('manager-test.db');
+  ingest(event(a,100000,time+4000,randomUUID(),2,74,1));
+  expect(store.history(app,a,0,Date.now(),0,100).summary).toMatchObject({observedConsumption:2,collectedEnergy:0});
+});
+test('100 telemetry records globally, persistent state and collector evidence survive eviction', () => {
+  const time=Date.now()-1000000;
+  ingest(event(a,2000000,time,randomUUID(),2,74,1));
+  store.collectorAccepted(app,a,1,1500000);
+  const commandId=randomUUID();store.insertCommand(app,a,commandId,{name:'Relay ON'},'preserve-history');
+  store.applicationEvent(app,a,'command-queued','Preserve this command activity');
+  for(let i=1;i<101;i++) ingest(event(b,i*100,time+i*1000));
+  expect(store.history(app,a,0,Date.now(),0,100).total).toBe(0);
+  expect(store.history(app,b,0,Date.now(),0,100).total).toBe(100);
+  expect(store.latestReading(app,a).energy).toBe(2);
+  expect(store.getCommand(app,commandId)).toMatchObject({fingerprint:'preserve-history',actor:'manager operator'});
+  expect(store.events(app,a).some(row=>row.message==='Preserve this command activity')).toBe(true);
+  setupDatabase('manager-test.db');
+  ingest(event(a,100000,time+102000,randomUUID(),2,74,2));
+  expect(store.history(app,a,0,Date.now(),0,100).summary).toMatchObject({observedConsumption:2,collectedEnergy:1.5});
+  expect(store.history(app,b,0,Date.now(),0,100).total).toBe(99);
+  const delayed=event(a,9000000,time+500,randomUUID(),2,74,1);ingest(delayed);ingest(delayed);
+  expect(store.accumulatorState(app,a)).toMatchObject({nonce:2,highWater:100000,completedObserved:2});
+  expect(store.history(app,a,0,Date.now(),0,100).total+store.history(app,b,0,Date.now(),0,100).total).toBe(100);
+});
+
+test('startup migration trims legacy rows, reconstructs cycle state and preserves Console tables',()=>{
+  const Database=require('better-sqlite3');const connection=new Database('./.data/manager-test.db');
+  const time=Date.now()-200000;
+  connection.prepare('INSERT INTO meters(publicKey,devEui,tokenId,latestNonce) VALUES(?,?,?,?)').run('preserve-console',b,7,4);
+  for(let i=0;i<120;i++){
+    const id=connection.prepare(`INSERT INTO manager_events(application,devEui,timestamp,receivedAt,kind,source,eventKey,rawPayload,fPort,metadata,message) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(app,a,time+i*1000,time+i*1000,'up','ChirpStack','legacy-'+i,'AAAA',2,'{}','legacy').lastInsertRowid;
+    connection.prepare(`INSERT INTO manager_readings(id,application,devEui,timestamp,receivedAt,fPort,nonce,rawEnergy,energy,rawVoltage,voltage,signature,verification,decoded) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,app,a,time+i*1000,time+i*1000,2,0,i*1000,i/1000,2300,230,'','unverified','{}');
+  }
+  connection.exec('DELETE FROM manager_schema; DELETE FROM manager_accumulators;');connection.close();
+  setupDatabase('manager-test.db');
+  expect(store.history(app,a,0,Date.now(),0,100).total).toBe(100);
+  expect(store.accumulatorState(app,a)).toMatchObject({nonce:0,highWater:119000,completedObserved:0});
+  const check=new Database('./.data/manager-test.db');
+  expect(check.prepare('SELECT COUNT(*) AS n FROM manager_events WHERE kind=\'up\'').get().n).toBe(100);
+  expect(check.prepare('SELECT latestNonce FROM meters WHERE publicKey=?').get('preserve-console').latestNonce).toBe(4);check.close();
 });
