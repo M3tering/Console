@@ -5,7 +5,7 @@ import { spawnSync } from 'child_process';
 let directory:string;
 beforeEach(()=>{
   directory=mkdtempSync(join(tmpdir(),'console install ')); mkdirSync(join(directory,'bin'));
-  copyFileSync(resolve('install.sh'),join(directory,'install.sh')); writeFileSync(join(directory,'.env'),'# fixture\n');
+  copyFileSync(resolve('auto-compose.sh'),join(directory,'auto-compose.sh')); writeFileSync(join(directory,'.env'),'# fixture\n');
   writeFileSync(join(directory,'bin','docker'),`#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$INSTALL_TEST_LOG"
 if [[ "$*" == *"pull console"* && "\${INSTALL_TEST_FAIL_PULL:-}" == 1 ]]; then exit 1; fi
@@ -14,7 +14,7 @@ if [[ "$*" == *"up --detach"* && "\${INSTALL_TEST_FAIL_START:-}" == 1 ]]; then e
 });
 afterEach(()=>rmSync(directory,{recursive:true,force:true}));
 function run(args:string[]=[],extra:Record<string,string>={}) {
-  return spawnSync('bash',[join(directory,'install.sh'),...args],{encoding:'utf8',cwd:tmpdir(),env:{...process.env,
+  return spawnSync('bash',[join(directory,'auto-compose.sh'),...args],{encoding:'utf8',cwd:tmpdir(),env:{...process.env,
     PATH:join(directory,'bin')+':'+process.env.PATH,INSTALL_TEST_LOG:join(directory,'calls'),...extra}});
 }
 const calls=()=>readFileSync(join(directory,'calls'),'utf8');

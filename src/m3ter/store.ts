@@ -2,8 +2,11 @@ import type { Database } from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import type { Telemetry } from './decoder';
 import { advance, Accumulator } from './accumulator';
+import { telemetryLimit } from './config';
 let db: Database;
+let retentionLimit = 100;
 export function initializeManagerStore(connection: Database): void {
+  retentionLimit = telemetryLimit();
   db = connection;
   db.exec(`
     CREATE TABLE IF NOT EXISTS manager_devices (application TEXT, devEui TEXT, metadata TEXT NOT NULL DEFAULT '{}', publicKey TEXT,
@@ -48,6 +51,13 @@ export function initializeManagerStore(connection: Database): void {
       }
       db.prepare('INSERT INTO manager_schema(version) VALUES(1)').run();
     }
+    // Recover receipt times from persisted records, never from the startup clock.
+    if (!db.prepare('SELECT version FROM manager_schema WHERE version=2').get()) {
+      db.exec(`UPDATE manager_devices SET lastUplink=NULLIF(MAX(
+        COALESCE((SELECT MAX(receivedAt) FROM manager_readings r WHERE r.application=manager_devices.application AND r.devEui=manager_devices.devEui),0),
+        COALESCE((SELECT json_extract(latest,'$.receivedAt') FROM manager_accumulators a WHERE a.application=manager_devices.application AND a.devEui=manager_devices.devEui),0)),0);
+        INSERT INTO manager_schema(version) VALUES(2);`);
+    }
     trimHistory();
   })();
   // A process may have stopped after the upstream accepted a command. Never resend automatically.
@@ -56,11 +66,11 @@ export function initializeManagerStore(connection: Database): void {
 // Global cap includes malformed and unsupported uplinks, so their raw payloads
 // cannot bypass retention. Device state survives deletion of any history row.
 function trimHistory(): void {
-  db.exec(`DELETE FROM manager_readings WHERE id IN (
+  db.prepare(`DELETE FROM manager_readings WHERE id IN (
       SELECT id FROM manager_events WHERE kind IN ('up','decode-error')
-      ORDER BY timestamp DESC,id DESC LIMIT -1 OFFSET 100);
-    DELETE FROM manager_events WHERE kind IN ('up','decode-error') AND id NOT IN (
-      SELECT id FROM manager_events WHERE kind IN ('up','decode-error') ORDER BY timestamp DESC,id DESC LIMIT 100);`);
+      ORDER BY timestamp DESC,id DESC LIMIT -1 OFFSET ?)`).run(retentionLimit);
+  db.prepare(`DELETE FROM manager_events WHERE kind IN ('up','decode-error') AND id NOT IN (
+      SELECT id FROM manager_events WHERE kind IN ('up','decode-error') ORDER BY timestamp DESC,id DESC LIMIT ?)`).run(retentionLimit);
 }
 export function accumulatorState(application: string, devEui: string): Accumulator | null {
   const row: any = db.prepare('SELECT state FROM manager_accumulators WHERE application=? AND devEui=?').get(application, devEui);
@@ -112,11 +122,11 @@ export function recordUplink(event: ManagerEvent, telemetry?: Telemetry, inactiv
     const id = addEvent(event); if (id === null) return false;
     const old = deviceState(event.application, event.devEui!);
     updateDevice(event.application, event.devEui!, event.metadata);
-    const recent = Math.max(event.timestamp, old?.lastUplink || 0) >= Date.now() - inactiveAfter;
+    if (!telemetry) { trimHistory(); return true; }
+    const recent = Math.max(event.receivedAt, old?.lastUplink || 0) >= Date.now() - inactiveAfter;
     if (recent && (!old?.lastUplink || old.activity === 'inactive')) applicationEvent(event.application, event.devEui, 'active', 'Uplink observed after no recent activity');
     db.prepare('UPDATE manager_devices SET lastUplink=MAX(COALESCE(lastUplink,0),?),activity=? WHERE application=? AND devEui=?')
-      .run(event.timestamp, recent ? 'active' : 'inactive', event.application, event.devEui);
-    if (!telemetry) { trimHistory(); return true; }
+      .run(event.receivedAt, recent ? 'active' : 'inactive', event.application, event.devEui);
     db.prepare(`INSERT INTO manager_readings(id,application,devEui,timestamp,receivedAt,fPort,nonce,rawEnergy,energy,rawVoltage,voltage,signature,publicKey,verification,decoded)
       VALUES(@id,@application,@devEui,@timestamp,@receivedAt,@fPort,@nonce,@rawEnergy,@energy,@rawVoltage,@voltage,@signature,@publicKey,@verification,@decoded)`)
       .run({ id, application: event.application, devEui: event.devEui, timestamp: event.timestamp, receivedAt: event.receivedAt, fPort: event.fPort,
@@ -155,7 +165,7 @@ export function history(application: string, devEui: string, from: number, to: n
     COALESCE(SUM(accounting='cycle-advanced'),0) AS resets,
     COALESCE(SUM(accounting IN ('nonce-reset-or-gap','counter-reset-uncertain','uncertain-cycle-ended','late-report','invalid-signature')),0) AS uncertainReports,
     COALESCE(SUM(accounting='repeated-total'),0) AS repeatedReports FROM manager_readings r ${where}`).get(args);
-  return { rows, chart, total: summary.reports, offset, limit, summary, sampled: false, retentionLimit: 100 };
+  return { rows, chart, total: summary.reports, offset, limit, summary, sampled: false, retentionLimit };
 }
 export function events(application: string, devEui: string, offset = 0): any[] {
   return db.prepare(`SELECT * FROM manager_events WHERE application=? AND (devEui=? OR devEui IS NULL)

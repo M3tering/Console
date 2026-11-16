@@ -14,7 +14,7 @@ const { server, app } = require('../../dist/services/server');
 const { attachTerminal } = require('../../dist/services/ssh');
 const upstream = require('./chirpstack-upstream.cjs');
 upstream.listen(0, '127.0.0.1', async () => {
-  process.env.CHIRPSTACK_WEB_URL = `http://127.0.0.1:${upstream.address().port}`;
+  process.env.CHEFSTACK_URL = `http://127.0.0.1:${upstream.address().port}`;
   const ssh = await require('./ssh-fixture.cjs')();
   attachTerminal(server,ssh.target);
   server.on('close',()=>ssh.server.close());

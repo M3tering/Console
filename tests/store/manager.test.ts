@@ -4,8 +4,8 @@ import * as store from '../../src/m3ter/store';
 import { ingestEvent } from '../../src/m3ter/monitor';
 const app = '11111111-1111-4111-8111-111111111111', a = '0102030405060708', b = '1112131415161718';
 const originalEnv = process.env;
-beforeEach(() => { process.env = { ...originalEnv, APPLICATION_ID: app }; setupDatabase('manager-test.db'); });
-afterEach(() => { deleteDatabase('manager-test.db'); process.env = originalEnv; });
+beforeEach(() => { process.env = { ...originalEnv, APPLICATION_ID: app }; delete process.env.M3TER_TELEMETRY_LIMIT; setupDatabase('manager-test.db'); });
+afterEach(() => { jest.restoreAllMocks(); deleteDatabase('manager-test.db'); process.env = originalEnv; });
 function event(devEui = a, energy = 1000000, time = Date.now(), id = randomUUID(), port = 2, length = 74, nonce = 0) {
   const bytes = Buffer.alloc(length); if (length >= 74) { bytes.writeUInt32BE(nonce,0); bytes.writeUInt32BE(energy,4); bytes.writeUInt16BE(2300,72); }
   const topic = `application/${app}/device/${devEui}/event/up`;
@@ -72,11 +72,72 @@ test('location comes from valid device events and older locations cannot overwri
   publish(51,Date.now()); publish(21,Date.now()-10000);
   expect(store.deviceState(app,a).metadata.location).toEqual({latitude:51,longitude:10});
 });
-test('inactivity is an observation and late historical events do not make a meter active', () => {
-  ingest(event(a,1,Date.now()-600000)); expect(store.deviceState(app,a).activity).toBe('inactive');
+test('activity follows actual reception; inactivity does not change the last receipt', () => {
+  ingest(event(a,1,Date.now()-600000)); expect(store.deviceState(app,a).activity).toBe('active');
   ingest(event()); expect(store.deviceState(app,a).activity).toBe('active');
+  const last=store.deviceState(app,a).lastUplink;
   store.markInactive(app,-1); expect(store.deviceState(app,a).activity).toBe('inactive');
+  expect(store.deviceState(app,a).lastUplink).toBe(last);
   expect(store.events(app,a).find(row=>row.kind==='inactive').source).toBe('console observation');
+});
+
+test('receipt time survives refresh/restart and ignores duplicates, connection events, and invalid payloads', () => {
+  const now=Date.now(), clock=jest.spyOn(Date,'now').mockReturnValue(now);
+  const input=event(a,1000000,now+60000); ingest(input);
+  expect(store.deviceState(app,a).lastUplink).toBe(now);
+  clock.mockReturnValue(now+120000);
+  ingest(input); ingest(event(a,1,now+120000,randomUUID(),2,73));
+  const monitor=require('../../src/m3ter/monitor'); monitor.connectionState('reconnecting'); store.markInactive(app,1);
+  expect(store.deviceState(app,a).lastUplink).toBe(now);
+  setupDatabase('manager-test.db'); expect(store.deviceState(app,a).lastUplink).toBe(now);
+  ingest(event(a,2000000,now-100000)); expect(store.deviceState(app,a).lastUplink).toBe(now+120000);
+});
+
+test('custom global retention is enforced on insertion and restart while nonce state survives', () => {
+  process.env.M3TER_TELEMETRY_LIMIT='3'; setupDatabase('manager-test.db');
+  const now=Date.now()-10000;
+  ingest(event(a,2000000,now,randomUUID(),2,74,1)); store.collectorAccepted(app,a,1,1500000);
+  for(let i=1;i<=4;i++) ingest(event(b,i*100,now+i*1000));
+  expect(store.history(app,a,0,Date.now(),0,100).total).toBe(0);
+  expect(store.history(app,b,0,Date.now(),0,100).rows.map((r:any)=>r.rawEnergy)).toEqual([400,300,200]);
+  process.env.M3TER_TELEMETRY_LIMIT='1'; setupDatabase('manager-test.db');
+  expect(store.history(app,b,0,Date.now(),0,100)).toMatchObject({total:1,retentionLimit:1});
+  ingest(event(a,100000,now+6000,randomUUID(),2,74,2));
+  expect(store.history(app,a,0,Date.now(),0,100).summary).toMatchObject({observedConsumption:2,collectedEnergy:1.5});
+  expect(store.history(app,b,0,Date.now(),0,100).total).toBe(0);
+  process.env.M3TER_TELEMETRY_LIMIT='0'; setupDatabase('manager-test.db');
+  expect(store.history(app,a,0,Date.now(),0,100)).toMatchObject({total:1,retentionLimit:100});
+});
+
+test('configured retention can exceed 100, retaining the newest source records across meters', () => {
+  process.env.M3TER_TELEMETRY_LIMIT='120'; setupDatabase('manager-test.db');
+  const now=Date.now()-200000;
+  for(let i=0;i<125;i++) ingest(event(i%2?a:b,i*100,now+i*1000));
+  const rows=[...store.history(app,a,0,Date.now(),0,100).rows,...store.history(app,b,0,Date.now(),0,100).rows] as any[];
+  expect(rows).toHaveLength(120);expect(Math.min(...rows.map(r=>r.rawEnergy))).toBe(500);
+  setupDatabase('manager-test.db');expect(store.history(app,a,0,Date.now(),0,100).total+store.history(app,b,0,Date.now(),0,100).total).toBe(120);
+});
+
+test('receipt migration replaces old source clocks without touching readings', () => {
+  const now=Date.now(), clock=jest.spyOn(Date,'now').mockReturnValue(now);
+  ingest(event(a,1000000,now+60000));
+  const Database=require('better-sqlite3'), connection=new Database('./.data/manager-test.db');
+  connection.prepare('UPDATE manager_devices SET lastUplink=?').run(now+60000);
+  connection.exec('DELETE FROM manager_schema WHERE version=2');connection.close();
+  clock.mockReturnValue(now+300000);setupDatabase('manager-test.db');
+  expect(store.deviceState(app,a).lastUplink).toBe(now);
+  expect(store.latestReading(app,a).timestamp).toBe(now+60000);
+});
+
+test('hex telemetry decodes identically and raw transport survives persistence', () => {
+  const input:any=event(a,1234567); const hex=Buffer.from(input.body.data,'base64').toString('hex').toUpperCase();
+  delete input.body.data; input.body.dataHex=hex; expect(ingest(input)).toBe(true);
+  expect(store.latestReading(app,a)).toMatchObject({energy:1.234567,voltage:230,nonce:0});
+  const row:any=store.history(app,a,0,Date.now()+1000,0,50).rows[0];
+  expect(row.rawPayload).toBe(hex); expect(JSON.parse(row.metadata)).toMatchObject({payloadHex:hex,payloadEncoding:'hex',payloadField:'dataHex'});
+  setupDatabase('manager-test.db'); expect(store.latestReading(app,a).energy).toBe(1.234567);
+  input.body.deduplicationId=randomUUID();input.body.dataHex='00GG';ingest(input);
+  expect(store.events(app,a).find(r=>r.rawPayload==='00GG').message).toContain('Invalid hex');
 });
 
 test('acknowledgment cycles, high-water marks and range boundaries prevent double counting', () => {

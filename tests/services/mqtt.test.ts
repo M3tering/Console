@@ -1,4 +1,4 @@
-import { handleMessage } from '../../src/services/mqtt';
+import { handleMessage, mqttConnection } from '../../src/services/mqtt';
 import * as store from '../../src/store/sqlite';
 import { getLatestTransactionNonce } from '../../src/lib/sync';
 import { runHook, notifyHook, verifyPayloadSignature } from '../../src/lib/utils';
@@ -93,6 +93,28 @@ test('persistence failure never acknowledges uncommitted data and releases the l
   (store.recordMeterTransaction as jest.Mock).mockImplementationOnce(() => { throw new Error('disk full'); });
   await handleMessage(uplink()); expect(enqueue).not.toHaveBeenCalled();
   await handleMessage(uplink()); expect(enqueue).toHaveBeenCalledTimes(1);
+});
+
+test('collector decodes explicitly marked hex using the same bytes as the existing transport', async () => {
+  const event=JSON.parse(uplink().toString()), hex=Buffer.from(event.data,'base64').toString('hex');
+  event.data=hex;event.dataEncoding='hex';
+  await handleMessage(Buffer.from(JSON.stringify(event)));
+  expect(records).toHaveLength(1);expect(records[0].raw).toBe(hex);expect(enqueue).toHaveBeenCalledTimes(1);
+});
+
+test('shared MQTT URL preserves the original default, supports remote protocols, and rejects invalid URLs safely', () => {
+  const environment=process.env;
+  try {
+    process.env={...environment};delete process.env.MQTT_URL;delete process.env.CHIRPSTACK_HOST;
+    expect(mqttConnection()).toEqual({host:'localhost',port:1883});
+    process.env.CHIRPSTACK_HOST='network-server';expect(mqttConnection()).toEqual({host:'network-server',port:1883});
+    for(const url of ['mqtt://remote:1883','mqtts://operator:private@remote:8883','ws://remote:9001/mqtt','wss://remote/mqtt']) {
+      process.env.MQTT_URL=url;expect(mqttConnection()).toBe(url);
+    }
+    process.env.MQTT_URL='https://operator:private@remote';
+    expect(mqttConnection).toThrow('MQTT_URL must be a valid');
+    try {mqttConnection();} catch(error) {expect(String(error)).not.toContain('private');}
+  } finally {process.env=environment;}
 });
 
 test('one broker connection fans out independently, preserves collection on monitoring failure, and resubscribes once', async () => {

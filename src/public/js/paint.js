@@ -21,7 +21,7 @@
   const end = event => { if (event.pointerId === pointer) { pointer = null; status.textContent = 'Drawing updated. Save PNG to keep a copy.'; } };
   ['pointerup','pointercancel','lostpointercapture'].forEach(name => canvas.addEventListener(name,end));
   document.getElementById('paint-undo').addEventListener('click', () => { const previous = undo.pop(); if(previous) ctx.putImageData(previous,0,0); });
-  document.getElementById('paint-clear').addEventListener('click', () => { if (!window.confirm('Clear this drawing? You can undo this change.')) return; remember(); white(); });
+  document.getElementById('paint-clear').addEventListener('click', async () => { if (!await AppFeedback.confirm(document.getElementById('paint'), 'Clear this drawing?', 'You can undo this change.', 'Clear drawing')) return; remember(); white(); });
   document.getElementById('paint-save').addEventListener('click', () => canvas.toBlob(blob => {
     if (!blob) { status.textContent = 'Could not save the drawing. Please retry.'; return; }
     const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href=url; link.download='console-paint.png'; link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);

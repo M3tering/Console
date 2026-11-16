@@ -5,7 +5,6 @@ import { requireSameOrigin } from './auth';
 import { proxyChirpstack } from './chirpstack';
 import { managerRouter, attachManagerStream } from '../m3ter/api';
 import { createLogger } from '../utils/logger';
-import { getAllMeterRecords, deleteMeterByPublicKey } from '../store/sqlite';
 import { getUIComponents, invokeUIAction } from '../lib/utils';
 
 const logger = createLogger('[server]');
@@ -37,14 +36,12 @@ app.use('/api/m3ter-manager', managerRouter);
 
 app.get('/', async (req: Request, res: Response, next) => {
   try {
-    const m3ters = getAllMeterRecords();
-
     // Get UI components from loaded UI extensions
     const { icons, windows } = await getUIComponents();
 
-    logger.info('Rendering index page with m3ters, icons, and windows');
+    logger.info('Rendering index page with icons and windows');
 
-    res.render('index', { m3ters, icons, windows });
+    res.render('index', { icons, windows });
     logger.info('Server handled GET request at `/`');
   } catch (error) { next(error); }
 });
@@ -62,24 +59,6 @@ app.post('/api/actions/:moduleId/:actionId', async (req: Request, res: Response,
     } else {
       res.status(400).json(result);
     }
-  } catch (error) { next(error); }
-});
-
-app.delete('/delete-meter', async (req: Request, res: Response, next) => {
-  try {
-    const publicKey = typeof req.query.publicKey === 'string' ? req.query.publicKey : '';
-    if (publicKey) {
-      const deleted = deleteMeterByPublicKey(publicKey.toString());
-      if (!deleted) {
-        res.status(404).send({ message: 'meter not found' });
-        return;
-      }
-    } else {
-      res.status(400).send({ message: 'public key not specified' });
-      return;
-    }
-    logger.info('Server handled DELETE request at `/delete-meter`');
-    res.status(200).send({ message: 'deleted meter' });
   } catch (error) { next(error); }
 });
 

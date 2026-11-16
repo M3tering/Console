@@ -47,7 +47,7 @@
   function persist() {
     if (!P.save(preferences) && !storageWarning) {
       storageWarning = true;
-      showNotification('Browser storage is unavailable. Preferences will last for this visit only.', 'error');
+      showNotification('Browser storage is unavailable. Preferences will last for this visit only.', 'error', null);
     }
   }
   function updatePreferences(patch) {
@@ -106,7 +106,8 @@
     if (Object.keys(preferences.positions).length) {
       // Native dialogs retain returnValue between openings, including Escape.
       $('reset-dialog').returnValue = 'cancel';
-      $('reset-dialog').showModal();
+      if ($('settings').hidden || !$('settings').classList.contains('is-active')) launch('settings');
+      AppFeedback.showDialog($('reset-dialog'), $('settings'));
     }
     else updatePreferences({ mode: 'auto', positions: {} });
   }
@@ -245,6 +246,7 @@
       if (focus) win.element.querySelector('.window-titlebar').focus({ preventScroll: true });
     }
     $('active-app-name').textContent = win ? win.element.dataset.windowTitle : 'Desktop';
+    document.title = win ? `${win.element.dataset.windowTitle} · M3tering Console` : 'M3tering Console · Desktop';
     syncDock();
   }
   function nextWindow() {
@@ -353,7 +355,7 @@
   function launch(id) {
     const app = registry.get(id);
     const win = app && windows.get(app.windowId);
-    if (!win) { showNotification('This extension has no application window available.', 'error'); return; }
+    if (!win) { showNotification('This extension has no application window available.', 'error', null); return; }
     closeLauncher(false);
     $('desktop-context').hidden = true;
     const wasOpen = win.open;

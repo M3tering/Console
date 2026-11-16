@@ -11,6 +11,7 @@ import {
 } from '../store/sqlite';
 import type { State, TransactionRecord } from '../types';
 import { decodePayload } from '../lib/decode';
+import { uplinkPayload } from '../lib/uplink-payload';
 import { runHook, notifyHook, verifyPayloadSignature } from '../lib/utils';
 import { getLatestTransactionNonce } from '../lib/sync';
 import { createMeterLogger, createLogger } from '../utils/logger';
@@ -21,8 +22,17 @@ const deviceLocks = new Set<string>();
 const meterLocks = new Set<string>();
 let monitoringClient: MqttClient | undefined;
 
+// One address for the existing process-level service and both consumers.
+export function mqttConnection(): string | { host: string; port: number } {
+  if (!process.env.MQTT_URL) return { host: process.env.CHIRPSTACK_HOST || 'localhost', port: 1883 };
+  try {
+    const url = new URL(process.env.MQTT_URL);
+    if (!['mqtt:', 'mqtts:', 'ws:', 'wss:'].includes(url.protocol) || !url.hostname || url.hash) throw new Error();
+    return process.env.MQTT_URL;
+  } catch { throw new Error('MQTT_URL must be a valid mqtt, mqtts, ws or wss broker URL.'); }
+}
 // Optional arguments are dependency injection for integration tests, not configuration.
-export async function handleUplinks(connection = { host: process.env.CHIRPSTACK_HOST || 'localhost', port: 1883 }, collect = handleMessage): Promise<boolean> {
+export async function handleUplinks(connection = mqttConnection(), collect = handleMessage): Promise<boolean> {
   if (monitoringClient) return true;
   const application = applicationId();
   const topic = `application/${application}/device/+/event/+`;
@@ -30,8 +40,8 @@ export async function handleUplinks(connection = { host: process.env.CHIRPSTACK_
     try { connectionState(state, message); } catch { logger.error('Manager status update failed; MQTT collection continues'); }
   };
   status('connecting');
-  const client = monitoringClient = connect({ ...connection, clientId: `console-${randomUUID()}`,
-    clean: true, resubscribe: false, connectTimeout: 9000, reconnectPeriod: 2000 });
+  const options = { clientId: `console-${randomUUID()}`, clean: true, resubscribe: false, connectTimeout: 9000, reconnectPeriod: 2000 };
+  const client = monitoringClient = typeof connection === 'string' ? connect(connection, options) : connect({ ...connection, ...options });
   client.on('reconnect', () => { status('reconnecting'); void notifyHook('onMqttReconnect', client); });
   client.on('offline', () => status('disconnected'));
   client.on('close', () => status('disconnected'));
@@ -95,10 +105,7 @@ export async function handleMessage(blob: Buffer): Promise<void> {
     }
     deviceLocks.add(devEui!);
     ownsDeviceLock = true;
-    if (typeof message.data !== 'string' || !message.data || !/^[A-Za-z0-9+/]+={0,2}$/.test(message.data)) {
-      throw new Error('Message has no valid base64 payload');
-    }
-    const transaction = Buffer.from(message.data, 'base64');
+    const transaction = uplinkPayload(message).bytes;
     const decoded = decodePayload(transaction);
     const payloadHadPublicKey = !!decoded.extensions.deviceId;
     const publicKey = decoded.extensions.deviceId || getMeterByDevEui(devEui!)?.publicKey.replace(/^0x/, '');

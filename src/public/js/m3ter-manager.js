@@ -50,7 +50,7 @@
     if (!device) return;
     text('mm-name', device.name || device.devEui); text('mm-eui', device.devEui);
     text('mm-energy', fixed(latest?.energy, 6)); text('mm-voltage', fixed(latest?.voltage, 1)); text('mm-nonce', latest?.nonce ?? '—');
-    text('mm-energy-time', latest ? `${date(latest.timestamp)} · ${state?.accumulation?.uncertain ? 'Uncertain cycle' : 'Pending snapshot'} · signed fields ${latest.verification}` : 'Awaiting telemetry');
+    text('mm-energy-time', latest ? date(latest.timestamp) : 'Awaiting telemetry');
     text('mm-voltage-note', device.phaseMode === 'three-phase' && latest ? `Sum of phases · calculated mean ${fixed(latest.voltage / 3, 1)} V (metadata mode)` : `Transmitted value · ${device.phaseMode || 'phase mode unknown'}`);
     const values = [
       ['Meter', device.name], ['DevEUI', device.devEui], ['Application', device.applicationName || state?.metadata?.applicationName],
@@ -72,14 +72,22 @@
   }
   function renderHistory() {
     if (!historyData) return;
-    for (const view of ['overview', 'history']) for (const field of ['energy','voltage']) M3terCharts.render($(`mm-${view}-${field}`), historyData.chart, field);
+    for (const view of ['overview', 'history']) for (const field of ['energy','voltage']) {
+      const container = $(`mm-${view}-${field}`);
+      M3terCharts.render(container, historyData.chart, field);
+      // Keep Analytics unchanged while simplifying the Overview for screen readers too.
+      if (view === 'overview') {
+        const svg = container.querySelector('svg');
+        if (svg) svg.setAttribute('aria-label', `${field === 'energy' ? 'Energy in kWh' : 'Voltage in volts'}. Use left and right arrows to inspect readings.`);
+      }
+    }
     const summary = historyData.summary;
-    text('mm-summary', `${historyData.total} retained reports (100 globally). Completed-cycle observed lower bounds: ${fixed(summary?.observedConsumption || 0, 6)} kWh. Collector-recorded energy in those completed cycles: ${fixed(summary?.collectedEnergy || 0, 6)} kWh. These are not blockchain settlement totals. Pending snapshots are not added. ${summary?.uncertainReports || 0} uncertain or delayed reports.`);
+    text('mm-summary', `${historyData.total} retained reports (${historyData.retentionLimit} globally). Completed-cycle observed lower bounds: ${fixed(summary?.observedConsumption || 0, 6)} kWh. Collector-recorded energy in those completed cycles: ${fixed(summary?.collectedEnergy || 0, 6)} kWh. These are not blockchain settlement totals. Pending snapshots are not added. ${summary?.uncertainReports || 0} uncertain or delayed reports.`);
     const parent = $('mm-readings'); parent.replaceChildren();
     historyData.rows.forEach(row => {
       const tr = node('tr'); [date(row.timestamp), fixed(row.energy,6), fixed(row.voltage,1), row.nonce, row.fPort].forEach(value => tr.append(node('td', String(value))));
       const td = node('td'), button = node('button', 'Inspect', 'nes-btn'); button.addEventListener('click', () => commands.inspect('Uplink details',
-        `Meter: ${row.devEui}\nUTC: ${new Date(row.timestamp).toISOString()}\nReceived: ${new Date(row.receivedAt).toISOString()}\nFPort: ${row.fPort}\nNonce: ${row.nonce}\nRaw energy: ${row.rawEnergy}\nAccumulator: ${row.energy} kWh\nCompleted previous cycle lower bound: ${row.intervalEnergy ?? 'Pending / uncertain'} kWh\nCollector-recorded energy for completed cycle: ${row.collectedEnergy ?? 'Unavailable'} kWh\nCompleted nonce: ${row.completedNonce ?? 'None'}\nAccounting: ${row.accounting}\nRaw voltage: ${row.rawVoltage}\nVoltage: ${row.voltage} V\nSignature status: ${row.verification}\nSignature (hex): ${row.signature}\nPublic key: ${row.publicKey || 'Not present in this uplink'}\nRaw payload (Base64): ${row.rawPayload}\nRadio metadata: ${row.metadata}`)); td.append(button); tr.append(td); parent.append(tr);
+        `Meter: ${row.devEui}\nUTC: ${new Date(row.timestamp).toISOString()}\nReceived: ${new Date(row.receivedAt).toISOString()}\nFPort: ${row.fPort}\nNonce: ${row.nonce}\nRaw energy: ${row.rawEnergy}\nAccumulator: ${row.energy} kWh\nCompleted previous cycle lower bound: ${row.intervalEnergy ?? 'Pending / uncertain'} kWh\nCollector-recorded energy for completed cycle: ${row.collectedEnergy ?? 'Unavailable'} kWh\nCompleted nonce: ${row.completedNonce ?? 'None'}\nAccounting: ${row.accounting}\nRaw voltage: ${row.rawVoltage}\nVoltage: ${row.voltage} V\nSignature status: ${row.verification}\nSignature (hex): ${row.signature}\nPublic key: ${row.publicKey || 'Not present in this uplink'}\nRaw payload (${JSON.parse(row.metadata || '{}').payloadEncoding === 'hex' ? 'Hex' : 'Base64'}): ${row.rawPayload}\nRadio metadata: ${row.metadata}`)); td.append(button); tr.append(td); parent.append(tr);
     });
     if (!historyData.rows.length) { const tr = node('tr'), cell = node('td', 'No readings in this range.'); cell.colSpan = 6; tr.append(cell); parent.append(tr); }
     text('mm-history-count', `${historyData.total ? historyOffset + 1 : 0}–${Math.min(historyOffset + historyData.rows.length, historyData.total)} of ${historyData.total}`);
@@ -91,7 +99,17 @@
     const data = await api(`/devices/${current}/events?offset=${eventOffset}`); if (device?.devEui !== current) return;
     const parent = $('mm-events'); if (!append) parent.replaceChildren();
     if (!data.events.length && !append) parent.append(node('li', 'No activity recorded yet.'));
-    data.events.forEach(event => { const li = node('li'); li.append(node('strong', event.message), node('small', `${date(event.timestamp)} · ${event.source}${event.devEui ? '' : ' · application-wide'}`)); parent.append(li); });
+    data.events.forEach(event => {
+      const li = node('li'); li.append(node('strong', event.message), node('small', `${date(event.timestamp)} · ${event.source}${event.devEui ? '' : ' · application-wide'}`));
+      if (event.rawPayload !== null && event.rawPayload !== undefined) {
+        const metadata = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : event.metadata || {};
+        const details = node('details'); details.append(node('summary', 'Inspect payload'));
+        if (metadata.payloadHex) details.append(node('small', 'Payload (hex)'), node('code', metadata.payloadHex, 'mm-long-code'));
+        details.append(node('small', `Original ${metadata.payloadField || 'data'} (${metadata.payloadEncoding || 'base64'})`), node('code', event.rawPayload, 'mm-long-code'));
+        li.append(details);
+      }
+      parent.append(li);
+    });
     eventOffset += data.events.length; $('mm-events-more').hidden = data.events.length < 100;
   }
   async function refresh(telemetryOnly = false) {
@@ -179,7 +197,7 @@
     try { config = await api('/config'); if (!active || version !== authVersion) return; monitoring = config.monitoring; commands.renderCatalogue(config.commands);
       if (config.demo) root.querySelector('.mm-brand small').textContent = 'Demo network · simulated meters';
       await loadDevices(); if (!active || version !== authVersion) return;
-      notice(config.billingAutomationActive ? 'Existing console billing automation is enabled and may also control these meters. M3TER Manager only observes telemetry; it does not acknowledge energy reports automatically.' : '');
+      notice(config.billingAutomationActive ? 'Existing console billing automation is enabled and may also control these meters. M3ter Manager only observes telemetry; it does not acknowledge energy reports automatically.' : '');
       connectStream(); clockTimer = setInterval(renderActivity, 1000); if (device) await refresh();
     } catch (error) { notice(''); showError(error); }
   }
