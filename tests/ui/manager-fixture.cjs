@@ -12,10 +12,10 @@ const devices = [
 module.exports = async function managerFixture(app) {
   process.env.APPLICATION_ID = application;
   process.env.API_TOKEN = 'fixture-backend-token-never-in-browser';
-  process.env.CONSOLE_MONITOR_ONLY = 'true';
   const { ingestEvent } = require('../../dist/m3ter/monitor');
   const keys = new Map(devices.map(device => [device.devEui, generateKeyPairSync('ed25519')]));
   const queues = new Map(devices.map(device => [device.devEui, []]));
+  let collectorCount = 0;
   let enqueueCount = 0, listFailure = false, queueFailure = false;
   const rest = http.createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
@@ -57,9 +57,8 @@ module.exports = async function managerFixture(app) {
     });
   });
   await new Promise(resolve => broker.listen(0,'127.0.0.1',resolve));
-  process.env.MQTT_URL = `mqtt://127.0.0.1:${broker.address().port}`;
   const { handleUplinks, stopUplinks } = require('../../dist/services/mqtt');
-  await handleUplinks();
+  await handleUplinks({ host: '127.0.0.1', port: broker.address().port }, async () => { collectorCount++; });
   function uplink(input = {}) {
     const id = input.devEui || devices[0].devEui, key = keys.get(id);
     const bytes = Buffer.alloc(input.length || ((input.nonce ?? 0) === 0 ? 106 : 74)); if (bytes.length >= 74) {
@@ -79,7 +78,7 @@ module.exports = async function managerFixture(app) {
   ingestEvent(`application/${application}/device/${second.deviceInfo.devEui}/event/up`,Buffer.from(JSON.stringify(second)));
   app.post('/__test/manager', (req,res) => {
     const body = req.body || {};
-    if (body.action === 'stats') { res.json({enqueueCount,clients:clients.size}); return; }
+    if (body.action === 'stats') { res.json({enqueueCount,collectorCount,clients:clients.size}); return; }
     if (body.action === 'list-failure') { listFailure = !!body.value; res.json({ok:true}); return; }
     if (body.action === 'queue-failure') { queueFailure = !!body.value; res.json({ok:true}); return; }
     if (body.action === 'disconnect') { for (const socket of clients) socket.destroy(); res.json({ok:true}); return; }

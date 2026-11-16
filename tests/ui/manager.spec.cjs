@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const { randomUUID } = require('node:crypto');
 const base = 'http://127.0.0.1:4174', api = '/api/m3ter-manager';
 const a = '0102030405060708', b = '1112131415161718', empty = '2122232425262728';
-test.use({ baseURL: base, httpCredentials: { username:'test-console',password:'test-only-browser-password' } });
+test.use({ baseURL: base });
 test.beforeEach(async ({ page, request }) => { await page.route(/https:\/\//, route => route.abort());
   expect((await request.post(api+'/session',{data:{username:'test-manager',password:'test-only-manager-password'}})).status()).toBe(200);
 });
@@ -101,7 +101,7 @@ test('search, empty meters, analytics, raw reading inspection and error recovery
   await page.locator('#mm-search').fill(''); await expect(page.locator('#mm-device option')).toHaveCount(4);
   await page.locator('#mm-device').selectOption(empty); await expect(page.locator('#mm-energy')).toHaveText('—'); await expect(page.locator('#mm-age')).toHaveText('Never observed');
   await page.locator('#mm-device').selectOption(a); await page.locator('[data-mm-tab="analytics"]').click();
-  await expect(page.locator('#mm-summary')).toContainText('new nonce cycle');
+  await expect(page.locator('#mm-summary')).toContainText('Pending snapshots are not added');
   await expect(page.locator('#mm-history-energy svg')).toBeVisible(); await page.locator('#mm-history-energy svg').focus(); await page.keyboard.press('ArrowLeft');
   await expect(page.locator('#mm-history-energy .mm-chart-tooltip')).toContainText('kWh');
   await page.locator('#mm-history-next').click(); await expect(page.locator('#mm-history-count')).toContainText('51–');
@@ -136,4 +136,15 @@ test('manager adapts to every desktop theme and desktop, tablet and phone dimens
     }
   }
   expect(errors).toEqual([]);
+});
+
+test('closing Manager does not stop MQTT or the independent collector consumer', async ({page,request}) => {
+  await open(page);
+  const before=await (await control(request,{action:'stats'})).json();
+  await page.locator('#m3ter-manager .window-close').click();
+  await control(request,{devEui:a,nonce:90,energy:0.123});
+  await expect.poll(async()=> (await (await control(request,{action:'stats'})).json()).collectorCount).toBe(before.collectorCount+1);
+  expect((await (await control(request,{action:'stats'})).json()).clients).toBe(1);
+  await page.evaluate(()=>Desktop.launch('m3ter-manager'));
+  await expect(page.locator('#mm-energy')).toHaveText('0.123000');
 });

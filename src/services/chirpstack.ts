@@ -1,13 +1,9 @@
 import http, { IncomingHttpHeaders } from 'http';
 import https from 'https';
-import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import type { Request, Response } from 'express';
-import { isAuthenticated, isSameOrigin } from './auth';
+import { isSameOrigin } from './auth';
 
 const prefix = '/chirpstack';
-const cookieName = 'console_chirpstack';
-const sessionKey = randomBytes(32);
-const lifetime = 8 * 60 * 60;
 const hopHeaders = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'];
 
 export function chirpstackTarget(): URL {
@@ -17,22 +13,6 @@ export function chirpstackTarget(): URL {
     throw new Error('CHIRPSTACK_WEB_URL must be an HTTP(S) origin without credentials or a path');
   }
   return target;
-}
-
-function signature(expiry: string): string {
-  // Restarting the console or changing its credentials invalidates these scoped sessions.
-  return createHmac('sha256', sessionKey).update(JSON.stringify([
-    expiry, process.env.CONSOLE_USERNAME, process.env.CONSOLE_PASSWORD,
-  ])).digest('hex');
-}
-
-export function hasChirpstackSession(cookie: string | undefined): boolean {
-  if (!process.env.CONSOLE_USERNAME || !process.env.CONSOLE_PASSWORD) return false;
-  const token = cookie?.split(';').map(part => part.trim()).find(part => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
-  if (!token || !/^\d+\.[a-f0-9]{64}$/.test(token)) return false;
-  const [expiry, mac] = token.split('.');
-  const now = Math.floor(Date.now() / 1000);
-  return Number(expiry) > now && Number(expiry) <= now + lifetime && timingSafeEqual(Buffer.from(mac, 'hex'), Buffer.from(signature(expiry), 'hex'));
 }
 
 function cleanHeaders(headers: IncomingHttpHeaders): IncomingHttpHeaders {
@@ -67,17 +47,6 @@ export function proxyChirpstack(req: Request, res: Response): void {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
   if (!isSameOrigin(req)) { res.status(403).send('Cross-origin requests are not permitted'); return; }
-  const basic = isAuthenticated(req);
-  if (!basic && !hasChirpstackSession(req.headers.cookie)) {
-    res.setHeader('WWW-Authenticate', 'Basic realm="M3tering Console", charset="UTF-8"');
-    res.status(401).send('Open ChirpStack from the console to authenticate');
-    return;
-  }
-  if (basic) {
-    const expiry = String(Math.floor(Date.now() / 1000) + lifetime);
-    const secure = req.secure || process.env.CONSOLE_ORIGIN?.startsWith('https:');
-    res.setHeader('Set-Cookie', `${cookieName}=${expiry}.${signature(expiry)}; Path=${prefix}; HttpOnly; SameSite=Strict; Max-Age=${lifetime}${secure ? '; Secure' : ''}`);
-  }
   if (req.originalUrl.split('?')[0] === prefix) {
     res.redirect(307, `${prefix}/${req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : ''}`);
     return;

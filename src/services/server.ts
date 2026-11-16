@@ -1,7 +1,7 @@
 import http from 'http';
 import { create } from 'express-handlebars';
 import express, { Express, Request, Response } from 'express';
-import { requireConsoleAuth, validateConsoleAuth } from './auth';
+import { requireSameOrigin } from './auth';
 import { proxyChirpstack } from './chirpstack';
 import { managerRouter, attachManagerStream } from '../m3ter/api';
 import { createLogger } from '../utils/logger';
@@ -27,7 +27,9 @@ app.engine('hbs', hbs.engine);
 app.set('view engine', 'hbs');
 app.set('views', './src/views');
 app.use('/chirpstack', proxyChirpstack);
-app.use(requireConsoleAuth);
+app.use(requireSameOrigin);
+app.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer'); next(); });
+app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
 app.use(express.json());
 app.use(express.static('./src/public'));
 app.use(express.urlencoded({ extended: true }));
@@ -85,8 +87,11 @@ export const server = http.createServer(app);
 attachManagerStream(server);
 
 export function startServer() {
-  validateConsoleAuth();
-  server.listen(Number(port), process.env.CONSOLE_HOST || '127.0.0.1', () => {
+  server.once('error', (error: NodeJS.ErrnoException) => {
+    logger.error(error.code === 'EADDRINUSE' ? `Port ${port} is already occupied. Stop the duplicate Console instance or correct the conflicting service port mapping.` : `Console listener failed: ${error.code || 'unknown'}`);
+    process.exit(1);
+  });
+  server.listen(Number(port), process.env.CONSOLE_HOST || '0.0.0.0', () => {
     logger.info(`Server is running at port ${port}`);
   });
 }

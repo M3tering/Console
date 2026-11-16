@@ -350,3 +350,11 @@ dialog::backdrop { background:#14232e88; backdrop-filter:blur(3px); }dialog h2 {
 .app-window[data-color-mode] #terminal-container { background:var(--surface); }
 .app-window[data-color-mode] .terminal-toolbar { background:var(--surface-alt); color:var(--text); }
 @media(max-width:700px) { .window-color-mode { min-height:42px; width:68px; } .window-titlebar { padding-left:8px; gap:4px; } }
+
+/* Paint shares window tokens; canvas pixels remain independent of theme. */
+.paint-tools { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:12px; }
+.paint-tools label { display:flex; align-items:center; gap:6px; }
+.paint-tools input[type=range] { width:90px; }
+#paint-status { margin:0; padding:0 12px 8px; font:12px var(--font-body, sans-serif); }
+.paint-surface { overflow:auto; flex:1; min-height:0; padding:12px; background:var(--surface-muted); }
+#paint-canvas { display:block; width:100%; max-width:1200px; height:auto; background:#fff; touch-action:none; cursor:crosshair; }

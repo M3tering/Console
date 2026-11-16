@@ -1,7 +1,7 @@
-<section class="app-window manager-window" id="m3ter-manager" data-window-title="M3ter Manager" data-window-width="1100" data-window-height="740" aria-label="M3ter Manager" hidden>
+<section class="app-window manager-window" id="m3ter-manager" data-window-title="M3TER Manager" data-window-width="1100" data-window-height="740" aria-label="M3TER Manager" hidden>
   <div id="mm-login" class="mm-login">
     <form id="mm-login-form" class="mm-login-card">
-      <span class="mm-mark" data-icon="manager"></span><h2>M3ter Manager</h2>
+      <span class="mm-mark" data-icon="manager"></span><h2>M3TER Manager</h2>
       <p>Sign in to monitor your meters and manage downlinks.</p>
       <label for="mm-username">Username</label><input id="mm-username" name="username" autocomplete="username" maxlength="256" required />
       <label for="mm-password">Password</label><input id="mm-password" name="password" type="password" autocomplete="current-password" maxlength="4096" required />
@@ -12,9 +12,9 @@
     </form>
   </div>
   <div id="mm-workspace" class="mm-app" hidden>
-    <header class="mm-header"><div class="mm-brand"><span class="mm-mark" data-icon="meter"></span><div><strong>M3ter Manager</strong><small>Your network, in view.</small></div></div><div class="mm-connection"><span id="mm-mqtt" class="mm-pill">MQTT disconnected</span><small id="mm-feed">Live feed closed</small><button id="mm-logout" class="quiet-button">Sign out</button></div></header>
+    <header class="mm-header"><div class="mm-brand"><span class="mm-mark" data-icon="meter"></span><div><strong>M3TER Manager</strong><small>Your network, in view.</small></div></div><div class="mm-connection"><span id="mm-mqtt" class="mm-pill">MQTT disconnected</span><small id="mm-feed">Live feed closed</small><button id="mm-logout" class="quiet-button">Sign out</button></div></header>
     <div class="mm-selector"><label class="mm-search"><span data-icon="search"></span><input id="mm-search" type="search" placeholder="Search name or DevEUI" aria-label="Search meters" maxlength="100" /></label><label class="sr-only" for="mm-device">Choose meter</label><select id="mm-device"><option value="">Choose a meter…</option></select><button id="mm-more-devices" class="nes-btn" hidden>More meters</button><button id="mm-refresh" class="quiet-button" aria-label="Refresh meter data" title="Refresh meter data">↻</button></div>
-    <nav class="mm-nav" aria-label="M3ter Manager sections"><button data-mm-tab="overview" aria-current="page">Overview</button><button data-mm-tab="live">Live monitoring</button><button data-mm-tab="analytics">Analytics</button><button data-mm-tab="commands">Commands</button><button data-mm-tab="queue">Queue</button><button data-mm-tab="info">Meter information</button></nav>
+    <nav class="mm-nav" aria-label="M3TER Manager sections"><button data-mm-tab="overview" aria-current="page">Overview</button><button data-mm-tab="live">Live monitoring</button><button data-mm-tab="analytics">Analytics</button><button data-mm-tab="commands">Commands</button><button data-mm-tab="queue">Queue</button><button data-mm-tab="info">Meter information</button></nav>
     <div class="mm-scroll">
       <div id="mm-notice" class="mm-notice" role="status" hidden></div>
       <div id="mm-error" class="mm-notice mm-error" role="alert" hidden></div>
@@ -40,6 +40,6 @@
         <section data-mm-panel="info" hidden><h3>Meter information</h3><dl id="mm-info" class="mm-info"></dl><div id="mm-location" class="mm-note" hidden></div><h3>Public key</h3><code id="mm-public-key" class="mm-long-code">Unavailable</code><button id="mm-copy-key" class="nes-btn" disabled>Copy public key</button><p id="mm-verification" class="mm-note"></p><p class="mm-note">The signature covers nonce and energy (bytes 0–7). Voltage is not signed. A first-seen public key is not an independently authenticated device identity. Current, power, and individual phase measurements are not available in this payload.</p></section>
       </div>
     </div>
-    <dialog id="mm-dialog"><form id="mm-dialog-form"><span class="eyebrow">M3ter Manager</span><h2 id="mm-dialog-title">Command preview</h2><div id="mm-dialog-content"></div><label id="mm-confirm-label" class="mm-confirm" hidden><input id="mm-confirm" type="checkbox" /> I understand and confirm this operation for the meter shown above.</label><div class="dialog-actions"><button type="button" class="nes-btn" id="mm-cancel">Cancel</button><button type="submit" class="nes-btn is-primary" id="mm-submit">Enqueue command</button></div></form></dialog>
+    <dialog id="mm-dialog"><form id="mm-dialog-form"><span class="eyebrow">M3TER Manager</span><h2 id="mm-dialog-title">Command preview</h2><div id="mm-dialog-content"></div><label id="mm-confirm-label" class="mm-confirm" hidden><input id="mm-confirm" type="checkbox" /> I understand and confirm this operation for the meter shown above.</label><div class="dialog-actions"><button type="button" class="nes-btn" id="mm-cancel">Cancel</button><button type="submit" class="nes-btn is-primary" id="mm-submit">Enqueue command</button></div></form></dialog>
   </div>
 </section>

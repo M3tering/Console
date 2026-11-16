@@ -1,38 +1,23 @@
-import { isAuthenticated, isSameOrigin, requireConsoleAuth, validateConsoleAuth } from '../../src/services/auth';
-const originalEnv = process.env;
-beforeEach(() => { process.env = { ...originalEnv, CONSOLE_USERNAME: 'admin', CONSOLE_PASSWORD: 'test-only-password' }; delete process.env.CONSOLE_ORIGIN; });
-afterEach(() => { process.env = originalEnv; });
+import { isSameOrigin, requireSameOrigin } from '../../src/services/auth';
 const request = (headers = {}, method = 'GET'): any => ({ headers: { host: 'localhost:3000', ...headers }, socket: {}, method });
-const credentials = { authorization: 'Basic ' + Buffer.from('admin:test-only-password').toString('base64') };
-test('credentials are required and compared without accepting malformed or partial values', () => {
-  expect(isAuthenticated(request(credentials))).toBe(true);
-  for (const value of ['', 'Bearer token', 'Basic !!!', 'Basic ' + Buffer.from('admin:wrong').toString('base64')]) expect(isAuthenticated(request({ authorization: value }))).toBe(false);
-  delete process.env.CONSOLE_PASSWORD;
-  expect(isAuthenticated(request(credentials))).toBe(false);
-  expect(validateConsoleAuth).toThrow('CONSOLE_PASSWORD');
-});
-test('cross-origin browser requests are rejected; proxy origins are explicit', () => {
-  expect(isSameOrigin(request({ origin: 'http://localhost:3000' }), true)).toBe(true);
-  expect(isSameOrigin(request({ origin: 'https://attacker.example' }), true)).toBe(false);
-  expect(isSameOrigin(request(), true)).toBe(false);
+test('localhost and LAN requests need no configured origin or password', () => {
+  for (const host of ['localhost:3000','192.168.1.20:3000','[::1]:3000']) {
+    expect(isSameOrigin(request({host,origin:`http://${host}`} ),true)).toBe(true);
+  }
   expect(isSameOrigin(request())).toBe(true);
-  process.env.CONSOLE_ORIGIN = 'https://console.example';
-  expect(isSameOrigin(request({ origin: 'https://console.example' }), true)).toBe(true);
-  expect(isSameOrigin(request({ origin: 'http://localhost:3000' }), true)).toBe(false);
-  process.env.CONSOLE_ORIGIN = 'https://console.example/path';
-  expect(validateConsoleAuth).toThrow('CONSOLE_ORIGIN');
+  expect(isSameOrigin(request(),true)).toBe(false);
 });
-test.each(['GET', 'POST', 'DELETE'])('%s routes do not proceed without authentication', method => {
-  const response: any = { setHeader: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
-  const next = jest.fn();
-  requireConsoleAuth(request({}, method), response, next);
-  expect(response.status).toHaveBeenCalledWith(401); expect(next).not.toHaveBeenCalled();
-  requireConsoleAuth(request(credentials, method), response, next);
+test('TLS proxies work with browser metadata without trusting forwarded headers', () => {
+  expect(isSameOrigin(request({origin:'https://console.example',host:'console.example'}),true)).toBe(true);
+  expect(isSameOrigin(request({origin:'https://console.example','sec-fetch-site':'same-origin'}),true)).toBe(true);
+  expect(isSameOrigin(request({origin:'https://evil.example','x-forwarded-host':'evil.example'}),true)).toBe(false);
+  for(const site of ['cross-site','same-site']) expect(isSameOrigin(request({origin:'http://localhost:3000','sec-fetch-site':site}))).toBe(false);
+  expect(isSameOrigin(request({origin:'null'}))).toBe(false);
+});
+test('Console requests are public; cross-site mutations still fail with JSON', () => {
+  const response:any={status:jest.fn().mockReturnThis(),json:jest.fn()},next=jest.fn();
+  requireSameOrigin(request({},'GET'),response,next); expect(next).toHaveBeenCalledTimes(1);
+  requireSameOrigin(request({origin:'https://evil.example'},'POST'),response,next);
+  expect(response.status).toHaveBeenCalledWith(403);expect(response.json).toHaveBeenCalledWith({error:expect.any(String)});
   expect(next).toHaveBeenCalledTimes(1);
-});
-test('authenticated cross-site mutations still fail', () => {
-  const response: any = { setHeader: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
-  const next = jest.fn();
-  requireConsoleAuth(request({ ...credentials, origin: 'https://attacker.example' }, 'POST'), response, next);
-  expect(response.status).toHaveBeenCalledWith(403); expect(next).not.toHaveBeenCalled();
 });

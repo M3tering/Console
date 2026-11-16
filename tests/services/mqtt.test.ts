@@ -71,14 +71,16 @@ test('acknowledgement precedes delivery and never waits for a delivery hook', as
   expect((enqueue as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan((notifyHook as jest.Mock).mock.invocationCallOrder[distribution]);
   expect(records).toHaveLength(1);
 });
-test('lost acknowledgements accept exact retransmissions without duplicate writes or delivery', async () => {
+test('lost acknowledgements accept growing same-nonce snapshots without duplicate collection', async () => {
   (enqueue as jest.Mock).mockRejectedValueOnce(new Error('gRPC unavailable'));
   await handleMessage(uplink()); await handleMessage(uplink());
   expect(enqueue).toHaveBeenCalledTimes(2);
   expect(store.recordMeterTransaction).toHaveBeenCalledTimes(1);
   expect((notifyHook as jest.Mock).mock.calls.filter(([name]) => name === 'onTransactionDistribution')).toHaveLength(1);
   await handleMessage(uplink(1, 'device-a', 2000000));
-  expect(enqueue).toHaveBeenCalledTimes(2);
+  expect(enqueue).toHaveBeenCalledTimes(3);
+  expect(records).toHaveLength(1);
+  expect(records[0].raw).toBe(JSON.parse(uplink().toString()).data ? Buffer.from(JSON.parse(uplink().toString()).data,'base64').toString('hex') : '');
 });
 test('bootstrap messages use the balance hook and computation failures return off', async () => {
   (runHook as jest.Mock).mockRejectedValueOnce(new Error('RPC unavailable'));
@@ -91,4 +93,31 @@ test('persistence failure never acknowledges uncommitted data and releases the l
   (store.recordMeterTransaction as jest.Mock).mockImplementationOnce(() => { throw new Error('disk full'); });
   await handleMessage(uplink()); expect(enqueue).not.toHaveBeenCalled();
   await handleMessage(uplink()); expect(enqueue).toHaveBeenCalledTimes(1);
+});
+
+test('one broker connection fans out independently, preserves collection on monitoring failure, and resubscribes once', async () => {
+  const { EventEmitter } = require('events');
+  const mqtt = require('mqtt'), monitor = require('../../src/m3ter/monitor');
+  const { handleUplinks, stopUplinks } = require('../../src/services/mqtt');
+  const oldApp=process.env.APPLICATION_ID, oldHost=process.env.CHIRPSTACK_HOST;
+  process.env.APPLICATION_ID='11111111-1111-4111-8111-111111111111'; process.env.CHIRPSTACK_HOST='existing-broker';
+  const client = new EventEmitter(); client.end=jest.fn(); client.stream={destroy:jest.fn()};
+  client.subscribe=jest.fn((topic:any,options:any,done:any)=>done(null,[{qos:1}]));
+  mqtt.connect.mockReturnValue(client);
+  const collect=jest.fn().mockResolvedValue(undefined), observed=jest.spyOn(monitor,'ingestEvent').mockImplementation(()=>{throw new Error('database unavailable');});
+  try {
+    await handleUplinks(undefined,collect);await handleUplinks(undefined,collect);
+    expect(mqtt.connect).toHaveBeenCalledTimes(1);
+    expect(mqtt.connect).toHaveBeenCalledWith(expect.objectContaining({host:'existing-broker',port:1883,clientId:expect.stringMatching(/^console-/)}));
+    const clientId=mqtt.connect.mock.calls[0][0].clientId;
+    client.emit('connect');client.emit('connect');expect(client.subscribe).toHaveBeenCalledTimes(2);
+    const body=Buffer.from(JSON.stringify({deviceInfo:{devEui:'0102030405060708'},fPort:2,data:'AAAA'}));
+    client.emit('message',`application/${process.env.APPLICATION_ID}/device/0102030405060708/event/up`,body);
+    await Promise.resolve();expect(collect).toHaveBeenCalledWith(body);expect(observed).toHaveBeenCalled();
+    observed.mockImplementation(()=>true);collect.mockRejectedValueOnce(new Error('collector unavailable'));
+    client.emit('message',`application/${process.env.APPLICATION_ID}/device/0102030405060708/event/up`,body);
+    await Promise.resolve();await Promise.resolve();expect(observed).toHaveBeenCalledTimes(2);
+    client.emit('error',Object.assign(new Error('network'),{code:'ECONNRESET'}));expect(client.end).not.toHaveBeenCalled();
+    stopUplinks();await handleUplinks(undefined,collect);expect(mqtt.connect.mock.calls[1][0].clientId).not.toBe(clientId);
+  } finally { stopUplinks();observed.mockRestore();if(oldApp===undefined)delete process.env.APPLICATION_ID;else process.env.APPLICATION_ID=oldApp;if(oldHost===undefined)delete process.env.CHIRPSTACK_HOST;else process.env.CHIRPSTACK_HOST=oldHost; }
 });

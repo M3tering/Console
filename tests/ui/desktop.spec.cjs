@@ -156,8 +156,8 @@ test('launcher search, extension actions, Paint routing, minimize, restore, clos
   await page.locator('#show-desktop').click(); await expect(page.locator('#streamr')).toBeVisible();
   await page.locator('#streamr .window-close').click();
   await page.locator('#paint-icon').click();
-  await expect(page.locator('#browser iframe')).toHaveAttribute('src', 'https://basepaint.xyz/');
-  await page.locator('#browser .window-close').click();
+  await expect(page.locator('#paint-canvas')).toBeVisible();
+  await page.locator('#paint .window-close').click();
   await expect(page.locator('#paint-icon')).toBeFocused();
 });
 
@@ -216,7 +216,7 @@ test('touch hold moves an icon without launching; mobile shows one active window
 });
 
 test('terminal resizes on phones, preserves the session on theme changes, and does not duplicate input after reconnecting', async ({ page }) => {
-  await page.route('https://unpkg.com/xterm@5.3.0/lib/xterm.js', route => route.fulfill({
+  await page.route('**/vendor/xterm/xterm.js', route => route.fulfill({
     contentType: 'application/javascript',
     body: `window.testTerminals = []; window.testSockets = [];
       window.Terminal = class {
@@ -245,6 +245,7 @@ test('terminal resizes on phones, preserves the session on theme changes, and do
   expect(await page.evaluate(() => testSockets.length)).toBe(1);
   await expect(page.locator('#terminal-container')).toBeVisible();
   await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await page.locator('#password').fill('fixture-only');
   await page.getByRole('button', { name: /Connect to terminal/ }).click();
   await expect(page.locator('#terminal-container')).toBeVisible();
   expect(await page.evaluate(() => testTerminals[0].inputs.length)).toBe(1);

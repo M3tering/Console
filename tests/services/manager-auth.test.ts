@@ -33,5 +33,12 @@ test('login, HttpOnly cookie, revocation, expiry and credential rotation', () =>
 test('generic errors, bounded attempts and secure proxy cookies', () => {
   for(let i=0;i<10;i++) expect(call('post',request({username:'operator',password:'wrong'})).code).toBe(403);
   const locked=login(); expect(locked.code).toBe(429); expect(locked.headers['Retry-After']).toBeGreaterThan(0);
-  address++; process.env.CONSOLE_ORIGIN='https://console.example.com'; expect(login().options.secure).toBe(true);
+  address++; const req=request({username:'operator',password:'unique-password'}); req.headers.origin='https://console.example.com'; expect(call('post',req).options.secure).toBe(true);
+});
+test('password-only configuration uses admin without returning either credential',()=>{
+  delete process.env.M3TER_MANAGER_USERNAME;
+  const result=call('post',request({username:'admin',password:'unique-password'}));
+  expect(result.code).toBe(200);
+  const session=call('get',request(undefined,result.value)).body;
+  expect(session).toEqual({authenticated:true,configured:true});
 });

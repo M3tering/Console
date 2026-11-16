@@ -366,11 +366,6 @@
     window.dispatchEvent(new CustomEvent('desktop:open', { detail: { id: win.id } }));
     const frame = win.element.querySelector('iframe[data-src]');
     if (frame && !frame.hasAttribute('src')) frame.src = frame.dataset.src;
-    if (id === 'paint') {
-      win.element.querySelector('iframe').src = 'https://basepaint.xyz/';
-      $('browser-location').textContent = 'basepaint.xyz';
-      $('browser-external').href = 'https://basepaint.xyz/';
-    }
     clickButton();
   }
   $('chirpstack-reload').addEventListener('click', () => {

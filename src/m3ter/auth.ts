@@ -9,8 +9,9 @@ const sessions = new Map<string, { expires: number; identity: string }>();
 const failures = new Map<string, { count: number; until: number }>();
 export const managerSessions = new EventEmitter();
 const hash = (value: string) => createHash('sha256').update(value).digest();
-function configured() { return !!(process.env.M3TER_MANAGER_USERNAME && process.env.M3TER_MANAGER_PASSWORD); }
-function identity() { return hash(JSON.stringify([process.env.M3TER_MANAGER_USERNAME, process.env.M3TER_MANAGER_PASSWORD])).toString('hex'); }
+function configuredUsername() { return process.env.M3TER_MANAGER_USERNAME || 'admin'; }
+function configured() { return !!process.env.M3TER_MANAGER_PASSWORD; }
+function identity() { return hash(JSON.stringify([configuredUsername(), process.env.M3TER_MANAGER_PASSWORD])).toString('hex'); }
 function token(req: IncomingMessage): string {
   return (req.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith(cookie + '='))?.slice(cookie.length + 1) || '';
 }
@@ -20,21 +21,21 @@ export function managerAuthenticated(req: IncomingMessage): boolean {
 }
 export function requireManagerAuth(req: Request, res: Response, next: NextFunction): void {
   res.setHeader('Cache-Control', 'no-store');
-  if (!managerAuthenticated(req)) { res.status(401).json({ error: 'Sign in to M3ter Manager to continue.' }); return; }
+  if (!managerAuthenticated(req)) { res.status(401).json({ error: 'Sign in to M3TER Manager to continue.' }); return; }
   next();
 }
 function setCookie(req: Request, res: Response, value: string, maxAge: number) {
   res.cookie(cookie, value, { httpOnly: true, sameSite: 'strict', path: '/', maxAge,
-    secure: req.secure || process.env.CONSOLE_ORIGIN?.startsWith('https://') === true });
+    secure: req.secure || req.headers.origin?.startsWith('https://') === true });
 }
 export const managerAuthRouter = Router();
 managerAuthRouter.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 managerAuthRouter.get('/session', (req, res) => {
   const authenticated = managerAuthenticated(req);
-  res.json({ authenticated, configured: configured(), username: authenticated ? process.env.M3TER_MANAGER_USERNAME : undefined });
+  res.json({ authenticated, configured: configured() });
 });
 managerAuthRouter.post('/session', (req, res) => {
-  if (!configured()) { res.status(503).json({ error: 'Set M3TER_MANAGER_USERNAME and M3TER_MANAGER_PASSWORD in .env, then restart the console.' }); return; }
+  if (!configured()) { res.status(503).json({ error: 'Set M3TER_MANAGER_PASSWORD (and optionally M3TER_MANAGER_USERNAME) in .env, then restart the console.' }); return; }
   const now = Date.now(), address = req.socket.remoteAddress || 'unknown';
   for (const [key, value] of failures) if (value.until <= now) failures.delete(key);
   for (const [key, value] of sessions) if (value.expires <= now || value.identity !== identity()) sessions.delete(key);
@@ -43,13 +44,12 @@ managerAuthRouter.post('/session', (req, res) => {
   const { username, password } = req.body || {};
   const validInput = typeof username === 'string' && typeof password === 'string' && username.length <= 256 && password.length <= 4096;
   // Compare both fixed-length hashes, without exposing which field was incorrect.
-  const userMatches = timingSafeEqual(hash(validInput ? username : ''), hash(process.env.M3TER_MANAGER_USERNAME!));
+  const userMatches = timingSafeEqual(hash(validInput ? username : ''), hash(configuredUsername()));
   const passwordMatches = timingSafeEqual(hash(validInput ? password : ''), hash(process.env.M3TER_MANAGER_PASSWORD!));
   if (!validInput || !userMatches || !passwordMatches) {
     if (failures.size >= 10000 && !failures.has(address)) { res.status(429).json({ error: 'Sign-in is temporarily busy. Try again later.' }); return; }
     failures.set(address, { count: (attempts?.count || 0) + 1, until: attempts?.until || now + 900000 });
-    // This form login is separate from the console's HTTP Basic challenge.
-    // A 401 here can evict the browser's Basic credentials and break WS upgrades.
+    // Invalid credentials are distinct from an expired Manager session (401).
     res.status(403).json({ error: 'Incorrect username or password.' }); return;
   }
   failures.delete(address);

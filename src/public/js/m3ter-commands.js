@@ -58,7 +58,7 @@
     $('mm-queue-clear').addEventListener('click', () => {
       const device = selected(); if (!device?.devEui || working) return;
       intent = { type: 'clear', devEui: device.devEui };
-      display('Clear this meter’s queue?', [node('p', `${device.name} · ${device.devEui}`), node('p', 'This removes ALL currently queued downlinks for this meter, including commands queued outside M3ter Manager. Previously transmitted commands cannot be recalled.')], 'Clear all pending downlinks', true);
+      display('Clear this meter’s queue?', [node('p', `${device.name} · ${device.devEui}`), node('p', 'This removes ALL currently queued downlinks for this meter, including commands queued outside M3TER Manager. Previously transmitted commands cannot be recalled.')], 'Clear all pending downlinks', true);
     });
     function renderCatalogue(commands) {
       catalogue = commands; const parent = $('mm-commands'); parent.replaceChildren();
@@ -92,7 +92,7 @@
       const data = await api(`/devices/${device.devEui}/commands?offset=${historyOffset}`);
       if (selected()?.devEui !== device.devEui) return;
       const parent = $('mm-command-history'); if (!append) parent.replaceChildren();
-      if (!data.commands.length && !append) parent.append(node('p', 'No commands have been submitted from M3ter Manager.', 'mm-note'));
+      if (!data.commands.length && !append) parent.append(node('p', 'No commands have been submitted from M3TER Manager.', 'mm-note'));
       data.commands.forEach(row => parent.append(recordDetails(`${new Date(row.timestamp).toLocaleString()} · ${row.command.name}${row.command.parameter ? ' · ' + row.command.parameter : ''} · ${row.status}`, row.command,
         `${row.detail || 'Awaiting delivery evidence.'} Queue ID: ${row.queueId || 'Unavailable'} · Submitted by ${row.actor}`)));
       historyOffset += data.commands.length; $('mm-commands-more').hidden = data.commands.length < 50;

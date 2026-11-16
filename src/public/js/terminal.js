@@ -19,9 +19,9 @@ function initializeTerminal() {
   terminal.open(document.getElementById('xterm-terminal'));
   // Register once per terminal instance, not again on every reconnect.
   terminalSubscriptions = [
-    terminal.onData(data => { if (socket?.readyState === WebSocket.OPEN) socket.send(data); }),
+    terminal.onData(data => { if (isConnected && socket?.readyState === WebSocket.OPEN) socket.send(data); }),
     terminal.onResize(({ cols, rows }) => {
-      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'resize', cols, rows }));
+      if (isConnected && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'resize', cols, rows }));
     }),
   ];
   resizeObserver = new ResizeObserver(() => {
@@ -57,6 +57,8 @@ function connectTerminal(event) {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
   const connection = new WebSocket(`${protocol}://${location.host}/terminal`);
   socket = connection;
+  let failure = '';
+  const timeout = setTimeout(() => { failure = 'Terminal connection timed out. Check that SSH is running on the Console host.'; connection.close(); }, 35000);
   connection.binaryType = 'arraybuffer';
   connection.onopen = () => {
     if (socket !== connection || !terminal) return;
@@ -67,8 +69,11 @@ function connectTerminal(event) {
     if (socket !== connection || !terminal) return;
     if (!isConnected) {
       let control;
-      try { control = JSON.parse(event.data); } catch { status.textContent = String(event.data); return; }
+      try { control = JSON.parse(event.data); } catch { failure = String(event.data); status.textContent = failure; return; }
+      if (control.type === 'error') { failure = control.message; status.textContent = failure; return; }
       if (control.type !== 'ready') return;
+      clearTimeout(timeout);
+      document.getElementById('password').value = '';
       isConnected = true;
       status.textContent = 'Terminal session connected';
       document.getElementById('terminal-auth').style.display = 'none';
@@ -81,17 +86,19 @@ function connectTerminal(event) {
     }
     terminal.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data));
   };
-  connection.onclose = () => {
+  connection.onclose = event => {
+    clearTimeout(timeout);
     if (socket !== connection) return;
     isConnected = false; socket = null;
     document.getElementById('terminal-auth').style.display = 'block';
     document.getElementById('terminal-container').style.display = 'none';
-    status.textContent = 'Terminal connection closed';
+    status.textContent = failure || event.reason || 'Terminal connection closed. Sign in again to reconnect.';
     terminal?.write('\r\nConnection closed.\r\n');
   };
   connection.onerror = () => {
     if (socket !== connection) return;
-    status.textContent = 'Connection error. Check your credentials and try again.';
+    failure = 'Cannot reach the Terminal service. Check the Console connection and WebSocket proxy support.';
+    status.textContent = failure;
   };
 }
 function disconnectTerminal() {
