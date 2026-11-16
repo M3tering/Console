@@ -7,23 +7,31 @@
   const date = value => value ? new Date(value).toLocaleString() : 'Unavailable';
   const fixed = (value, places) => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(places) : '—';
   let authenticated = false, authVersion = 0;
-  let active = false, device = null, latest = null, state = null, config = null, tab = 'overview', monitoring = { state: 'disconnected' };
-  let socket, reconnectTimer, clockTimer, refreshTimer, searchTimer, reconnectAttempt = 0, snapshotVersion = 0, searchVersion = 0;
+  let active = false, device = null, latest = null, state = null, config = null, electrical = null, tab = 'overview', monitoring = { state: 'disconnected' };
+  let socket, reconnectTimer, clockTimer, refreshTimer, searchTimer, streamTimer, pollTimer;
+  let polling = false, pollVersion = 0, snapshotVersion = 0, searchVersion = 0;
   let devices = [], deviceOffset = 0, historyOffset = 0, eventOffset = 0, historyData = null;
   function notice(message) { text('mm-notice', message); $('mm-notice').hidden = !message; }
   function showError(error) { if (!authenticated) return; if (error?.name === 'AbortError') return; text('mm-error', error.message || 'Unable to load meter data. Retry using Refresh.'); $('mm-error').hidden = false; }
   function clearError() { $('mm-error').hidden = true; }
   async function api(path, options = {}) {
-    const version = authVersion;
-    const response = await fetch('/api/m3ter-manager' + path, { ...options, headers: { 'Content-Type': 'application/json' },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body) });
-    let data; try { data = await response.json(); } catch {
-      const detail = response.status === 403 ? 'Request rejected by the server. Reload Console at its current address and retry.' : response.status === 404 ? 'The running backend does not have the Manager API. Deploy the matching Console build.' : 'Check the Console backend and proxy connection.';
-      throw new Error(`Meter API returned HTTP ${response.status}. ${detail}`);
-    }
-    if (path !== '/session' && version !== authVersion) throw new DOMException('Session changed', 'AbortError');
-    if (response.status === 401 && path !== '/session') lock('Your session ended. Sign in again.');
-    if (!response.ok) throw new Error(data.error || 'Meter request failed. Please retry.'); return data;
+    const version = authVersion, controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch('/api/m3ter-manager' + path, { ...options, signal: controller.signal, cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+        body: options.body === undefined ? undefined : JSON.stringify(options.body) });
+      let data; try { data = await response.json(); } catch (error) {
+        if (controller.signal.aborted) throw error;
+        const detail = response.status === 403 ? 'Request rejected by the server. Reload Console at its current address and retry.' : response.status === 404 ? 'The running backend does not have the Manager API. Deploy the matching Console build.' : 'Check the Console backend and proxy connection.';
+        throw new Error(`Meter API returned HTTP ${response.status}. ${detail}`);
+      }
+      if (path !== '/session' && version !== authVersion) throw new DOMException('Session changed', 'AbortError');
+      if (response.status === 401 && path !== '/session') lock('Your session ended. Sign in again.');
+      if (!response.ok) throw new Error(data.error || 'Meter request failed. Please retry.'); return data;
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error('Meter request timed out. Check the Console or relay connection and retry.');
+      throw error;
+    } finally { clearTimeout(timeout); }
   }
   const commands = M3terCommands({ api, selected: () => device, showError, clearError, notice, element: $, refresh, text, node });
   function range() {
@@ -39,6 +47,7 @@
     return seconds < 60 ? `${seconds}s ago` : seconds < 3600 ? `${Math.floor(seconds / 60)}m ago` : seconds < 86400 ? `${Math.floor(seconds / 3600)}h ago` : `${Math.floor(seconds / 86400)}d ago`;
   }
   function renderActivity() {
+    M3terElectrical.tick();
     const status = monitoring.state || 'disconnected'; text('mm-mqtt', `MQTT ${status}`); $('mm-mqtt').dataset.state = status;
     text('mm-last-message', `Last MQTT message: ${date(monitoring.lastMessage)}`);
     const last = state?.lastUplink || null, recent = last && Date.now() - last <= (config?.inactiveMilliseconds || 300000);
@@ -68,6 +77,7 @@
       const link = node('a', 'View device location on OpenStreetMap ↗'); link.href = `https://www.openstreetmap.org/?mlat=${encodeURIComponent(location.latitude)}&mlon=${encodeURIComponent(location.longitude)}#map=15/${encodeURIComponent(location.latitude)}/${encodeURIComponent(location.longitude)}`; link.target = '_blank'; link.rel = 'noopener noreferrer';
       $('mm-location').replaceChildren(node('p', `Device location: ${location.latitude}, ${location.longitude} · ChirpStack location event`), link);
     }
+    M3terElectrical.render(electrical);
     renderActivity();
   }
   function renderHistory() {
@@ -112,7 +122,7 @@
     });
     eventOffset += data.events.length; $('mm-events-more').hidden = data.events.length < 100;
   }
-  async function refresh(telemetryOnly = false) {
+  async function refresh(telemetryOnly = false, background = false) {
     if (!device) return;
     const current = device.devEui, version = ++snapshotVersion;
     let times; try { times = range(); } catch (error) { showError(error); return; }
@@ -121,14 +131,15 @@
       telemetryOnly ? Promise.resolve({ device, state, latest }) : api(`/devices/${current}`), api(`/devices/${current}/history?${new URLSearchParams({ ...times, offset: historyOffset })}`),
     ]);
     if (version !== snapshotVersion || device?.devEui !== current || !active) return;
-    if (results[0].status === 'fulfilled') { device = { ...device, ...results[0].value.device }; state = results[0].value.state; latest = results[0].value.latest; }
-    else showError(results[0].reason);
-    if (results[1].status === 'fulfilled') { historyData = results[1].value; latest = historyData.latest; state = historyData.state; monitoring = historyData.monitoring; renderHistory(); }
-    else showError(results[1].reason);
+    if (results[0].status === 'fulfilled') { device = { ...device, ...results[0].value.device }; state = results[0].value.state; latest = results[0].value.latest; if (!telemetryOnly) electrical = results[0].value.electrical || null; }
+    else if (!background) showError(results[0].reason);
+    if (results[1].status === 'fulfilled') { historyData = results[1].value; latest = historyData.latest; state = historyData.state; monitoring = historyData.monitoring; electrical = historyData.electrical || null; renderHistory(); }
+    else if (!background) showError(results[1].reason);
     renderInfo(); $('mm-selected').setAttribute('aria-busy', 'false');
     if (tab === 'live') await loadEvents().catch(showError);
     if (tab === 'commands') await commands.loadHistory().catch(showError);
     if (tab === 'queue') await commands.loadQueue().catch(showError);
+    return results[1].status === 'fulfilled';
   }
   async function loadDevices(append = false) {
     const version = ++searchVersion, search = $('mm-search').value.trim();
@@ -150,7 +161,7 @@
   }
   function selectDevice(devEui) {
     snapshotVersion++; device = devices.find(item => item.devEui === devEui) || (device?.devEui === devEui ? device : null);
-    latest = null; state = null; historyData = null; historyOffset = 0; commands.close();
+    latest = null; state = null; electrical = null; M3terElectrical.render(null); historyData = null; historyOffset = 0; commands.close();
     $('mm-empty').hidden = !!device; $('mm-selected').hidden = !device; clearError(); notice('');
     for (const view of ['overview','history']) for (const field of ['energy','voltage']) $(`mm-${view}-${field}`).replaceChildren(node('p', 'Loading readings…', 'mm-note'));
     ['mm-readings','mm-events','mm-command-history','mm-queue'].forEach(id => $(id).replaceChildren());
@@ -164,27 +175,72 @@
     if (next === 'commands') commands.loadHistory().catch(showError);
     if (next === 'queue') commands.loadQueue().catch(showError);
   }
+  function stopPolling() { polling = false; pollVersion++; clearTimeout(pollTimer); }
+  function startPolling() {
+    if (polling || !active || !authenticated) return;
+    polling = true;
+    const version = ++pollVersion;
+    text('mm-feed', 'Live feed unavailable · checking HTTP updates…');
+    $('mm-feed').title = 'The WebSocket could not be maintained. Authenticated HTTP requests keep readings updated without changing the MQTT connection.';
+    async function poll() {
+      let available = false;
+      try {
+        if (device) available = await refresh(true, true);
+        else {
+          const result = await api('/config');
+          if (version !== pollVersion || !active) return;
+          monitoring = result.monitoring; renderActivity(); available = true;
+        }
+      } catch { /* Status below reports failure; 401 is handled by the existing login boundary. */ }
+      if (version !== pollVersion || !active || !authenticated) return;
+      text('mm-feed', available ? 'Updates every 5s (HTTP fallback)' : 'Automatic updates unavailable · retrying');
+      // Schedule after completion: a slow relay cannot accumulate overlapping polls.
+      pollTimer = setTimeout(poll, 5000);
+    }
+    void poll();
+  }
   function connectStream() {
     if (!active || !authenticated || socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
-    text('mm-feed', 'Live feed connecting…'); socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/m3ter-manager/live`);
-    const currentSocket = socket;
-    socket.onopen = () => { if (socket !== currentSocket || !active) return; reconnectAttempt = 0; text('mm-feed', 'Live feed connected'); if (device) refresh().catch(showError); };
-    socket.onmessage = event => {
+    if (!polling) { text('mm-feed', 'Live feed connecting…'); $('mm-feed').title = ''; }
+    let currentSocket;
+    try { currentSocket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/m3ter-manager/live`); }
+    catch { startPolling(); reconnectTimer = setTimeout(connectStream, 30000); return; }
+    socket = currentSocket;
+    let receivedUpdate = false;
+    function armTimeout(milliseconds) {
+      clearTimeout(streamTimer);
+      streamTimer = setTimeout(() => {
+        if (socket !== currentSocket || !active) return;
+        // Detach a stalled transport before retrying; some relays never finish a handshake.
+        socket = null; currentSocket.close(); startPolling(); reconnectTimer = setTimeout(connectStream, 30000);
+      }, milliseconds);
+    }
+    armTimeout(10000);
+    currentSocket.onopen = () => { if (socket === currentSocket && active) armTimeout(10000); };
+    currentSocket.onmessage = event => {
       if (socket !== currentSocket || !active) return;
       let update; try { update = JSON.parse(event.data); } catch { return; }
+      if (!['connection','diagnostic','device'].includes(update?.type)) return;
+      armTimeout(75000); // The server sends a status heartbeat every 30 seconds.
+      if (!receivedUpdate) {
+        receivedUpdate = true; stopPolling(); text('mm-feed', 'Live feed connected'); $('mm-feed').title = '';
+        if (device) refresh().catch(showError);
+      }
       if (update.type === 'connection') { monitoring = update.monitoring; renderActivity(); }
       if (update.type === 'diagnostic') showError(new Error(update.message));
       if (update.type === 'device' && update.devEui === device?.devEui && !refreshTimer) refreshTimer = setTimeout(() => { refreshTimer = null; if (active) refresh(true).catch(showError); }, 500);
     };
-    socket.onerror = () => { if (socket === currentSocket && active) text('mm-feed', 'Live feed connection error'); };
-    socket.onclose = event => { if (socket !== currentSocket) return; if (event.code === 4001) { lock('Your session ended. Sign in again.'); return; } text('mm-feed', active ? 'Live feed reconnecting…' : 'Live feed closed'); if (active) reconnectTimer = setTimeout(async () => {
-      const version = authVersion;
-      try { const session = await api('/session'); if (version !== authVersion || !active) return; if (!session.authenticated) { lock('Your session ended. Sign in again.'); return; } } catch { /* Retry the stream when the server returns. */ }
-      if (version === authVersion && active) connectStream();
-    }, Math.min(30000, 1000 * 2 ** reconnectAttempt++)); };
+    currentSocket.onerror = () => { if (socket === currentSocket && active) startPolling(); };
+    currentSocket.onclose = event => {
+      if (socket !== currentSocket) return;
+      socket = null; clearTimeout(streamTimer);
+      if (!active) return;
+      if (event.code === 4001) { lock('Your session ended. Sign in again.'); return; }
+      startPolling(); reconnectTimer = setTimeout(connectStream, 30000);
+    };
   }
   function lock(message = '') {
-    authVersion++; close(); authenticated = false; config = null; device = null; state = null; latest = null; historyData = null; devices = [];
+    authVersion++; close(); authenticated = false; config = null; device = null; state = null; latest = null; electrical = null; M3terElectrical.render(null); historyData = null; devices = [];
     commands.close(true); $('mm-workspace').hidden = true; $('mm-login').hidden = false;
     $('mm-password').value = ''; $('mm-device').replaceChildren(node('option', 'Choose a meter…'));
     ['mm-readings','mm-events','mm-command-history','mm-queue','mm-info','mm-dialog-content'].forEach(id => $(id).replaceChildren());
@@ -222,7 +278,7 @@
     try { await api('/session', { method: 'DELETE' }); lock(); }
     catch (error) { showError(new Error('Sign-out could not reach the server. Please retry.')); }
   });
-  function close() { active = false; snapshotVersion++; searchVersion++; clearTimeout(reconnectTimer); clearTimeout(refreshTimer); clearTimeout(searchTimer); clearInterval(clockTimer); refreshTimer = null; socket?.close(); commands.close(); }
+  function close() { active = false; snapshotVersion++; searchVersion++; stopPolling(); clearTimeout(streamTimer); clearTimeout(reconnectTimer); clearTimeout(refreshTimer); clearTimeout(searchTimer); clearInterval(clockTimer); refreshTimer = null; const previous = socket; socket = null; previous?.close(); text('mm-feed', 'Live feed closed'); commands.close(); }
   $('mm-device').addEventListener('change', () => selectDevice($('mm-device').value));
   $('mm-search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => loadDevices(), 250); });
   $('mm-more-devices').addEventListener('click', () => loadDevices(true));

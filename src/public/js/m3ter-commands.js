@@ -28,7 +28,7 @@
           node('p', 'Unconfirmed downlink. Acceptance into the queue does not verify delivery or execution.', 'mm-note')];
         if (command.confirmation) parts.push(node('p', command.confirmation, 'mm-notice'));
         if (command.parameter) parts.splice(1, 0, node('p', `Selected setting: ${command.parameter}`, 'mm-notice'));
-        if (id === 'report-interval' && value < 60) parts.push(node('p', 'Short intervals consume more LoRaWAN airtime.', 'mm-notice'));
+        if (['report-interval','telemetry-interval'].includes(id) && value < 60) parts.push(node('p', 'Short intervals consume more LoRaWAN airtime.', 'mm-notice'));
         display(command.name, parts, 'Enqueue command', command.requiresConfirmation); notice('');
       } catch (error) { showError(error); }
     }
@@ -69,10 +69,10 @@
           control = node('select'); control.setAttribute('aria-label', command.name);
           command.options.forEach(option => { const item = node('option', option.label); item.value = option.value; control.append(item); });
         } else if (command.min !== undefined) {
-          const presets = node('select'); presets.setAttribute('aria-label', 'Report interval presets');
+          const presets = node('select'); presets.setAttribute('aria-label', command.id === 'telemetry-interval' ? 'Telemetry interval presets' : 'Report interval presets');
           [10,15,30,60,300,900,1800,3600].forEach(seconds => { const option = node('option', seconds < 60 ? `${seconds} seconds` : `${seconds / 60} minutes`); option.value = seconds; presets.append(option); });
           const custom = node('option', 'Custom'); custom.value = 'custom'; presets.append(custom); presets.value = '60';
-          control = node('input'); control.type = 'number'; control.min = command.min; control.max = command.max; control.step = 1; control.value = command.defaultValue; control.setAttribute('aria-label', 'Report interval seconds');
+          control = node('input'); control.type = 'number'; control.min = command.min; control.max = command.max; control.step = 1; control.value = command.defaultValue; control.setAttribute('aria-label', command.id === 'telemetry-interval' ? 'Telemetry interval seconds' : 'Report interval seconds');
           presets.addEventListener('change', () => { if (presets.value !== 'custom') control.value = presets.value; });
           control.addEventListener('input', () => { presets.value = 'custom'; }); card.append(presets);
         }

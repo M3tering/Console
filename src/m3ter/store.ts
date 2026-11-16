@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import type { Telemetry } from './decoder';
 import { advance, Accumulator } from './accumulator';
 import { telemetryLimit } from './config';
+import { initializeElectricalStore } from './electrical-store';
 let db: Database;
 let retentionLimit = 100;
 export function initializeManagerStore(connection: Database): void {
@@ -60,6 +61,7 @@ export function initializeManagerStore(connection: Database): void {
     }
     trimHistory();
   })();
+  initializeElectricalStore(db, retentionLimit);
   // A process may have stopped after the upstream accepted a command. Never resend automatically.
   db.prepare("UPDATE manager_commands SET status='unknown', detail='Console restarted during enqueue; inspect the queue before retrying' WHERE status='enqueuing'").run();
 }

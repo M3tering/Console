@@ -7,12 +7,14 @@ test.each([
   ['current-gain', 1, 'IAE=', 2, 2], ['current-gain', 2, 'IAI=', 2, 2], ['current-gain', 4, 'IAQ=', 2, 2],
   ['voltage-gain', 1, 'IQE=', 2, 2], ['voltage-gain', 2, 'IQI=', 2, 2], ['voltage-gain', 4, 'IQQ=', 2, 2],
   ['phase-mode', 0, 'IgA=', 2, 2], ['phase-mode', 1, 'IgE=', 2, 2], ['phase-mode', 2, 'IgI=', 2, 2], ['phase-mode', 3, 'IgM=', 2, 2],
+  ['telemetry-enable', undefined, 'IwE=', 2, 2], ['telemetry-disable', undefined, 'IwA=', 2, 2],
+  ['telemetry-interval', 60, 'JAA8', 2, 3], ['telemetry-interval', 300, 'JAEs', 2, 3], ['telemetry-now', undefined, 'JQ==', 2, 1],
   ['class-a', undefined, 'AA==', 3, 1], ['class-c', undefined, 'Ag==', 3, 1],
 ])('%s %s matches the firmware frame', (id, value, data, fPort, length) => {
   expect(generateCommand(id, value)).toMatchObject({ data, fPort, length, confirmed: false });
 });
-test('catalogue has exactly thirteen supported types and explicit safety controls', () => {
-  expect(commandCatalogue).toHaveLength(13);
+test('catalogue has existing commands plus four telemetry actions and explicit safety controls', () => {
+  expect(commandCatalogue).toHaveLength(17);
   for (const id of ['billing-connect','billing-disconnect','restart','relay-drive','relay-fitted','class-a']) expect(generateCommand(id, id === 'relay-drive' || id === 'relay-fitted' ? 1 : undefined).requiresConfirmation).toBe(true);
   for (const id of ['class-b', 'calibrate', 'fuota', 200, null]) expect(() => generateCommand(id)).toThrow();
 });
@@ -25,4 +27,12 @@ test('unsupported parameters are never encoded', () => {
   for (const id of ['current-gain','voltage-gain']) for (const value of [0,3,8,256,'2']) expect(() => generateCommand(id,value)).toThrow();
   for (const value of [-1,4,200,'1']) expect(() => generateCommand('phase-mode',value)).toThrow();
   expect(() => generateCommand('relay-on',1)).toThrow();
+});
+
+test('telemetry intervals are big endian and bounded; new commands cannot use monitoring or FUOTA ports', () => {
+  expect(generateCommand('telemetry-interval',10).hex).toBe('24000A');
+  expect(generateCommand('telemetry-interval',65535).hex).toBe('24FFFF');
+  for(const value of [9,65536,-1,1.1,NaN,Infinity,'60',null,undefined]) expect(()=>generateCommand('telemetry-interval',value)).toThrow();
+  expect(generateCommand('telemetry-disable').requiresConfirmation).toBe(true);
+  expect(commandCatalogue.every(c=>c.fPort===2 || c.fPort===3)).toBe(true);
 });

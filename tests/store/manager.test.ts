@@ -36,7 +36,7 @@ test('malformed lengths, FPorts and identity mismatches do not create readings',
   const mismatch = event(); mismatch.body.deviceInfo.devEui = b; expect(ingest(mismatch)).toBe(false);
   expect(ingestEvent(event().topic,Buffer.from('{'))).toBe(false);
   expect(store.latestReading(app,a)).toBeNull(); expect(store.latestReading(app,b)).toBeNull();
-  expect(store.events(app,a).filter(row => row.kind === 'decode-error')).toHaveLength(2);
+  expect(store.events(app,a).filter(row => row.kind === 'decode-error')).toHaveLength(1);
 });
 test('delivery events correlate by device and queue ID, never by selected meter or transmission alone', () => {
   const id = randomUUID(); store.insertCommand(app,a,id,{name:'Relay ON'},'fingerprint');

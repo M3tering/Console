@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events';
 import { createHash, randomUUID } from 'crypto';
-import { decodeTelemetry } from './decoder';
+import { decodeTelemetry, reportObject } from './decoder';
+import { electricalObject, validateElectricalFrame } from './electrical';
+import { recordElectrical, electricalState } from './electrical-store';
 import * as store from './store';
 import { applicationId, deviceId } from './chirpstack';
 import { getMeterByDevEui } from '../store/sqlite';
@@ -41,15 +43,20 @@ export function ingestEvent(topic: string, blob: Buffer): boolean {
     const receivedAt = Date.now(), parsedTime = Date.parse(event.time);
     const timestamp = Number.isFinite(parsedTime) && parsedTime > 0 && parsedTime < receivedAt + 300_000 ? parsedTime : receivedAt;
     const kind = parts[3].toLowerCase();
+    if (kind === 'up' && ![2,4].includes(event.fPort)) return false;
     const fields = [event.time, event.fCnt, event.devAddr, event.data, event.queueItemId, event.acknowledged, event.downlinkId];
+    if (event.fPort === 4 && event.object !== undefined) fields.push(event.object);
     if (event.dataHex !== undefined || event.dataEncoding !== undefined) fields.push(event.dataHex, event.dataEncoding);
-    const identity = event.deduplicationId || (event.time ? fields : randomUUID());
-    const eventKey = createHash('sha256').update(JSON.stringify([devEui, kind, identity])).digest('hex');
+    const identity = event.deduplicationId || (event.fPort === 4 && Number.isInteger(event.fCnt) ? ['fCnt',event.fCnt,event.devAddr || ''] : event.time ? fields : randomUUID());
+    const eventKey = createHash('sha256').update(JSON.stringify(event.fPort === 4 ? [devEui,kind,4,identity] : [devEui,kind,identity])).digest('hex');
     const rx = Array.isArray(event.rxInfo) ? event.rxInfo[0] : null;
     const metadata: Record<string, unknown> = { sourceTime: typeof event.time === 'string' ? event.time.slice(0,100) : null, timestampSource: timestamp === parsedTime ? 'ChirpStack' : 'console receipt', name: String(event.deviceInfo.deviceName || devEui).slice(0, 200),
       applicationName: String(event.deviceInfo.applicationName || '').slice(0, 200), deviceProfileName: String(event.deviceInfo.deviceProfileName || '').slice(0, 200),
       fCnt: Number.isInteger(event.fCnt) ? event.fCnt : null, rssi: typeof rx?.rssi === 'number' ? rx.rssi : null,
       snr: typeof rx?.snr === 'number' ? rx.snr : null, gatewayId: typeof rx?.gatewayId === 'string' ? rx.gatewayId.slice(0, 32) : null };
+    metadata.applicationId = application; metadata.deduplicationId = typeof event.deduplicationId === 'string' ? event.deduplicationId.slice(0,200) : null;
+    metadata.gateways = Array.isArray(event.rxInfo) ? event.rxInfo.slice(0,32).map((r: any) => ({ gatewayId: r?.gatewayId, rssi: r?.rssi, snr: r?.snr, time: r?.time })) : [];
+    if (event.object !== undefined) metadata.originalCodecObject = JSON.stringify(event.object).slice(0,16384);
     const suppliedPayload = event.dataHex !== undefined ? event.dataHex : event.data;
     const rawPayload = typeof suppliedPayload === 'string' ? suppliedPayload.slice(0, 4096) : null;
     metadata.payloadField = event.dataHex !== undefined ? 'dataHex' : 'data';
@@ -58,16 +65,41 @@ export function ingestEvent(topic: string, blob: Buffer): boolean {
     const record: store.ManagerEvent = { application, devEui, kind, source: 'ChirpStack', timestamp, receivedAt, eventKey, rawPayload,
       fPort: Number.isInteger(event.fPort) ? event.fPort : null, metadata, message: `ChirpStack ${kind} event` };
     let inserted: boolean;
-    if (kind === 'up') {
+    if (kind === 'up' && event.fPort === 4) {
+      record.kind = 'telemetry'; record.message = 'FPort 4 electrical telemetry received';
+      let telemetry;
+      try {
+        if (timestamp !== parsedTime) throw new Error('FPort 4 requires a valid ChirpStack measurement time');
+        const payload = suppliedPayload === undefined ? null : uplinkPayload(event);
+        if (payload) { validateElectricalFrame(payload.bytes); metadata.payloadHex = payload.hex; }
+        const object = electricalObject(event.object);
+        // Raw framing and object framing must agree; unknown schemas use raw fallback.
+        telemetry = object && (!payload || object.flags === payload.bytes[1] && object.uptime === payload.bytes.readUInt32BE(2)) ? object :
+          payload ? decodeTelemetry(4,payload.bytes) : undefined;
+        if (!telemetry) throw new Error('Missing valid FPort 4 payload or telemetry object');
+        if (!event.deduplicationId && Number.isInteger(event.fCnt)) {
+          const previous = electricalState(application,devEui);
+          const restart = previous && timestamp > previous.latest.timestamp && telemetry.uptime < previous.latest.telemetry.uptime;
+          const session = (previous?.session || 0) + (restart ? 1 : 0);
+          record.eventKey = createHash('sha256').update(JSON.stringify([devEui,4,identity,session])).digest('hex');
+        }
+        metadata.decodedSource = telemetry === object ? 'ChirpStack object' : 'raw payload';
+        if (event.object && telemetry !== object) metadata.codecWarning = 'Unsupported or invalid telemetry object; decoded raw payload instead';
+      } catch (error) { record.kind = 'telemetry-error'; record.message = (error as Error).message; }
+      inserted = recordElectrical(record,telemetry,() => store.addEvent(record));
+      if (inserted) store.updateDevice(application,devEui,metadata);
+    } else if (kind === 'up') {
       let telemetry;
       try {
         const payload = uplinkPayload(event);
         metadata.payloadHex = payload.hex;
         const knownKey = store.deviceState(application, devEui)?.publicKey || getMeterByDevEui(devEui)?.publicKey;
-        telemetry = decodeTelemetry(event.fPort, payload.bytes, knownKey);
+        telemetry = reportObject(event.object,payload.bytes,knownKey);
+        metadata.decodedSource = telemetry ? 'ChirpStack object' : 'raw payload';
+        telemetry = telemetry || decodeTelemetry(2, payload.bytes, knownKey);
         record.message = telemetry.verification === 'invalid' ? 'Telemetry decoded; signature INVALID. Voltage is outside the signed fields.' : 'Uplink decoded';
       } catch (error) { record.kind = 'decode-error'; record.message = (error as Error).message; }
-      inserted = store.recordUplink(record, telemetry, inactiveMilliseconds());
+      inserted = store.recordUplink(record, telemetry || undefined, inactiveMilliseconds());
     } else {
       if (kind === 'location') {
         const location = validLocation(event.location);
