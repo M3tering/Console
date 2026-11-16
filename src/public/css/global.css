@@ -153,16 +153,7 @@ label { display:block; }
 .input-row { display:flex; gap:10px; }
 .input-row input { flex:1; min-width:0; }
 .input-row button { white-space:nowrap; }
-.meter-form { padding:18px; background:var(--surface-alt); border:1px solid var(--border); border-radius:var(--small-radius); margin-bottom:24px; }
-.meter-form label { font-size:11px; margin-bottom:8px; }
 .table-scroll { max-width:100%; overflow:auto; }
-.meter-table { width:100%; border-collapse:collapse; font-size:12px; }
-.meter-table th { color:var(--muted); font-weight:500; font-size:11px; text-align:left; padding:12px; border-bottom:1px solid var(--border); }
-.meter-table td { padding:14px 12px; border-bottom:1px solid var(--border); }
-.meter-table td:first-child { white-space:nowrap; }
-.public-key { overflow-wrap:anywhere; font:11px/1.6 ui-monospace,monospace; }
-.meter-avatar { display:inline-grid; place-items:center; background:var(--surface-alt); width:32px; height:32px; border-radius:var(--small-radius); margin-right:10px; }
-.meter-avatar svg { width:20px; height:20px; }
 .danger { color:#b54d51; }
 .empty-state { text-align:center; padding:40px 10px; color:var(--muted); }
 .empty-state svg { width:36px; height:36px; }
@@ -321,7 +312,7 @@ dialog::backdrop { background:#14232e88; backdrop-filter:blur(3px); }dialog h2 {
   .settings-layout { flex-direction:column; }.settings-nav { width:100%; padding:8px; flex-direction:row; gap:5px; border-right:0; border-bottom:1px solid var(--border); }.settings-identity,.settings-footnote { display:none; }.settings-nav button { flex:1; justify-content:center; gap:6px; padding:10px 6px; min-height:44px; font-size:11px; }.settings-nav button svg { width:16px; height:16px; }.settings-content { padding:22px 18px; }
   .theme-grid { gap:12px; }.theme-preview { height:90px; }.theme-card-title { font-size:11px; }.theme-card small { font-size:10px; }.theme-card-copy { padding:8px 4px; }.theme-check { flex-shrink:0; }
   .setting-row { gap:12px; }.setting-row select { max-width:110px; }.setting-row .nes-btn { padding:8px 10px; }.switch { width:44px; height:28px; }.switch::after { width:20px; height:20px; }
-  .browser-toolbar { flex-wrap:wrap; gap:6px; font-size:11px; }.meter-table td,.meter-table th { padding:10px 6px; }.meter-avatar { display:none; }.input-row { flex-wrap:wrap; }.input-row button { flex:1; }.input-row input { flex-basis:160px; }
+  .browser-toolbar { flex-wrap:wrap; gap:6px; font-size:11px; }.input-row { flex-wrap:wrap; }.input-row button { flex:1; }.input-row input { flex-basis:160px; }
   .nes-btn,.quiet-button { min-height:44px; }.extension-window .window-content { overflow-wrap:anywhere; }.extension-window .nes-container { padding:14px; }
   .publisher-stat { padding:16px; }.publisher-stat #streamr-last-publish { font-size:15px; }
 }
@@ -358,3 +349,17 @@ dialog::backdrop { background:#14232e88; backdrop-filter:blur(3px); }dialog h2 {
 #paint-status { margin:0; padding:0 12px 8px; font:12px var(--font-body, sans-serif); }
 .paint-surface { overflow:auto; flex:1; min-height:0; padding:12px; background:var(--surface-muted); }
 #paint-canvas { display:block; width:100%; max-width:1200px; height:auto; background:#fff; touch-action:none; cursor:crosshair; }
+
+#browser-search { display:flex; flex:1; gap:8px; min-width:0; }
+#browser-query { flex:1; width:100%; min-width:0; }
+
+/* Feedback is positioned and clipped by its owning app, never the desktop. */
+.app-notification-area { position:absolute; z-index:20; right:12px; bottom:12px; width:min(380px,calc(100% - 24px)); max-height:40%; overflow:auto; pointer-events:none; }
+.notification { display:flex; align-items:flex-start; gap:12px; overflow-wrap:anywhere; pointer-events:auto; }
+.notification > span { flex:1; min-width:0; }
+.notification > button { flex-shrink:0; }
+.app-dialog-layer { position:absolute; z-index:30; inset:48px 0 0; padding:12px; display:flex; align-items:center; justify-content:center; background:#14232e88; }
+.app-dialog-layer > dialog.app-dialog { position:relative; inset:auto; margin:0; width:min(430px,100%); max-width:100%; max-height:100%; overflow:auto; overscroll-behavior:contain; padding:24px; }
+.app-dialog-layer > #mm-dialog { width:min(540px,100%); max-height:100%; }
+@media(max-width:700px) { .app-dialog-layer { padding:8px; } .app-dialog-layer > dialog.app-dialog { padding:18px; } }
+@media(max-height:500px) and (min-width:701px) { .app-dialog-layer { top:40px; } }

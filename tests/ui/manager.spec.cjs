@@ -78,6 +78,12 @@ test('command UI previews frames, protects billing and hardware controls, and cl
   await open(page);
   await page.locator('[data-mm-command="relay-on"]').click();
   await expect(page.locator('#mm-dialog')).toBeVisible(); await expect(page.locator('#mm-dialog-content')).toContainText('Base64: Gw==');
+  expect(await page.locator('#mm-dialog').evaluate(el=>el.closest('.app-window').id)).toBe('m3ter-manager');
+  const dialogBox=await page.locator('#mm-dialog').boundingBox(), ownerBox=await page.locator('#m3ter-manager').boundingBox();
+  expect(dialogBox.x).toBeGreaterThanOrEqual(ownerBox.x);expect(dialogBox.x+dialogBox.width).toBeLessThanOrEqual(ownerBox.x+ownerBox.width);
+  expect(dialogBox.y).toBeGreaterThanOrEqual(ownerBox.y);expect(dialogBox.y+dialogBox.height).toBeLessThanOrEqual(ownerBox.y+ownerBox.height);
+  await page.evaluate(()=>Desktop.launch('browser'));await page.locator('#browser-query').fill('Another app stays usable');
+  await page.evaluate(()=>Desktop.launch('m3ter-manager'));
   await page.locator('#mm-submit').click(); await expect(page.locator('#mm-notice')).toContainText('Relay ON: queued');
   await page.locator('[data-mm-tab="commands"]').click();
   await page.locator('[data-command-id="billing-disconnect"]').click();
@@ -147,4 +153,45 @@ test('closing Manager does not stop MQTT or the independent collector consumer',
   expect((await (await control(request,{action:'stats'})).json()).clients).toBe(1);
   await page.evaluate(()=>Desktop.launch('m3ter-manager'));
   await expect(page.locator('#mm-energy')).toHaveText('0.123000');
+});
+
+test('Overview receipt age increases beyond a minute and updates only on new uplinks', async ({page,request}) => {
+  await open(page);
+  const received=await control(request,{devEui:a,nonce:91,energy:0.25,timestamp:Date.now()+60000});
+  const event=(await received.json()).event;
+  await expect(page.locator('#mm-energy')).toHaveText('0.250000');
+  const state=(await (await request.get(`${api}/devices/${a}`)).json()).state;
+  expect(state.lastUplink).toBeLessThan(Date.parse(event.time));
+  await expect(page.locator('[data-mm-panel="overview"]')).not.toContainText(/accumulator|pending snapshot|uncertain cycle/i);
+  for (const [seconds,label] of [[30,'30s ago'],[70,'1m ago'],[300,'5m ago'],[7200,'2h ago']]) {
+    await page.clock.setFixedTime(state.lastUplink+seconds*1000);
+    await expect(page.locator('#mm-age')).toHaveText(label);
+  }
+  await control(request,{kind:'status',devEui:a});
+  await page.locator('#mm-refresh').click(); await expect(page.locator('#mm-age')).toHaveText('2h ago');
+  expect((await (await request.get(`${api}/devices/${a}`)).json()).state.lastUplink).toBe(state.lastUplink);
+  await page.clock.setFixedTime(Date.now());
+  await control(request,{devEui:a,nonce:92,energy:0.1,timestamp:Date.now()+61000});
+  await expect(page.locator('#mm-nonce')).toHaveText('92');
+  await expect(page.locator('#mm-age')).toHaveText('0s ago');
+});
+
+test('live hex payload travels through shared MQTT, retains bytes, and reaches both consumers', async ({page,request}) => {
+  await open(page);
+  const before=(await (await control(request,{action:'stats'})).json()).collectorCount;
+  for (const encoding of ['hex','dataHex']) {
+    const result=await (await control(request,{devEui:b,nonce:10,energy:1.234567,encoding})).json();
+    await expect.poll(async()=> (await (await request.get(`${api}/devices/${b}/history`)).json()).latest.energy).toBe(1.234567);
+    await page.locator('#mm-device').selectOption(b);
+    await page.locator('[data-mm-tab="live"]').click();
+    const hex=result.event.dataHex || result.event.data;
+    await expect(page.locator('#mm-events')).toContainText('Uplink decoded');
+    await expect.poll(async()=> (await page.locator('#mm-events').textContent()).includes(hex)).toBe(true);
+    await page.locator('#mm-events details').first().locator('summary').click();
+    await expect(page.locator('#mm-events details').first()).toContainText('Payload (hex)');
+    const history=await (await request.get(`${api}/devices/${b}/history`)).json();
+    const row=history.rows.find(row=>row.rawPayload===hex);
+    expect(JSON.parse(row.metadata).payloadHex).toBe(hex);
+  }
+  await expect.poll(async()=> (await (await control(request,{action:'stats'})).json()).collectorCount).toBe(before+2);
 });

@@ -1,4 +1,4 @@
-# Used by ./install.sh to deploy the current checkout with production data volumes.
+# Optional local source build override; auto-compose.sh deploys published images using compose.yaml.
 services:
   console:
     image: m3tering-console:local

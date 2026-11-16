@@ -11,6 +11,8 @@
  * @returns {Promise<{success: boolean, message?: string, data?: any}>}
  */
 async function invokeAction(moduleId, actionId, buttonElement) {
+  // Capture ownership before awaiting: switching apps must not redirect feedback.
+  const owner = buttonElement?.closest('.app-window') || document.getElementById(moduleId)?.closest('.app-window') || null;
   // Show loading state if button provided
   let originalContent = null;
   if (buttonElement) {
@@ -32,15 +34,15 @@ async function invokeAction(moduleId, actionId, buttonElement) {
 
     // Show result feedback
     if (result.success) {
-      showNotification(result.message || "Action completed successfully", "success");
+      showNotification(result.message || "Action completed successfully", "success", owner);
     } else {
-      showNotification(result.message || "Action failed", "error");
+      showNotification(result.message || "Action failed", "error", owner);
     }
 
     return result;
   } catch (error) {
     console.error("Action invocation failed:", error);
-    showNotification("Failed to invoke action: " + error.message, "error");
+    showNotification("Failed to invoke action: " + error.message, "error", owner);
     return { success: false, message: error.message };
   } finally {
     // Restore button state
@@ -52,15 +54,8 @@ async function invokeAction(moduleId, actionId, buttonElement) {
   }
 }
 
-// Shared themed feedback for built-in applications and extensions.
-let notificationTimer;
-function showNotification(message, type) {
-  const area = document.getElementById('notification-area');
-  if (!area) return;
-  clearTimeout(notificationTimer);
-  const notification = document.createElement('div');
-  notification.className = 'notification ' + (type === 'error' ? 'error' : 'success');
-  notification.textContent = message;
-  area.replaceChildren(notification);
-  notificationTimer = setTimeout(() => notification.remove(), 6000);
+// Extensions can pass their app element or app ID as the third argument.
+// Pass null explicitly for a desktop-wide notification.
+function showNotification(message, type, owner) {
+  AppFeedback.notify(message, type, owner);
 }

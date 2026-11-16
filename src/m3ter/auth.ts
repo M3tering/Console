@@ -21,7 +21,7 @@ export function managerAuthenticated(req: IncomingMessage): boolean {
 }
 export function requireManagerAuth(req: Request, res: Response, next: NextFunction): void {
   res.setHeader('Cache-Control', 'no-store');
-  if (!managerAuthenticated(req)) { res.status(401).json({ error: 'Sign in to M3TER Manager to continue.' }); return; }
+  if (!managerAuthenticated(req)) { res.status(401).json({ error: 'Sign in to M3ter Manager to continue.' }); return; }
   next();
 }
 function setCookie(req: Request, res: Response, value: string, maxAge: number) {

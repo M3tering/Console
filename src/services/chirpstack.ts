@@ -8,9 +8,9 @@ const hopHeaders = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-aut
 
 export function chirpstackTarget(): URL {
   const host = process.env.CHIRPSTACK_HOST || 'localhost';
-  const target = new URL(process.env.CHIRPSTACK_WEB_URL || `http://${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:8080`);
+  const target = new URL(process.env.CHEFSTACK_URL || process.env.CHIRPSTACK_WEB_URL || `http://${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:8080`);
   if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password || target.pathname !== '/' || target.search || target.hash) {
-    throw new Error('CHIRPSTACK_WEB_URL must be an HTTP(S) origin without credentials or a path');
+    throw new Error('CHEFSTACK_URL / CHIRPSTACK_WEB_URL must be an HTTP(S) origin without credentials or a path');
   }
   return target;
 }
@@ -37,7 +37,7 @@ function unavailable(res: Response, configuration = false): void {
   if (res.headersSent) { res.destroy(); return; }
   res.removeHeader('Content-Length');
   res.removeHeader('Content-Encoding');
-  res.status(502).type('html').send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ChirpStack unavailable</title></head><body style="font:16px system-ui;max-width:36rem;margin:8vh auto;padding:24px;color:#243044;background:#f4f7fb"><h1>ChirpStack is unavailable</h1><p>${configuration ? 'Check the CHIRPSTACK_WEB_URL configuration on the console server.' : 'The console could not reach ChirpStack. Make sure the ChirpStack server is running and CHIRPSTACK_HOST or CHIRPSTACK_WEB_URL points to it.'}</p><p><a href="/chirpstack/">Try again</a></p></body></html>`);
+  res.status(502).type('html').send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ChirpStack unavailable</title></head><body style="font:16px system-ui;max-width:36rem;margin:8vh auto;padding:24px;color:#243044;background:#f4f7fb"><h1>ChirpStack is unavailable</h1><p>${configuration ? 'Check the CHEFSTACK_URL or CHIRPSTACK_WEB_URL configuration on the console server.' : 'The console could not reach ChirpStack. Make sure the ChirpStack server is running and CHIRPSTACK_HOST, CHEFSTACK_URL or CHIRPSTACK_WEB_URL points to it.'}</p><p><a href="/chirpstack/">Try again</a></p></body></html>`);
 }
 
 /** Mount before JSON/body middleware: gRPC-Web bodies and event streams stay intact. */

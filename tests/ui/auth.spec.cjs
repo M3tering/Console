@@ -10,7 +10,7 @@ test('Console and its assets are public; only Manager data is protected', async 
   const context = await browser.newContext({ httpCredentials: credentials });
   expect((await context.request.get(base + '/js/desktop.js')).status()).toBe(200);
   expect((await context.request.post(base + '/api/actions/streamr/publish-now', { headers: { origin: 'https://foreign.example' } })).status()).toBe(403);
-  expect((await context.request.delete(base + '/delete-meter', { headers: { origin: base } })).status()).toBe(400);
+  expect((await context.request.delete(base + '/delete-meter', { headers: { origin: base } })).status()).toBe(404);
   await context.close();
 });
 

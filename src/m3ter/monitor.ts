@@ -4,6 +4,7 @@ import { decodeTelemetry } from './decoder';
 import * as store from './store';
 import { applicationId, deviceId } from './chirpstack';
 import { getMeterByDevEui } from '../store/sqlite';
+import { uplinkPayload } from '../lib/uplink-payload';
 
 export const managerEvents = new EventEmitter();
 managerEvents.setMaxListeners(128);
@@ -40,23 +41,30 @@ export function ingestEvent(topic: string, blob: Buffer): boolean {
     const receivedAt = Date.now(), parsedTime = Date.parse(event.time);
     const timestamp = Number.isFinite(parsedTime) && parsedTime > 0 && parsedTime < receivedAt + 300_000 ? parsedTime : receivedAt;
     const kind = parts[3].toLowerCase();
-    const identity = event.deduplicationId || (event.time ? [event.time, event.fCnt, event.devAddr, event.data, event.queueItemId, event.acknowledged, event.downlinkId] : randomUUID());
+    const fields = [event.time, event.fCnt, event.devAddr, event.data, event.queueItemId, event.acknowledged, event.downlinkId];
+    if (event.dataHex !== undefined || event.dataEncoding !== undefined) fields.push(event.dataHex, event.dataEncoding);
+    const identity = event.deduplicationId || (event.time ? fields : randomUUID());
     const eventKey = createHash('sha256').update(JSON.stringify([devEui, kind, identity])).digest('hex');
     const rx = Array.isArray(event.rxInfo) ? event.rxInfo[0] : null;
     const metadata: Record<string, unknown> = { sourceTime: typeof event.time === 'string' ? event.time.slice(0,100) : null, timestampSource: timestamp === parsedTime ? 'ChirpStack' : 'console receipt', name: String(event.deviceInfo.deviceName || devEui).slice(0, 200),
       applicationName: String(event.deviceInfo.applicationName || '').slice(0, 200), deviceProfileName: String(event.deviceInfo.deviceProfileName || '').slice(0, 200),
       fCnt: Number.isInteger(event.fCnt) ? event.fCnt : null, rssi: typeof rx?.rssi === 'number' ? rx.rssi : null,
       snr: typeof rx?.snr === 'number' ? rx.snr : null, gatewayId: typeof rx?.gatewayId === 'string' ? rx.gatewayId.slice(0, 32) : null };
-    const rawPayload = typeof event.data === 'string' ? event.data.slice(0, 4096) : null;
+    const suppliedPayload = event.dataHex !== undefined ? event.dataHex : event.data;
+    const rawPayload = typeof suppliedPayload === 'string' ? suppliedPayload.slice(0, 4096) : null;
+    metadata.payloadField = event.dataHex !== undefined ? 'dataHex' : 'data';
+    metadata.payloadEncoding = event.dataHex !== undefined ? 'hex' : event.dataEncoding ?? 'base64';
+    if (typeof event.data === 'string' && event.dataHex !== undefined) metadata.upstreamData = event.data.slice(0, 4096);
     const record: store.ManagerEvent = { application, devEui, kind, source: 'ChirpStack', timestamp, receivedAt, eventKey, rawPayload,
       fPort: Number.isInteger(event.fPort) ? event.fPort : null, metadata, message: `ChirpStack ${kind} event` };
     let inserted: boolean;
     if (kind === 'up') {
       let telemetry;
       try {
-        if (!rawPayload || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(rawPayload) || rawPayload !== event.data) throw new Error('Invalid Base64 payload');
+        const payload = uplinkPayload(event);
+        metadata.payloadHex = payload.hex;
         const knownKey = store.deviceState(application, devEui)?.publicKey || getMeterByDevEui(devEui)?.publicKey;
-        telemetry = decodeTelemetry(event.fPort, Buffer.from(rawPayload, 'base64'), knownKey);
+        telemetry = decodeTelemetry(event.fPort, payload.bytes, knownKey);
         record.message = telemetry.verification === 'invalid' ? 'Telemetry decoded; signature INVALID. Voltage is outside the signed fields.' : 'Uplink decoded';
       } catch (error) { record.kind = 'decode-error'; record.message = (error as Error).message; }
       inserted = store.recordUplink(record, telemetry, inactiveMilliseconds());

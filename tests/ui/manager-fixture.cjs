@@ -58,7 +58,8 @@ module.exports = async function managerFixture(app) {
   });
   await new Promise(resolve => broker.listen(0,'127.0.0.1',resolve));
   const { handleUplinks, stopUplinks } = require('../../dist/services/mqtt');
-  await handleUplinks({ host: '127.0.0.1', port: broker.address().port }, async () => { collectorCount++; });
+  process.env.MQTT_URL = `mqtt://127.0.0.1:${broker.address().port}`;
+  await handleUplinks(undefined, async () => { collectorCount++; });
   function uplink(input = {}) {
     const id = input.devEui || devices[0].devEui, key = keys.get(id);
     const bytes = Buffer.alloc(input.length || ((input.nonce ?? 0) === 0 ? 106 : 74)); if (bytes.length >= 74) {
@@ -68,7 +69,7 @@ module.exports = async function managerFixture(app) {
     }
     return { deduplicationId:input.eventId || randomUUID(), time:new Date(input.timestamp || Date.now()).toISOString(),
       deviceInfo:{ devEui:id, applicationId:application, deviceName:devices.find(d=>d.devEui===id).name, applicationName:'Workshop network',deviceProfileName:'Switch Cumulus' },
-      data:bytes.toString('base64'), fPort:input.fPort ?? 2, fCnt:input.nonce ?? 0, rxInfo:[{rssi:-70,snr:9.5,gatewayId:'aabbccddeeff0011'}] };
+      ...(input.encoding === 'hex' ? {data:bytes.toString('hex').toUpperCase(),dataEncoding:'hex'} : input.encoding === 'dataHex' ? {dataHex:bytes.toString('hex').toUpperCase()} : {data:bytes.toString('base64')}), fPort:input.fPort ?? 2, fCnt:input.nonce ?? 0, rxInfo:[{rssi:-70,snr:9.5,gatewayId:'aabbccddeeff0011'}] };
   }
   for (let i=0;i<80;i++) {
     const event = uplink({nonce:i<40?1:2,energy:i<40?10+i*.01:(i-40)*.02,voltage:229+i%5,timestamp:Date.now()-(80-i)*60000});

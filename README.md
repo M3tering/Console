@@ -76,9 +76,9 @@ npm install
 npm run dev
 ```
 
-## M3TER Manager
+## M3ter Manager
 
-**M3TER Manager** is a built-in desktop application for Switch Cumulus telemetry
+**M3ter Manager** is a built-in desktop application for Switch Cumulus telemetry
 and technician downlinks. Launch it from the desktop, dock, or application
 launcher. Its Overview, Live monitoring, Analytics, Commands, Queue, and Meter
 information sections share the selected device, desktop theme, and responsive
@@ -114,8 +114,10 @@ is needed. The API token needs device/application/profile read access and device
 queue enqueue/read/flush access for the configured application. MQTT requires
 permission to subscribe to that application's events. Configure ChirpStack's
 MQTT integration to publish JSON. Manager reuses the Console's original
-`CHIRPSTACK_HOST` connection on port 1883. No new MQTT settings or separate client
-are required. Opening or closing Manager does not own or stop this connection.
+`CHIRPSTACK_HOST` connection on port 1883 (localhost by default). Optional
+`MQTT_URL=mqtt://broker.example:1883` overrides the shared broker address for both
+consumers; `mqtts://`, `ws://`, and `wss://` are also supported. URL credentials,
+when required by the broker, stay on the backend. No separate client is created. Opening or closing Manager does not own or stop this connection.
 Both consumers receive messages independently; monitoring errors cannot disable
 the collector. The old monitor-only toggle has been removed: collection remains enabled.
 
@@ -125,7 +127,7 @@ npm start
 ```
 
 Then open the console on its configured port (3000 by default) and
-launch **M3TER Manager**. The dashboard stays accessible while MQTT reconnects.
+launch **M3ter Manager**. The dashboard stays accessible while MQTT reconnects.
 
 ### Architecture and API
 
@@ -198,7 +200,17 @@ bounded queries. Uplinks deduplicate by ChirpStack event ID, or by a stable tupl
 of device/event type/source time/frame counter/payload when an ID is absent.
 Identical values with distinct events are preserved. Without an event ID or
 source timestamp, events are retained separately rather than risking data loss.
-Source timestamps are preserved in metadata; invalid timestamps use receipt time.
+Source timestamps are preserved in metadata; invalid timestamps use receipt time. The Overview's
+Last Uplink uses the persisted console reception time of a successfully decoded,
+non-duplicate uplink. MQTT heartbeats, connection events, UI refreshes and decode
+errors cannot reset it. Source timestamps still drive the existing Analytics.
+
+MQTT payload transport is explicit: native ChirpStack `data` remains Base64;
+hex producers supply `dataHex` or `data` with `dataEncoding: "hex"`. Hex must contain
+complete byte pairs, without separators or a `0x` prefix. No alphabet guessing is
+used. Both collector and Manager use the same byte conversion. Live Monitoring
+shows the hexadecimal bytes and preserves the original field, encoding, and text
+for inspection. Downlink encoding and firmware decoders are unchanged.
 
 Charts plot **raw accumulator snapshots**, not independent interval consumption.
 Repeated and growing values with the same nonce stay pending. A consecutive nonce
@@ -210,8 +222,10 @@ are flagged, not credited as fresh consumption. Manager sends no automatic ackno
 Firmware source is not present here: observed transitions cannot establish unobserved
 energy, reset causes, downlink execution, or blockchain settlement.
 
-The database retains at most **100 uplink records globally**, including malformed
-payloads, and prunes their raw event copies too. A separate small per-device state
+The database retains **100 uplink records globally by default**, including malformed
+payloads. Set optional `M3TER_TELEMETRY_LIMIT` to a positive integer to change this
+limit. Invalid values log a warning and safely fall back to 100. The limit applies
+on startup and after every insertion, and prunes their raw event copies too. A separate small per-device state
 preserves the pending nonce/high-water mark and latest reading after eviction or
 restart. Existing history is replayed once before migration trims it. Non-telemetry activity, command history, device configuration and all
 original Console tables are preserved. SQLite reuses freed pages; migration does
@@ -273,7 +287,10 @@ Open **ChirpStack** from the desktop, dock, or application launcher. Its web
 interface opens inside a console window; the browser uses `/chirpstack/` on the
 console's own port. The console server connects to
 `http://CHIRPSTACK_HOST:8080` (localhost by default). Set
-`CHIRPSTACK_WEB_URL=http://your-chirpstack-host:8080` to override the web endpoint,
+`CHEFSTACK_URL=http://your-chirpstack-host:8080` to override the web endpoint.
+The existing `CHIRPSTACK_WEB_URL` remains supported, with `CHEFSTACK_URL` taking
+precedence. Use an HTTP(S) origin without a path or URL credentials. This changes
+the web integration only; keep the REST proxy and gRPC configuration as appropriate,
 or use an HTTPS origin. Only an origin is supported, without credentials or a
 subpath. In Docker this address must be reachable from the console container.
 
@@ -835,10 +852,10 @@ appearance controls; the containing window follows the application setting.
 To update the existing Docker deployment from GitHub Actions images:
 
 ```sh
-./install.sh
-./install.sh --project-name your-existing-project
+./auto-compose.sh
+./auto-compose.sh --project-name your-existing-project
 # To select a fork/branch image published by the existing workflow:
-./install.sh --image ghcr.io/fluxion9/console:feat-revamp
+./auto-compose.sh --image ghcr.io/fluxion9/console:feat-revamp
 ```
 
 Docker and its Compose plugin must already be installed. The script identifies
@@ -853,3 +870,27 @@ volumes, database files or `.env` are removed. Other services are never brought 
 `compose.local.yaml` remains available for deliberate developer builds; the update
 script does not use it. Readiness does not certify broker or blockchain availability.
 Use the original project name and data directory to preserve the same volumes.
+
+## Targeted desktop refinements
+
+The old **M3ters** meter-list application has been removed from the desktop,
+along with its exclusive `/delete-meter` UI endpoint. The collector's database,
+MQTT service, and meter records are preserved. **M3ter Manager** remains available.
+
+The Browser starts with a Google search interface. Queries use
+`https://www.google.com/search?q=` with URL encoding and open in a new tab because
+Google blocks embedded search pages. HTTP(S) addresses can still open inside the
+Browser; its external link supports sites that block embedding.
+
+`compose.yaml` passes the existing `.env` into the single Console container,
+which hosts both consumers. The update script leaves that file and persistent
+volumes intact, including `MQTT_URL`, `CHEFSTACK_URL`, `M3TER_TELEMETRY_LIMIT`, and
+`M3TER_MANAGER_PASSWORD`. No deployment-script or workflow changes are required.
+
+Application feedback is scoped to its owning window. Extension actions preserve
+the originating window even if another app is focused while a request completes.
+Use `showNotification(message, type, appElementOrId)` for extension feedback, and
+pass `null` for a desktop-wide notice. `AppFeedback.showDialog(dialog, appElement)`
+provides an app-contained dialog; `AppFeedback.confirm(appElement, title, message)`
+returns a promise for confirmations. These dialogs allow switching to other apps
+and inherit the owning application's light/dark mode.

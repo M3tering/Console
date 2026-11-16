@@ -11,7 +11,7 @@ while [[ $# -gt 0 ]]; do
       if [[ "$1" == --project-name ]]; then project="$2"; else image="$2"; fi
       shift 2 ;;
     --help|-h)
-      echo 'Usage: ./install.sh [--project-name NAME] [--image ghcr.io/OWNER/console:TAG]'
+      echo 'Usage: ./auto-compose.sh [--project-name NAME] [--image ghcr.io/OWNER/console:TAG]'
       echo 'Pulls the published image for this device, updates only Console, and preserves .env and all volumes.'
       exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
