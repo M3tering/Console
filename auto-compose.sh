@@ -135,12 +135,18 @@ old_id='' old_role=''
 if [[ -n "$old_container" ]]; then
   old_id=$(docker inspect --format '{{.Image}}' "$old_container")
   old_ref=$(docker inspect --format '{{.Config.Image}}' "$old_container")
-  old_role=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$old_container" | sed -n 's/^CONSOLE_ROLE=//p' | tail -1)
+  # The compose file that created the container says which role it ran. Its environment does not:
+  # .env values such as CONSOLE_ROLE leak into a standalone container through env_file.
+  case "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$old_container")" in
+    *compose.gateway.yaml*) old_role=gateway ;;
+    *compose.central.yaml*) old_role=central ;;
+    *) old_role=standalone ;;
+  esac
   echo "Current Console: $old_ref ($old_id)"
   # Keep the running tag or digest only for the same role (a standalone image may lack central
   # support) and the same repository as this checkout (the remote may have been switched).
   old_repo=${old_ref%@*}; old_repo=${old_repo%:*}
-  if [[ -z "$image" && "$old_ref" == ghcr.io/* && "${old_role:-standalone}" == "$role" && ( -z "$repo_image" || "$old_repo" == "$repo_image" ) ]]; then
+  if [[ -z "$image" && "$old_ref" == ghcr.io/* && "$old_role" == "$role" && ( -z "$repo_image" || "$old_repo" == "$repo_image" ) ]]; then
     image="$old_ref"
   fi
 fi
@@ -166,22 +172,33 @@ if [[ "$role" == gateway ]]; then
 fi
 
 # The agent counts as ready once it has stayed up without restarting and holds a credential.
+# Each failure says why, so a failed deploy can be diagnosed from the script output alone.
 agent_ready() {
   local container status restarts check
-  container=$("${compose[@]}" ps -q agent | head -1); [[ -n "$container" ]] || return 1
+  container=$("${compose[@]}" ps -q agent | head -1)
+  [[ -n "$container" ]] || { echo 'Agent check: no agent container was created.' >&2; return 1; }
   for (( check=1; check<=${AGENT_READY_CHECKS:-45}; check++ )); do
     read -r status restarts < <(docker inspect --format '{{.State.Status}} {{.RestartCount}}' "$container")
-    [[ "$status" == running && "$restarts" == 0 ]] || return 1
+    if [[ "$status" != running || "$restarts" != 0 ]]; then
+      echo "Agent check: the agent stopped or restarted (status $status, restarts $restarts)." >&2; return 1
+    fi
     if (( check >= ${AGENT_STABLE_CHECKS:-5} )) && has_credential; then return 0; fi
     sleep "${AGENT_READY_INTERVAL:-2}"
   done
+  echo 'Agent check: the agent is running but never stored a credential; enrollment did not finish (check the token and that central is reachable).' >&2
   return 1
 }
+# Only images that contain the agent can run the gateway pair.
+image_has_agent() { docker run --rm --entrypoint test "$1" -f /opt/app/dist/agent/index.js >/dev/null 2>&1; }
 deploy_failed() {
   echo "${services[*]} failed readiness. Recent logs:" >&2
   "${compose[@]}" logs --tail 80 "${services[@]}" >&2 || true
   if [[ -z "$old_id" ]]; then exit 1; fi
-  if [[ "$role" != gateway || "${old_role:-standalone}" == gateway ]]; then
+  if [[ "$role" == gateway && "$old_role" == gateway ]] && ! image_has_agent "$old_id"; then
+    # Rolling back onto an image without the agent would leave the gateway with no working agent at all.
+    echo 'The previous image has no agent, so it was NOT restored; the new pair keeps running and retrying.' >&2
+    echo 'Fix the problem shown above and rerun this script.' >&2
+  elif [[ "$role" != gateway || "$old_role" == gateway ]]; then
     echo 'Restoring the previous image; persistent data has not been removed.' >&2
     CONSOLE_IMAGE="$old_id" "${compose[@]}" up --detach --no-deps --no-build --pull never --force-recreate "${services[@]}" || true
   elif ! "${as_root[@]}" test -e .data/agent/operations.db; then

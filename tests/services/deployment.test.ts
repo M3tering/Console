@@ -79,7 +79,7 @@ test('an unknown role is refused before touching Docker', () => {
 });
 
 // Gateway role: Console + agent, owner-only secrets, safe fallback. Fake docker/sudo only.
-function runGateway(environment:string,options:{credential?:boolean;journal?:boolean;agentState?:string;enrollOnUp?:boolean;remote?:string}={}) {
+function runGateway(environment:string,options:{credential?:boolean;journal?:boolean;agentState?:string;enrollOnUp?:boolean;remote?:string;oldFiles?:string;oldHasAgent?:boolean}={}) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'console-gateway-'));
   try {
     for(const file of ['auto-compose.sh','compose.yaml','compose.gateway.yaml','compose.updater.yaml'])fs.copyFileSync(file,path.join(dir,file));
@@ -100,13 +100,17 @@ case "$*" in
   'inspect --format {{.Image}} old-container') echo sha256:old ;;
   'inspect --format {{.Image}} new-container') echo sha256:new ;;
   'inspect --format {{.Config.Image}} old-container') echo ghcr.io/m3tering/console:main ;;
+  *'config_files'*' old-container') echo "$OLD_FILES" ;;
+  *'.Config.Env'*' old-container') echo CONSOLE_ROLE=gateway ;;
+  'run --rm --entrypoint test '*) [[ "$OLD_HAS_AGENT" != false ]] ;;
   *'{{.State.Status}}'*) echo "$AGENT_STATE" ;;
   *'compose.gateway.yaml up --detach'*'--wait'*) [[ "$ENROLL_ON_UP" == true ]] && printf 'gateway-id:credential' > .data/agent/credential; true ;;
 esac
 `,{mode:0o755});
     const run=spawnSync('bash',['auto-compose.sh','--project-name','site'],{cwd:dir,encoding:'utf8',env:{...process.env,PATH:dir+':'+process.env.PATH,DEPLOY_LOG:log,
       AGENT_SECRET_UID:String(process.getuid!()),AGENT_READY_INTERVAL:'0',AGENT_STABLE_CHECKS:'2',AGENT_READY_CHECKS:'4',
-      AGENT_STATE:options.agentState||'running 0',ENROLL_ON_UP:String(!!options.enrollOnUp)}});
+      AGENT_STATE:options.agentState||'running 0',ENROLL_ON_UP:String(!!options.enrollOnUp),
+      OLD_FILES:options.oldFiles||'/site/compose.yaml',OLD_HAS_AGENT:String(options.oldHasAgent!==false)}});
     const stat=(name:string)=>{try{return fs.statSync(path.join(dir,'.data','agent',name)).mode&0o777;}catch{return null;}};
     return {run,calls:fs.readFileSync(log,'utf8'),env:fs.readFileSync(path.join(dir,'.env'),'utf8'),
       fallback:fs.readFileSync(path.join(dir,'.data','agent','fallback-secret'),'utf8'),modes:{fallback:stat('fallback-secret'),updater:stat('updater-secret'),agentDir:fs.statSync(path.join(dir,'.data','agent')).mode&0o777}};
@@ -225,4 +229,29 @@ test('the updater has no built-in trusted repository',async()=>{
     const { runUpdater }=await import('../../src/updater/index');
     await expect(runUpdater()).rejects.toThrow('UPDATER_IMAGE_REPOSITORY and UPDATER_SOURCE_REPOSITORY are required.');
   }finally{process.env=saved;}
+});
+
+test('a standalone container with CONSOLE_ROLE=gateway leaked from .env is still treated as standalone',()=>{
+  // The incident: the restored standalone Console read CONSOLE_ROLE=gateway through env_file.
+  const {run,calls}=runGateway(gatewayEnv,{credential:true,journal:true,agentState:'restarting 1',oldFiles:'/site/compose.yaml'});
+  expect(run.status).toBe(1);
+  expect(calls).not.toContain('--force-recreate console agent|sha256:old');
+  expect(run.stderr).toContain('standalone was NOT restarted');
+  expect(run.stderr).toContain('Agent check: the agent stopped or restarted (status restarting, restarts 1)');
+});
+test('a gateway pair is never rolled back onto an image without the agent',()=>{
+  const {run,calls}=runGateway(gatewayEnv,{credential:true,journal:true,agentState:'restarting 1',oldFiles:'/site/compose.gateway.yaml',oldHasAgent:false});
+  expect(run.status).toBe(1);
+  expect(calls).toContain('run --rm --entrypoint test sha256:old -f /opt/app/dist/agent/index.js');
+  expect(calls).not.toContain('--force-recreate console agent|sha256:old');
+  expect(run.stderr).toContain('previous image has no agent');
+});
+test('a gateway pair rolls back to a previous image that does contain the agent',()=>{
+  const {run,calls}=runGateway(gatewayEnv,{credential:true,journal:true,agentState:'restarting 1',oldFiles:'/site/compose.gateway.yaml'});
+  expect(run.status).toBe(1);
+  expect(calls).toContain('up --detach --no-deps --no-build --pull never --force-recreate console agent|sha256:old');
+});
+test('an agent that never enrolls is reported as such',()=>{
+  const {run}=runGateway(gatewayEnv+'AGENT_ENROLLMENT_TOKEN='+'T'.repeat(43)+'\n');
+  expect(run.status).toBe(1);expect(run.stderr).toContain('never stored a credential');
 });
