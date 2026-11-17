@@ -672,10 +672,11 @@ The old **M3ters** meter-list application has been removed from the desktop,
 along with its exclusive `/delete-meter` UI endpoint. The collector's database,
 MQTT service, and meter records are preserved. The removed M3ter Manager is no longer available.
 
-The Browser starts with a Google search interface. Queries use
-`https://www.google.com/search?q=` with URL encoding and open in a new tab because
-Google blocks embedded search pages. HTTP(S) addresses can still open inside the
-Browser; its external link supports sites that block embedding.
+The Browser uses an optional isolated Chromium engine inside the Console window,
+including Google searches, back/forward navigation, copy/paste and touch scrolling.
+No site is embedded in an iframe. Without the optional browser image it shows an
+engine-unavailable message while the rest of Console remains usable. See the
+[Browser deployment instructions](docs/centralized/deployment.md#optional-browser-engine).
 
 `compose.yaml` passes the existing `.env` into the single Console container,
 which hosts the collector. The update script leaves that file and persistent
@@ -713,3 +714,33 @@ The feature's [architecture inventory](docs/centralized/current-architecture.md)
 and [design decisions](docs/centralized/design.md) track the central/agent work.
 The feature is not ready for deployment until its documented safety gates and
 integration tests are complete.
+
+
+## Central Console and gateway agent (opt-in test branch)
+
+The default `standalone` role preserves the local collector and LAN desktop.
+`central` adds authenticated multi-gateway access; `gateway` keeps a local fallback
+Console while an outbound agent owns MQTT. The same default multi-architecture
+image contains both entry points. Browser and updater are optional Docker targets.
+
+The central selector identifies each gateway and displays uncertain, reconciled
+and pending operation counts. Stored decisions are keyed by ChirpStack event ID.
+Once ownership or enqueueing has begun, ambiguous outcomes are held for
+reconciliation; uncertainty never generates an OFF reply or automatic second
+attempt. The next report supersedes an unresolved old reply. Existing revenue
+checks remain fail-closed for actual new decisions.
+
+Central Terminal and ChirpStack use purpose-limited gateway tunnels. Browser local
+traffic goes to the selected gateway, never central's internal network. The
+separate, owner-enabled updater verifies provenance and replaces Console/agent by
+digest together, with rollback and persistent data preservation.
+
+- [Existing architecture and application inventory](docs/centralized/current-architecture.md)
+- [Design, consistency guarantees and limitations](docs/centralized/design.md)
+- [Test deployment, enrollment, updates and rollback](docs/centralized/deployment.md)
+- [Executed verification and real-gateway test plan](docs/centralized/test-plan.md)
+
+This remains a test branch until the documented release gates are satisfied. No
+real gateway or blockchain has been used to validate these changes. M3ter Manager
+is removed in every role; use ChirpStack's own device queue for technician
+commands and an external monitoring tool for telemetry history/charts.

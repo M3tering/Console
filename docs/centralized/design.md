@@ -56,7 +56,11 @@ This prevents conflicting signed values for the same nonce across two databases.
 Uncertainty itself never creates an OFF reply. The ordinary revenue/owed hook
 retains its existing fail-closed behavior for an actual new decision.
 
-Uncertain, reconciled and superseded counts are durable and included in gateway
+Enqueue outcomes have a persistent acknowledgment outbox: central records each
+event/outcome pair once before acknowledging it, and reconnects replay unacknowledged
+reports. These audits distinguish API acceptance from an uncertain attempt; they
+do not assert meter execution. Unknown acknowledgments cannot allocate journal
+rows. Uncertain, reconciled and superseded counts are durable and included in gateway
 health and the central selector/status panel. Logs contain event IDs and statuses,
 not signed payloads, keys or credentials. Completed IDs remain tombstones. The
 journal has a hard configured capacity; a full journal stops ingestion instead of
@@ -104,25 +108,57 @@ state and contiguous signed records. A decider cannot accept a new report until
 its replay backlog has been applied. An older committed handler remains a fence
 even if several intervening, unowned reports have already been superseded.
 
-## Browser approach under evaluation
+## Browser implementation and isolation
 
 A remote Chromium engine is required for ordinary sites: an iframe rewriting
 proxy cannot generally preserve CSP, service workers, cookies and modern scripts.
-Chromium should be optional so the default image remains usable on small gateways.
+Chromium is optional so the default image remains usable on small gateways.
 A missing engine must be visible in the app, not cause Console startup failure.
 
 Traffic must use a per-session controlled proxy and isolated browser profile.
 DNS must be classified and pinned at the connection boundary. In central mode,
 private destinations route only through the selected agent, never through the
-central network. Cloud metadata is always refused. Gateway allowlists remain
+central network. Gateway-local `.local`/`.lan` names are resolved and pinned by the gateway
+tunnel endpoint, which refuses public answers and applies its owner allowlist;
+central DNS is not used for those names. Cloud metadata is always refused. Gateway allowlists remain
 owner-controlled and separate by tunnel purpose.
 
 A blind CONNECT proxy cannot inspect the requesting origin inside TLS. Therefore
 public-to-private protection cannot be claimed from destination filtering alone.
-An implementation must pair trusted request provenance with proxy enforcement
-and prevent engine bypass, or terminate and inspect browser traffic in a
-controlled trust boundary. This is an implementation/security gate, not a reason
-to silently ship an unrestricted HTTP CONNECT proxy.
+The implementation terminates CONNECT with a per-session certificate trusted
+only by that Chromium process's SPKI allowlist. Upstream TLS is independently
+validated. CDP pauses each request; the proxy resolves and classifies its target,
+then issues a short-lived, single-use permit bound to URL, method and pinned IP.
+The browser cannot choose routing headers; the proxy strips its permit upstream.
+Public-page requests to private targets are refused, including redirects. An
+explicit address-bar navigation or user-clicked top-level navigation may open a
+local target. WebSocket handshakes use the browser-controlled Origin, previously
+classified by the proxy; unknown or ambiguously classified origins are refused.
+QUIC and unproxied WebRTC UDP are disabled. Service workers are bypassed.
+
+A rewriting iframe proxy was rejected for internet sites because framing, cookie
+and script restrictions would remain. A hybrid adds two inconsistent security
+and navigation models without removing Chromium's cost. The selected optional
+engine provides a single CDP screencast page; target-blank links stay in it.
+Profiles/cookies are temporary and deleted at close. Chromium receives a minimal
+environment, excluding the Console wallet, API tokens and agent credentials. Uploads and downloads are
+explicitly disabled. Copy uses the selected text and the viewer's clipboard;
+paste/IME text is sent as input, never audited. Pixel streaming has no remote DOM
+screen-reader semantics; this is an accessibility limitation requiring follow-up.
+
+The default image has no Chromium and displays an unavailable message without
+breaking startup. The optional `browser` target uses Alpine Chromium and a
+non-root runtime; production never adds `--no-sandbox`. Three global sessions,
+one per central user, 10-minute idle and 60-minute lifetime caps, bounded CDP
+queues/sockets/frame buffering, and Compose memory/CPU limits bound resource use.
+An AMD64 static-page fixture measured 422 MiB summed RSS across six Chromium
+processes and 0% of one CPU core over a three-second idle sample (100 Hz process
+clock, Node 24.16.0 host, test-only sandbox bypass). RSS double-counts shared
+pages; this is neither peak memory nor an ARM64 measurement. No i.MX8 hardware is
+available, so ARM64 size/RAM/CPU and production sandbox checks remain release
+gates. This cost is why Chromium is an optional image, not installed on all
+gateways. The image build's offline about:blank smoke test uses a build-only sandbox bypass;
+that is not evidence of production sandbox support on an i.MX8 host.
 
 ## Deployment and verification constraints
 
@@ -148,8 +184,9 @@ Central session authentication mounts before static assets and application
 routes. Agent enrollment is the narrowly scoped token-authenticated exception.
 Browser WebSockets require both the same origin and an unexpired human session;
 active sessions are rechecked periodically. Revocation closes the agent link
-immediately. Credential rotation persists the replacement locally before ack
-and reconnect, with a two-minute overlap for interrupted handshakes.
+immediately. Credential rotation persists the replacement locally before acknowledging it on the existing link,
+without interrupting tunnels. A two-minute overlap covers interrupted handshakes;
+reconnection with the new credential also confirms rotation.
 
 The gateway selector shows cumulative uncertain/reconciled/superseded counts and
 current pending count. Switching gateway closes open network application windows
@@ -174,6 +211,34 @@ The local Terminal keeps its existing direct loopback connection. ChirpStack
 uses the existing response rewriting and Bearer-only forwarding over the tunnel,
 including streaming gRPC-Web bytes; Console cookies and API_TOKEN are not passed.
 
-These integrations have only been tested with local fixture servers. The remote
-browser engine and signed updater remain separate unfinished work; these tested
-transports do not make the entire feature ready for deployment.
+These integrations are tested with local fixture servers, never live gateways.
+Architecture image builds and physical-gateway measurements are separate release
+gates recorded in test-plan.md.
+
+## Gateway inventory and signed updates
+
+Authenticated offers learn the DevEUI-to-gateway inventory. Manual assignments
+are preserved separately from the last observed gateway and can be cleared back
+to discovery. These are routing metadata, not authorization to transfer ownership
+of an already committed report. Billing snapshots preserve meter keys/token IDs;
+operation journals associate outcomes, side and distribution snapshots with the
+gateway and event ID without changing existing billing tables.
+
+Only the separate updater mounts Docker. The network-facing agent sends fixed
+job IDs and allowlisted image digests over a 0600 Unix socket with a second
+owner-file secret. The updater verifies GitHub/Sigstore provenance using `gh
+attestation verify`, constraining repository, workflow, issuer and locally
+allowed refs before pull/replacement. There is no signature-bypass option.
+Platform images and manifest digests are attested only on published builds;
+PR builds never attest or push. Existing main image tags remain unchanged.
+
+One durable job runs at a time. Queued work is cancellable; cancellation racing
+execution reports the actual stored state. Console and agent are replaced
+together using the same pinned digest, same Compose project and existing mounts.
+Readiness failure or no authenticated reconnect within 180 seconds restores the
+previous local image ID; interrupted replacement also rolls back on updater
+restart. Failed digests are blocked from automatic retry. `.env`, credentials,
+SQLite and volumes are never replaced or deleted. Rollout is operator-directed,
+one gateway at a time; automatic latest-main scheduling is not implemented.
+A registry/API read token, if needed by gh, exists only in the updater. The agent
+has no shell/update script vocabulary and no Docker socket mount.

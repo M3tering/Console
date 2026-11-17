@@ -21,12 +21,25 @@ No test contacts real MQTT/ChirpStack, a gateway, meter or blockchain.
 - Address classification, unusual IPv4 encodings, IPv4-mapped IPv6, metadata
   refusal, DNS pinning contract, mixed-address refusal and private routing policy.
 
-The latest full `npm test -- --runInBand --silent` run passed **217 tests in
-29 suites**. The full `PLAYWRIGHT_BROWSERS_PATH=/tmp/console-ci-browsers npm run
-test:ui` run passed **27 tests**, including the new gateway status/selection UI
-and existing Paint, Terminal, ChirpStack, themes, touch and responsive behavior.
-All three Compose files passed `docker compose config --quiet` using disposable
-placeholder configuration. No containers were started by this validation.
+The latest full `npm test -- --runInBand --silent` run passed **239 tests in
+32 suites**, with TypeScript checking and a clean Jest exit. The full
+`PLAYWRIGHT_BROWSERS_PATH=/tmp/console-ci-browsers npm run test:ui` run passed
+**28 tests**. After gateway-local DNS hardening, the three Browser Playwright
+cases passed again. No existing UI tests were disabled or weakened. A Browser
+credential-URL notification regression found in the first run was fixed in the
+application, preserving the original notification test.
+
+`npm ci --include=dev` completed successfully on the host (Node 24.16.0).
+An offline attempt first failed because Playwright tarballs were absent; an
+online retry fetched the locked versions. No lockfile or dependency versions
+changed. Native Node 20/Alpine verification is tracked separately below.
+
+Default, central and gateway Compose configuration, plus optional Browser and
+updater combinations, passed `docker compose config --quiet` with disposable
+placeholder configuration. `bash -n auto-compose.sh`, `git diff --check` and
+Dockerized actionlint passed. No production containers were started/replaced.
+The protected decoder/encoder/uplink-payload files, default compose.yaml and
+auto-compose.sh are byte-for-byte unchanged from the branch base.
 
 Added safety coverage includes response loss after enqueue, down before offer,
 duplicate delivery, overtaken uncertain reports, several newer reports while an
@@ -43,21 +56,65 @@ the existing `/tmp/console-ci-browsers` installation. The required
 required an interactive password unavailable in this session. This is not a
 successful reproduction of that CI installation step.
 
-## Coverage still required before publication
+## Additional integration checks
 
-The four explicitly requested uncertain-operation scenarios are covered. More
-coverage is still needed for full agent MQTT lifecycle, production-mode TLS
-proxies, complete gateway application routing, and real hardware behavior.
-Browser engine/proxy/PNA tests, signed updater verification/rollback and full
-architecture builds remain outstanding. Classifier tests alone do not prove
-proxy enforcement. The agent-failure policy intentionally has no automatic
-lease takeover; see the safety rationale in `design.md`.
+- Actual agent entry point with an in-process MQTT client double, local fallback
+  HTTP and fake central WebSocket: durable commit before MQTT acknowledgment,
+  duplicate delivery/restart, stable session ID, reconnect subscriptions, wrong
+  FPort filtering and malformed objects without disconnecting MQTT.
+- Durable result acknowledgment replay, idempotent central downlink audits,
+  device discovery/manual assignment, owner-gated update APIs, and credential
+  rotation on the same live connection without interrupting tunnels.
+- Proxy single-use request provenance, DNS pinning, central private routing only
+  through a fake agent, gateway-local service names, metadata refusal, public to
+  private blocking, inspected TLS CONNECT, and bidirectional WebSocket bytes.
+- Real Chromium against local non-frameable pages, address/history navigation,
+  target-blank handling inside the app, mobile bounds and unavailable-engine UI.
+- Updater controller with signed fixture data and fake Docker/registry adapters:
+  wrong repository/tag/unsigned/wrong-identity refusal, cancellation, paired
+  replacement, health/reconnect rollback, crash recovery and failed-digest block.
+  The actual CLI arguments constrain GitHub provenance identity. This is **not**
+  a live Sigstore verification or real container replacement test.
+- A static-page AMD64 browser sample measured 422 MiB aggregate RSS over six
+  processes and 0% of one core during a three-second idle interval. It used the
+  test-only sandbox bypass; it is not an ARM64 or peak-load measurement.
 
-Before any push run the exact dependency, unit, UI and Docker checks requested in
-the task. Do not publish or report a green workflow before doing so. The local
-host is AMD64; native ARM64 execution and physical gateway resource measurements
-are unavailable here. Docker has other running services: never stop them or
-prune unrelated images to make room for tests.
+## Release gates and environment limitations
+
+The first full UI attempt was interrupted when disk space reached 26 MiB and
+Chromium targets crashed. Stopping that run released temporary space; the full
+rerun then passed. No unrelated images, containers, volumes or data were pruned.
+
+The required `playwright install --with-deps chromium` step was attempted again
+and failed because sudo requires an interactive password unavailable here. The
+successful UI runs used existing cached Chromium. That install step is not
+reported as passing.
+
+GitHub's connected account is `MADjnr` and repository permissions report
+`push: false` for `fluxion9/Console`. A Git push dry-run also failed because no
+HTTPS username/credential is configured. No remote ref has been changed, no CI
+run is claimed, and no PR can be opened from an unpublished branch. Reconnect as
+an authorized account before the required push, CI watch and draft PR.
+
+Docker validation was left unfinished at the user's request. An AMD64 build
+completed Node 20/Alpine dependency installation and TypeScript compilation, but
+was cancelled during image export (exit 130). It is **not** a successful image
+build or runtime check. No further Docker targets or ARM64 builds were attempted;
+the optional Browser/updater images and live provenance verification remain
+unverified. The build's npm audit reported 117 existing-lockfile findings (23 low,
+36 moderate, 51 high, 7 critical). No dependency versions were changed and no
+blanket audit fix was applied; reachability and remediation need separate review
+before internet-facing production use.
+
+The host is AMD64. Its Docker builder advertises only AMD64 variants, without
+ARM64/QEMU, so ARM64 builds and physical gateway measurements require another
+runner. The optional browser's production sandbox still needs verification on
+that receiving host. Never replace that check with a production --no-sandbox flag.
+The agent-failure policy intentionally has no automatic lease takeover; see the
+safety rationale in design.md. Real broker persistence, actual meter reboot/nonce
+behavior, live attestation retrieval and paired Docker rollback remain manual
+gates; all gateway/MQTT/contract/SSH integration tests here use test doubles or
+local fixture services.
 
 ## Manual plan: one explicitly authorized test gateway
 
