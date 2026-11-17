@@ -3,11 +3,22 @@ import { Readable } from "stream";
 import Arweave from "arweave";
 import type { DecodedPayload, Hooks } from "../../../types";
 import { createLogger } from "../../../utils/logger";
+import { managedRole, publishManaged } from '../../../central/distribution';
+import { getTransactionByNonce } from '../../../store/sqlite';
 
 const logger = createLogger("[arweave]");
 
 export default class implements Hooks {
   async onTransactionDistribution(m3terId: number, decoded: DecodedPayload) {
+    if (managedRole()) {
+      const record=getTransactionByNonce(decoded.nonce,m3terId);
+      if(record)await publishManaged('arweave', [record], () => this.upload(m3terId,decoded));
+      return;
+    }
+    return this.upload(m3terId,decoded);
+  }
+
+  private async upload(m3terId: number, decoded: DecodedPayload) {
     // encode transaction into standard format (payload[0])
     // format: nonce | energy | signature | voltage | device_id | longitude | latitude
     const transactionHex = decoded.buf;

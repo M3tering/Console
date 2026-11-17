@@ -1,0 +1,96 @@
+export async function handleMessage(blob: Buffer): Promise<void> {
+  let devEui: string | undefined;
+  let lockedMeter: string | undefined;
+  let ownsDeviceLock = false;
+  let log = logger;
+  try {
+    void notifyHook('onMessageReceived', blob);
+    const message = JSON.parse(blob.toString());
+    if (typeof message?.deviceInfo?.devEui !== 'string' || !message.deviceInfo.devEui) {
+      throw new Error('Message has no valid device EUI');
+    }
+    devEui = message.deviceInfo.devEui;
+    log = createMeterLogger({ devEui });
+    if (deviceLocks.has(devEui!)) {
+      void notifyHook('onMessageDropped', 'locked', devEui!);
+      return;
+    }
+    deviceLocks.add(devEui!);
+    ownsDeviceLock = true;
+    const transaction = uplinkPayload(message).bytes;
+    const decoded = decodePayload(transaction);
+    const payloadHadPublicKey = !!decoded.extensions.deviceId;
+    const publicKey = decoded.extensions.deviceId || getMeterByDevEui(devEui!)?.publicKey.replace(/^0x/, '');
+    if (!publicKey || !verifyPayloadSignature(transaction, Buffer.from(publicKey, 'hex'))) {
+      throw new Error('Unknown meter or invalid transaction signature');
+    }
+    const key = `0x${publicKey}`;
+    // Two device EUIs can identify the same meter. Serialize that identity too.
+    if (meterLocks.has(key)) {
+      void notifyHook('onMessageDropped', 'meter-locked', devEui!);
+      return;
+    }
+    meterLocks.add(key);
+    lockedMeter = key;
+    if (payloadHadPublicKey) {
+      const existing = getMeterByPublicKey(key);
+      if (!existing) {
+        const tokenId = await meterIdFromPublicKeyContractCall(key);
+        const latestNonce = await getLatestTransactionNonce(tokenId);
+        const meter = { publicKey: key, devEui: devEui!, tokenId, latestNonce };
+        saveMeter(meter);
+        void notifyHook('onMeterCreated', meter);
+      } else {
+        if (existing.devEui !== devEui && !updateMeterDevEui(key, devEui!)) throw new Error('Could not update meter device EUI');
+        const latestNonce = await getLatestTransactionNonce(existing.tokenId);
+        if (!updateMeterNonce(key, latestNonce)) throw new Error('Could not synchronize meter nonce');
+      }
+    }
+    const meter = getMeterByPublicKey(key);
+    if (!meter) throw new Error('Meter not found');
+    const expectedNonce = meter.latestNonce + 1;
+    let newTransaction = false;
+    if (decoded.nonce === expectedNonce) {
+      const record: TransactionRecord = { nonce: decoded.nonce, identifier: meter.tokenId, receivedAt: Date.now(), raw: transaction.toString('hex') };
+      // Acknowledgement means both the transaction and its nonce are durable.
+      recordMeterTransaction(key, record);
+      newTransaction = true;
+      try { collectorAccepted(applicationId(), devEui!, decoded.nonce, transaction.readUInt32BE(4)); }
+      catch { log.warn('Manager collector observation unavailable; collection continues'); }
+    } else if (decoded.nonce !== 0) {
+      const previous = getTransactionByNonce(decoded.nonce, meter.tokenId);
+      if (decoded.nonce !== meter.latestNonce || !previous || decoded.energy < decodePayload(Buffer.from(previous.raw, 'hex')).energy) {
+        throw new Error(`Invalid nonce. Expected ${expectedNonce}, got ${decoded.nonce}`);
+      }
+      // A lost acknowledgment may leave the same signed accumulator increasing.
+      // Re-acknowledge the durable transaction; never store/bill it twice.
+      // Additional uncollected energy is not silently rewritten into that transaction.
+    }
+    let is_on = false;
+    try { is_on = await runHook('isOnStateCompute', meter.tokenId); }
+    catch (error) {
+      log.error('Could not determine meter power state:', error);
+      void notifyHook('onIsOnStateComputeError', meter.tokenId, error);
+    }
+    void notifyHook('onIsOnStateComputed', meter.tokenId, is_on);
+    const state = decoded.nonce === 0 ? { nonce: meter.latestNonce, is_on } : { is_on };
+    try {
+      await enqueue(devEui!, encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0));
+      void notifyHook('onStateEnqueued', state, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0);
+    } finally {
+      // Delivery services run after the downlink attempt and cannot prevent it.
+      // notifyHook isolates failures so later delivery extensions still run.
+      if (newTransaction) void notifyHook('onTransactionDistribution', meter.tokenId, decoded, getAllTransactionRecords());
+    }
+  } catch (error) {
+    log.error('Error handling MQTT message:', error);
+    void notifyHook('onMessageError', error);
+  } finally {
+    if (lockedMeter) meterLocks.delete(lockedMeter);
+    if (ownsDeviceLock && devEui) {
+      deviceLocks.delete(devEui);
+      void notifyHook('onDeviceUnlocked', devEui);
+    }
+    void notifyHook('onMessageProcessingComplete');
+  }
+}

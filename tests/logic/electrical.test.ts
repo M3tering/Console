@@ -1,5 +1,5 @@
-import { decodeElectrical, electricalObject, trackElectrical } from '../../src/m3ter/electrical';
-import { decodeTelemetry } from '../../src/m3ter/decoder';
+import { decodeElectrical, electricalObject, trackElectrical } from '../../src/lib/protocol/electrical';
+import { decodeTelemetry } from '../../src/lib/protocol/decoder';
 const frame = require('../fixtures/electrical.cjs');
 const sample = (options = {}, timestamp = 100000) => ({ telemetry: decodeElectrical(frame(options)), timestamp, receivedAt: timestamp + 100, rawPayload: frame(options).toString('base64'), metadata: {} });
 

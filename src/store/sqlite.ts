@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import type { Database as DatabaseType, Statement as DatabaseStatementType } from "better-sqlite3";
 import { MeterRecord, TransactionRecord } from "../types";
 import { createLogger } from "../utils/logger";
-import { initializeManagerStore } from '../m3ter/store';
+import type { BillingSnapshot } from '../central/processor';
 
 const logger = createLogger("[sqlite]");
 
@@ -30,11 +30,13 @@ export default function setupDatabase(databaseName = "m3tering.db") {
   if (db?.open) db.close();
   fs.mkdirSync("./.data", { recursive: true });
   db = new Database(`./.data/${databaseName}`, {});
+  if(process.env.CONSOLE_ROLE==='central'||process.env.CONSOLE_ROLE==='gateway'){
+    db.pragma('journal_mode = WAL');db.pragma('synchronous = FULL');db.pragma('busy_timeout = 5000');
+  }
 
   initializeTransactionsTable();
   initializeMetersTable();
   prepareQueries();
-  initializeManagerStore(db);
 }
 
 export function deleteDatabase(databaseName = "m3tering.db") {
@@ -276,6 +278,32 @@ export function getAllTransactionRecords(): TransactionRecord[] {
     logger.error("Failed to get all transactions:", err);
     return [];
   }
+}
+
+/** Managed reconciliation must distinguish an absent meter from a database
+ * failure; unlike legacy UI lookups, errors here are deliberately propagated. */
+export function readBillingSnapshot(devEui:string):BillingSnapshot {
+  const meter=getMeterByDevEuiQuery.get(devEui) as MeterRecord|undefined;
+  if(!meter)return {meter:null,transactions:[]};
+  const transaction=getTransactionByNonceQuery.get(meter.latestNonce,meter.tokenId) as TransactionRecord|undefined;
+  return {meter,transactions:transaction?[transaction]:[]};
+}
+
+/** Authenticated managed-role reconciliation only. Validation of signatures and
+ * token ownership happens in the caller before this all-or-nothing merge. */
+export function mergeBillingSnapshot(snapshot: BillingSnapshot): void {
+  if (!snapshot.meter) return;
+  const meter = snapshot.meter;
+  db.transaction(() => {
+    const existing = getMeterByPublicKeyQuery.get(meter.publicKey) as MeterRecord|undefined;
+    if (existing && existing.tokenId !== meter.tokenId) throw new Error('Conflicting meter registration.');
+    for (const record of snapshot.transactions) {
+      const previous = getTransactionByNonceQuery.get(record.nonce, record.identifier) as TransactionRecord|undefined;
+      if (previous && previous.raw !== record.raw) throw new Error('Conflicting transaction requires reconciliation; data was not overwritten.');
+      if (!previous) createTransactionQuery.run(record);
+    }
+    insertMeterQuery.run({ ...meter, latestNonce: Math.max(existing?.latestNonce ?? -1, meter.latestNonce) });
+  })();
 }
 
 export function pruneTransactionsBefore(nonce: number, meterNumber: number) {

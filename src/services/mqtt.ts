@@ -1,9 +1,9 @@
 import { connect, MqttClient } from 'mqtt';
 import { randomUUID } from 'crypto';
-import { connectionState, ingestEvent } from '../m3ter/monitor';
-import { collectorAccepted } from '../m3ter/store';
-import { applicationId } from '../m3ter/chirpstack';
+import { applicationId } from '../lib/chirpstack-config';
 import { enqueue } from './grpc';
+import type { DownlinkSink } from './downlink';
+import { managedBilling } from '../central/billing-context';
 import { encode } from '../lib/encode';
 import {
   getAllTransactionRecords, getMeterByDevEui, getMeterByPublicKey,
@@ -20,33 +20,20 @@ import { meterIdFromPublicKeyContractCall } from '../utils/contracts';
 const logger = createLogger('[mqtt]');
 const deviceLocks = new Set<string>();
 const meterLocks = new Set<string>();
-let monitoringClient: MqttClient | undefined;
+let collectorClient: MqttClient | undefined;
 
-// One address for the existing process-level service and both consumers.
-export function mqttConnection(): string | { host: string; port: number } {
-  if (!process.env.MQTT_URL) return { host: process.env.CHIRPSTACK_HOST || 'localhost', port: 1883 };
-  try {
-    const url = new URL(process.env.MQTT_URL);
-    if (!['mqtt:', 'mqtts:', 'ws:', 'wss:'].includes(url.protocol) || !url.hostname || url.hash) throw new Error();
-    return process.env.MQTT_URL;
-  } catch { throw new Error('MQTT_URL must be a valid mqtt, mqtts, ws or wss broker URL.'); }
-}
+// Existing process-level broker configuration, also reused by the opt-in agent.
+export { mqttConnection } from '../lib/mqtt-config';
+import { mqttConnection } from '../lib/mqtt-config';
 // Optional arguments are dependency injection for integration tests, not configuration.
 export async function handleUplinks(connection = mqttConnection(), collect = handleMessage): Promise<boolean> {
-  if (monitoringClient) return true;
+  if (collectorClient) return true;
   const application = applicationId();
   const topic = `application/${application}/device/+/event/+`;
-  const status = (state: string, message?: string) => {
-    try { connectionState(state, message); } catch { logger.error('Manager status update failed; MQTT collection continues'); }
-  };
-  status('connecting');
   const options = { clientId: `console-${randomUUID()}`, clean: true, resubscribe: false, connectTimeout: 9000, reconnectPeriod: 2000 };
-  const client = monitoringClient = typeof connection === 'string' ? connect(connection, options) : connect({ ...connection, ...options });
-  client.on('reconnect', () => { status('reconnecting'); void notifyHook('onMqttReconnect', client); });
-  client.on('offline', () => status('disconnected'));
-  client.on('close', () => status('disconnected'));
+  const client = collectorClient = typeof connection === 'string' ? connect(connection, options) : connect({ ...connection, ...options });
+  client.on('reconnect', () => { void notifyHook('onMqttReconnect', client); });
   client.on('message', (receivedTopic, blob) => {
-    // Fan out independently. Neither consumer owns the other's lifecycle or errors.
     try {
       const match = receivedTopic.match(/^application\/([^/]+)\/device\/([a-f0-9]{16})\/event\/up$/i);
       if (match && match[1].toLowerCase() === application) {
@@ -58,35 +45,33 @@ export async function handleUplinks(connection = mqttConnection(), collect = han
         }
       }
     } catch { logger.warn('Invalid collector MQTT event ignored'); }
-    try { ingestEvent(receivedTopic, blob); }
-    catch { logger.error('Manager ingestion failed; collector delivery was preserved'); }
   });
   client.on('connect', () => {
     client.subscribe(topic, { qos: 1 }, (error, granted) => {
       if (error || granted?.some(subscription => subscription.qos === 128)) {
         logger.error('MQTT subscription rejected. Check broker permissions.');
-        status('error', 'MQTT subscription rejected. Check broker permissions.');
         client.stream.destroy(); return; // reconnect, then subscribe exactly once again
       }
-      logger.info('MQTT connected and subscribed for both collector and Manager');
-      status('connected'); void notifyHook('onMqttSubscribed', client, topic);
+      logger.info('MQTT collector connected and subscribed');
+      void notifyHook('onMqttSubscribed', client, topic);
     });
     void notifyHook('onMqttConnect', client);
   });
   client.on('error', error => {
     logger.error(`MQTT connection error: ${(error as NodeJS.ErrnoException).code || 'broker error'}`);
-    status('error', 'MQTT connection failed. Check the existing ChirpStack broker connection.');
     void notifyHook('onMqttError', error, client);
     // MQTT.js owns reconnection. Do not end the client on a transient error.
   });
-  return true; // The dashboard stays available while MQTT is connecting/reconnecting.
+  return true; // HTTP remains available while MQTT reconnects.
 }
 
 export function stopUplinks(): void {
-  monitoringClient?.end(true); monitoringClient = undefined; connectionState('disconnected');
+  collectorClient?.end(true); collectorClient = undefined;
 }
 
-export async function handleMessage(blob: Buffer): Promise<void> {
+const chirpstackSink: DownlinkSink = decision => enqueue(decision.devEui, decision.bytes);
+
+export async function handleMessage(blob: Buffer, downlink: DownlinkSink = chirpstackSink): Promise<void> {
   let devEui: string | undefined;
   let lockedMeter: string | undefined;
   let ownsDeviceLock = false;
@@ -143,8 +128,6 @@ export async function handleMessage(blob: Buffer): Promise<void> {
       // Acknowledgement means both the transaction and its nonce are durable.
       recordMeterTransaction(key, record);
       newTransaction = true;
-      try { collectorAccepted(applicationId(), devEui!, decoded.nonce, transaction.readUInt32BE(4)); }
-      catch { log.warn('Manager collector observation unavailable; collection continues'); }
     } else if (decoded.nonce !== 0) {
       const previous = getTransactionByNonce(decoded.nonce, meter.tokenId);
       if (decoded.nonce !== meter.latestNonce || !previous || decoded.energy < decodePayload(Buffer.from(previous.raw, 'hex')).energy) {
@@ -163,12 +146,19 @@ export async function handleMessage(blob: Buffer): Promise<void> {
     void notifyHook('onIsOnStateComputed', meter.tokenId, is_on);
     const state = decoded.nonce === 0 ? { nonce: meter.latestNonce, is_on } : { is_on };
     try {
-      await enqueue(devEui!, encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0));
+      await downlink({ devEui: devEui!, fPort: 2, confirmed: false,
+        bytes: encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0) });
       void notifyHook('onStateEnqueued', state, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0);
     } finally {
       // Delivery services run after the downlink attempt and cannot prevent it.
       // notifyHook isolates failures so later delivery extensions still run.
-      if (newTransaction) void notifyHook('onTransactionDistribution', meter.tokenId, decoded, getAllTransactionRecords());
+      if (newTransaction) {
+        const context = managedBilling.getStore();
+        if (context) {
+          const record = getTransactionByNonce(decoded.nonce, meter.tokenId);
+          if (record) context.distribution.push(record);
+        } else void notifyHook('onTransactionDistribution', meter.tokenId, decoded, getAllTransactionRecords());
+      }
     }
   } catch (error) {
     log.error('Error handling MQTT message:', error);

@@ -1,0 +1,24 @@
+# Add to compose.gateway.yaml only after owner review. This service alone has Docker access.
+services:
+  updater:
+    image: ${UPDATER_IMAGE:-ghcr.io/fluxion9/console-updater:feat-centralized-console}
+    restart: unless-stopped
+    environment:
+      REMOTE_UPDATES_ENABLED: ${REMOTE_UPDATES_ENABLED:-false}
+      UPDATER_IMAGE_REPOSITORY: ${UPDATER_IMAGE_REPOSITORY:-ghcr.io/fluxion9/console}
+      UPDATER_SOURCE_REPOSITORY: ${UPDATER_SOURCE_REPOSITORY:-fluxion9/Console}
+      UPDATER_ALLOWED_REFS: ${UPDATER_ALLOWED_REFS:-refs/heads/main}
+      UPDATER_PROJECT: ${COMPOSE_PROJECT_NAME:?Set the existing gateway Compose project name}
+      UPDATER_DEPLOY_DIRECTORY: ${UPDATER_DEPLOY_DIRECTORY:?Set the absolute host checkout path}
+      UPDATER_RECONNECT_TIMEOUT_MS: ${UPDATER_RECONNECT_TIMEOUT_MS:-180000}
+      GH_TOKEN: ${UPDATER_GITHUB_TOKEN:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Same absolute path on host and container: Compose bind paths must resolve on the host.
+      - ${UPDATER_DEPLOY_DIRECTORY}:${UPDATER_DEPLOY_DIRECTORY}:ro
+      - ./.data/agent:/agent
+      - ./.data/updater:/state
+    read_only: true
+    tmpfs: [/tmp, /root/.config]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]

@@ -1,0 +1,62 @@
+# Opt-in test topology. Default compose.yaml is unchanged.
+services:
+  console:
+    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:feat-centralized-console}
+    network_mode: host
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      # Verification credentials belong only to the separate updater.
+      UPDATER_GITHUB_TOKEN: ""
+      CONSOLE_DEPLOY_IMAGE: ${CONSOLE_DEPLOY_IMAGE:-}
+      CONSOLE_ROLE: gateway
+      AGENT_CREDENTIAL_PATH: /opt/app/.data/agent/credential
+      FALLBACK_SECRET_PATH: /opt/app/.data/agent/fallback-secret
+    volumes:
+      - ./.data:/opt/app/.data
+      - console_extension_sources:/opt/app/src/extensions
+      - console_extension_builds:/opt/app/dist/extensions
+    healthcheck:
+      test: [CMD, node, scripts/healthcheck.cjs]
+      interval: 5s
+      timeout: 4s
+      start_period: 30s
+      retries: 24
+  agent:
+    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:feat-centralized-console}
+    # Agent does not initialize extensions, contracts or a blockchain wallet.
+    entrypoint: [node]
+    command: [dist/agent/index.js]
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      CONSOLE_DEPLOY_IMAGE: ${CONSOLE_DEPLOY_IMAGE:-}
+      CONSOLE_ROLE: gateway
+      CENTRAL_URL: ${CENTRAL_URL:?Set the central wss origin for this opt-in deployment}
+      CENTRAL_ALLOW_INSECURE_DEVELOPMENT: ${CENTRAL_ALLOW_INSECURE_DEVELOPMENT:-false}
+      AGENT_ENROLLMENT_TOKEN: ${AGENT_ENROLLMENT_TOKEN:-}
+      AGENT_CREDENTIAL_PATH: /opt/app/.data/agent/credential
+      FALLBACK_SECRET_PATH: /opt/app/.data/agent/fallback-secret
+      CENTRAL_DECISION_TIMEOUT_MS: ${CENTRAL_DECISION_TIMEOUT_MS:-8000}
+      CENTRAL_RECOVERY_HEALTHY_MS: ${CENTRAL_RECOVERY_HEALTHY_MS:-15000}
+      AGENT_QUEUE_LIMIT: ${AGENT_QUEUE_LIMIT:-10000}
+      GATEWAY_FALLBACK_PORT: ${GATEWAY_FALLBACK_PORT:-3001}
+      CHIRPSTACK_HOST: ${CHIRPSTACK_HOST:-localhost}
+      APPLICATION_ID: ${APPLICATION_ID:?Set the existing ChirpStack application ID}
+      API_TOKEN: ${API_TOKEN:?Set the existing ChirpStack API token}
+      MQTT_URL: ${MQTT_URL:-}
+      CHEFSTACK_URL: ${CHEFSTACK_URL:-}
+      CHIRPSTACK_WEB_URL: ${CHIRPSTACK_WEB_URL:-}
+      AGENT_SSH_PORT: ${AGENT_SSH_PORT:-22}
+      AGENT_BROWSER_ALLOW_LAN: ${AGENT_BROWSER_ALLOW_LAN:-false}
+      AGENT_BROWSER_PORTS: ${AGENT_BROWSER_PORTS:-80,443,3000,8080,8090}
+    volumes:
+      - ./.data/agent:/opt/app/.data/agent
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    # No Docker socket, wallet keys, contracts, or arbitrary command channel.
+volumes:
+  console_extension_sources:
+  console_extension_builds:

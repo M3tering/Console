@@ -42,6 +42,12 @@ function unavailable(res: Response, configuration = false): void {
 
 /** Mount before JSON/body middleware: gRPC-Web bodies and event streams stay intact. */
 export function proxyChirpstack(req: Request, res: Response): void {
+  proxy(req,res);
+}
+export function proxyChirpstackThrough(req:Request,res:Response,target:URL,agent:http.Agent):void {
+  proxy(req,res,{target,agent});
+}
+function proxy(req:Request,res:Response,transport?:{target:URL;agent:http.Agent}):void {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
@@ -52,7 +58,7 @@ export function proxyChirpstack(req: Request, res: Response): void {
     return;
   }
   let target: URL;
-  try { target = chirpstackTarget(); } catch { unavailable(res, true); return; }
+  try { target = transport?.target || chirpstackTarget(); } catch { unavailable(res, true); return; }
   const headers = cleanHeaders(req.headers);
   headers.host = target.host;
   headers['accept-encoding'] = 'identity';
@@ -62,8 +68,9 @@ export function proxyChirpstack(req: Request, res: Response): void {
   delete headers.referer;
   for (const name of Object.keys(headers)) if (name.startsWith('x-forwarded-') || name === 'forwarded') delete headers[name];
   if (!/^Bearer /i.test(headers.authorization || '')) delete headers.authorization;
-  const upstream = (target.protocol === 'https:' ? https : http).request(target, {
-    method: req.method, path: req.url, headers,
+  const wireTarget=new URL(target.href);if(transport)wireTarget.protocol='http:';
+  const upstream = (wireTarget.protocol === 'https:' ? https : http).request(wireTarget, {
+    method: req.method, path: req.url, headers, ...(transport?{agent:transport.agent}:{}),
   }, response => {
     const responseHeaders = cleanHeaders(response.headers);
     for (const name of ['set-cookie', 'www-authenticate', 'content-security-policy', 'content-security-policy-report-only', 'x-frame-options', 'cache-control', 'etag', 'last-modified']) delete responseHeaders[name];

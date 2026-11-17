@@ -16,10 +16,8 @@ app.get('/', (req, res) => {
     icons.push({ id, label: i ? `Extension ${i}` : 'Streamr', iconHtml: '<span aria-hidden="true">✦</span>' });
     windows.push({ id, title: i ? `Extension ${i}` : 'Streamr Publisher', contentHtml: '<div class="nes-container with-title"><p class="title">Configuration</p><p>Pending transactions: 2</p><label>Draft<input class="nes-input" aria-label="Extension draft" /></label><button class="nes-btn is-warning" onclick="invokeAction(\'streamr\', \'publish-now\', this)">Publish Now</button></div>' });
   }
-  res.render('index', { managerDemo: true, icons, windows });
+  res.render('index', { icons, windows, central:req.query.central==='1' });
 });
 app.post('/api/actions/:moduleId/:actionId', (req, res) => res.json({ success: true, message: 'Published 2 transactions (test fixture)' }));
 const server = require('node:http').createServer(app);
-require('./manager-preview.cjs')(app, server).then(() => {
-  server.listen(4173, '127.0.0.1', () => console.log('UI preview (simulated meters): http://127.0.0.1:4173'));
-}).catch(error => { console.error(error); process.exit(1); });
+server.listen(4173, '127.0.0.1', () => console.log('UI fixture ready on 4173'));

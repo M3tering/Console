@@ -26,8 +26,7 @@ build
 # Local secrets and runtime/test artifacts never belong in the build context.
 .env
 .env.*
-.data
-.data-dev
+.data*
 test-results
 playwright-report
 tests

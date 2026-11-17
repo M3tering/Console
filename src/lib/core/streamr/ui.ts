@@ -1,5 +1,6 @@
 import { getAllTransactionRecords } from "../../../store/sqlite";
 import { buildBatchPayload, retry } from "../../utils";
+import { managedRole, publishManaged } from '../../../central/distribution';
 import type { UIHooks, UIAppIcon, UIAppWindow, UIAction, TransactionRecord } from "../../../types";
 import { StreamrClient } from "@streamr/sdk";
 import { createLogger } from "../../../utils/logger";
@@ -76,6 +77,7 @@ export default class implements UIHooks {
         label: "Publish Now",
         buttonClass: "is-warning",
         handler: async () => {
+          if (process.env.CONSOLE_ROLE === 'gateway') return { message: 'Publication is owned by the central Console. Local reports are retained for reconciliation.' };
           const pendingTransactions = await this.getPendingTransactions();
 
           if (pendingTransactions.length === 0) {
@@ -94,7 +96,7 @@ export default class implements UIHooks {
             this.lastPublishStatus = "success";
 
             return {
-              message: `Published ${pendingTransactions.length} transactions to ${this.streamIds.length} stream(s)`,
+              message: managedRole() ? 'Central publication checked. Previously submitted or uncertain transactions are not resubmitted.' : `Published ${pendingTransactions.length} transactions to ${this.streamIds.length} stream(s)`,
               data: { count: pendingTransactions.length },
             };
           } catch (error: any) {
@@ -122,6 +124,11 @@ export default class implements UIHooks {
   }
 
   private async publishToStreamr(streamId: string, pendingTransactions: TransactionRecord[]) {
+    if (managedRole()) return publishManaged(`streamr:${streamId}`, pendingTransactions, records => this.publishBatch(streamId, records));
+    return this.publishBatch(streamId, pendingTransactions);
+  }
+
+  private async publishBatch(streamId: string, pendingTransactions: TransactionRecord[]) {
     if (!ETHEREUM_PRIVATE_KEY) {
       throw new Error("Missing ETHEREUM_PRIVATE_KEY");
     }

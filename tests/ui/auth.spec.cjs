@@ -2,11 +2,11 @@ const { test, expect } = require('@playwright/test');
 const base = 'http://127.0.0.1:4174';
 const credentials = { username: 'test-console', password: 'test-only-browser-password' };
 
-test('Console and its assets are public; only Manager data is protected', async ({ browser, request }) => {
-  for (const route of ['/', '/healthz', '/js/desktop.js', '/vendor/xterm/xterm.js', '/api/m3ter-manager/session']) {
+test('Local Console assets are public and removed Manager routes are absent', async ({ browser, request }) => {
+  for (const route of ['/', '/healthz', '/js/desktop.js', '/vendor/xterm/xterm.js']) {
     expect((await request.get(base + route)).status()).toBe(200);
   }
-  expect((await request.get(base + '/api/m3ter-manager/devices')).status()).toBe(401);
+  for (const route of ['/session', '/devices']) expect((await request.get(base + '/api/m3ter-manager' + route)).status()).toBe(404);
   const context = await browser.newContext({ httpCredentials: credentials });
   expect((await context.request.get(base + '/js/desktop.js')).status()).toBe(200);
   expect((await context.request.post(base + '/api/actions/streamr/publish-now', { headers: { origin: 'https://foreign.example' } })).status()).toBe(403);

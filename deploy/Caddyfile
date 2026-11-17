@@ -1,0 +1,7 @@
+# Caddy terminates TLS and forwards WebSocket upgrades. Console binds loopback.
+{$CENTRAL_DOMAIN} {
+    reverse_proxy 127.0.0.1:{$CONSOLE_PORT:3000} {
+        header_up X-Forwarded-Proto https
+        header_up Host {http.request.host}
+    }
+}
