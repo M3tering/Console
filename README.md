@@ -10,54 +10,20 @@ A modular, extensible service console for providers on the M3tering protocol. Fe
 
 ## Quick Setup
 
-1. **Clone/Update**
+One command installs and updates every setup: a standalone gateway, a central
+server, or a gateway managed by central. **Full instructions:
+[docs/deployment-guide.md](docs/deployment-guide.md).**
 
-   ```bash
-   git clone https://github.com/M3tering/Console.git
-   # or
-   cd Console/ && git pull
-   ```
+```bash
+git clone https://github.com/fluxion9/Console.git
+cd Console
+./auto-compose.sh      # first run creates .env from the template
+nano .env              # fill in API_TOKEN, APPLICATION_ID, ETHEREUM_PRIVATE_KEY
+./auto-compose.sh      # starts Console; open http://<this-machine>:3000
+```
 
-2. **Environment Variables**
-   Create `.env` file:
-
-   ```
-   # Server Configuration
-   PORT=3000
-   CONSOLE_HOST=127.0.0.1
-   CONSOLE_USERNAME=admin
-   CONSOLE_PASSWORD=<a-strong-unique-password>
-   
-   # Module Configuration
-   BACKEND_MODULES="core/arweave,core/is_on,core/prover,core/streamr"
-   UI_MODULES="streamr:core/streamr/ui"
-   
-   # ChirpStack Configuration
-   API_TOKEN=...
-   APPLICATION_ID=...
-   CHIRPSTACK_HOST=localhost
-   
-   # Contract & Network Configuration
-   CONTRACT_LABEL=M3ters
-   MAINNET_RPC=https://ethereum-sepolia-rpc.publicnode.com #alt https://eth-sepolia.g.alchemy.com/v2/<YOUR_API_KEY>
-   ETHEREUM_PRIVATE_KEY="..."
-   ROLLUP_CONTRACT_ADDRESS="0x9a9ED9b9A9BEC10d1B5E41b1873E78d19501D5Fa"
-   
-   # Streamr Configuration
-   STREAMR_STREAM_ID="0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"
-   STREAMR_CRONSCHEDULE="0 * * * *"  # Every hour
-   
-   # Optional: Prover Node (publishing is disabled when unset)
-   # PREFERRED_PROVER_NODE="https://prover.m3ter.ing"
-   # PROVER_CRONSCHEDULE="0 0 * * *" # Every 24 hours
-   ```
-
-3. **Docker Build and Run**
-
-   ```bash
-   sudo docker compose down
-   sudo docker compose up -d
-   ```
+Set `CONSOLE_ROLE=central` or `CONSOLE_ROLE=gateway` in `.env` for the other
+setups. Update any machine later with `git pull && ./auto-compose.sh`.
 
 ## Other Docker Commands
 
@@ -644,7 +610,8 @@ survive desktop theme changes and reloads. Native content, dialogs, and terminal
 colors follow the chosen palette. Embedded external websites retain their own
 appearance controls; the containing window follows the application setting.
 
-To update the existing Docker deployment from GitHub Actions images:
+To update the existing Docker deployment from GitHub Actions images (see
+[docs/deployment-guide.md](docs/deployment-guide.md) for central and managed gateways):
 
 ```sh
 ./auto-compose.sh

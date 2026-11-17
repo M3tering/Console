@@ -1,5 +1,8 @@
 # Opt-in test deployment
 
+For everyday installation and updates, follow [../deployment-guide.md](../deployment-guide.md).
+This page keeps the detailed security notes and advanced options.
+
 This branch is for isolated evaluation, not a production rollout. Read
 [test-plan.md](test-plan.md) for executed checks and release gates. No live gateway,
 meter, ChirpStack server or blockchain was contacted during implementation.

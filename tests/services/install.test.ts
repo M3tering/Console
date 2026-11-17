@@ -5,7 +5,7 @@ import { spawnSync } from 'child_process';
 let directory:string;
 beforeEach(()=>{
   directory=mkdtempSync(join(tmpdir(),'console install ')); mkdirSync(join(directory,'bin'));
-  copyFileSync(resolve('auto-compose.sh'),join(directory,'auto-compose.sh')); writeFileSync(join(directory,'.env'),'# fixture\n');
+  copyFileSync(resolve('auto-compose.sh'),join(directory,'auto-compose.sh')); writeFileSync(join(directory,'.env'),'# fixture\nAPI_TOKEN=token\nAPPLICATION_ID=0b8c1a6e-4f2d-4c8a-9d3e-7a6b5c4d3e2f\n');
   writeFileSync(join(directory,'bin','docker'),`#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$INSTALL_TEST_LOG"
 if [[ "$*" == *"pull console"* && "\${INSTALL_TEST_FAIL_PULL:-}" == 1 ]]; then exit 1; fi

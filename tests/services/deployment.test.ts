@@ -7,7 +7,7 @@ test.each([false,true])('deployment preserves data and rolls back on readiness f
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'console-deploy-'));
   try {
     for(const file of ['auto-compose.sh','compose.yaml'])fs.copyFileSync(file,path.join(dir,file));
-    const environment = 'M3TER_MANAGER_PASSWORD=preserve-me\nMQTT_URL=mqtts://existing-broker:8883\nCHEFSTACK_URL=https://network.example\nM3TER_TELEMETRY_LIMIT=250\n';
+    const environment = 'API_TOKEN=token\nAPPLICATION_ID=0b8c1a6e-4f2d-4c8a-9d3e-7a6b5c4d3e2f\nM3TER_MANAGER_PASSWORD=preserve-me\nMQTT_URL=mqtts://existing-broker:8883\nCHEFSTACK_URL=https://network.example\nM3TER_TELEMETRY_LIMIT=250\n';
     fs.writeFileSync(path.join(dir,'.env'),environment);
     fs.mkdirSync(path.join(dir,'.data')); fs.writeFileSync(path.join(dir,'.data','sentinel'),'keep');
     const log=path.join(dir,'calls');
@@ -63,6 +63,12 @@ test('central first start refuses a short administrator password before touching
   const {run,calls}=runCentral('CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\nCENTRAL_ADMIN_PASSWORD=short\n');
   expect(run.status).toBe(2);expect(run.stderr).toContain('at least 16 characters');expect(calls).toBe('');
 });
+test('central ignores template ChirpStack placeholders but not other placeholders', () => {
+  const base='CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\nCENTRAL_ADMIN_PASSWORD=a-very-long-password-1\nAPI_TOKEN=...\nAPPLICATION_ID=...\n';
+  expect(runCentral(base).run.status).toBe(0);
+  const missingKey=runCentral(base+'ETHEREUM_PRIVATE_KEY="..."\n');
+  expect(missingKey.run.status).toBe(2);expect(missingKey.run.stderr).toContain('placeholder values in .env: ETHEREUM_PRIVATE_KEY');
+});
 test('central restart does not require the bootstrap password', () => {
   expect(runCentral('CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\n',true).run.status).toBe(0);
 });
@@ -104,7 +110,7 @@ esac
       fallback:fs.readFileSync(path.join(dir,'.data','agent','fallback-secret'),'utf8'),modes:{fallback:stat('fallback-secret'),updater:stat('updater-secret'),agentDir:fs.statSync(path.join(dir,'.data','agent')).mode&0o777}};
   } finally {fs.rmSync(dir,{recursive:true,force:true});}
 }
-const gatewayEnv='CONSOLE_ROLE=gateway\nCENTRAL_URL=wss://console.example.test\nAPPLICATION_ID=app\nAPI_TOKEN=token\n';
+const gatewayEnv='CONSOLE_ROLE=gateway\nCENTRAL_URL=wss://console.example.test\nAPPLICATION_ID=0b8c1a6e-4f2d-4c8a-9d3e-7a6b5c4d3e2f\nAPI_TOKEN=token\n';
 test('gateway role enrolls: secrets are owner-only, standalone stops before Console and agent start together', () => {
   const environment=gatewayEnv+'AGENT_ENROLLMENT_TOKEN='+'T'.repeat(43)+'\n';
   const {run,calls,env,fallback,modes}=runGateway(environment,{enrollOnUp:true});
@@ -133,4 +139,31 @@ test('a failed first switch restores standalone only when the agent never handle
   expect(journal.run.status).toBe(1);
   expect(journal.calls).not.toContain('-f compose.yaml up');
   expect(journal.run.stderr).toContain('standalone was NOT restarted');
+});
+
+// First run and configuration checks never reach Docker.
+function runFresh(files:Record<string,string>) {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'console-fresh-'));
+  try {
+    fs.copyFileSync('auto-compose.sh',path.join(dir,'auto-compose.sh'));
+    for(const [name,content] of Object.entries(files))fs.writeFileSync(path.join(dir,name),content);
+    const log=path.join(dir,'calls');fs.writeFileSync(log,'');
+    fs.writeFileSync(path.join(dir,'docker'),'#!/bin/bash\nprintf "%s\\n" "$*" >> "$DEPLOY_LOG"\n',{mode:0o755});
+    const run=spawnSync('bash',['auto-compose.sh'],{cwd:dir,encoding:'utf8',env:{...process.env,PATH:dir+':'+process.env.PATH,DEPLOY_LOG:log}});
+    const env=path.join(dir,'.env');
+    return {run,calls:fs.readFileSync(log,'utf8'),env:fs.existsSync(env)?fs.readFileSync(env,'utf8'):null,mode:fs.existsSync(env)?fs.statSync(env).mode&0o777:null};
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
+}
+test('first run creates an owner-only .env from the template and explains what to fill in', () => {
+  const template=fs.readFileSync('.env.example','utf8');
+  const {run,calls,env,mode}=runFresh({'.env.example':template});
+  expect(run.status).toBe(0);expect(env).toBe(template);expect(mode).toBe(0o600);expect(calls).toBe('');
+  expect(run.stdout).toContain('API_TOKEN, APPLICATION_ID');expect(run.stdout).toContain('docs/deployment-guide.md');
+});
+test('template placeholders and a malformed application ID are refused before touching Docker', () => {
+  const placeholder=runFresh({'.env':fs.readFileSync('.env.example','utf8')});
+  expect(placeholder.run.status).toBe(2);expect(placeholder.calls).toBe('');
+  expect(placeholder.run.stderr).toContain('API_TOKEN, APPLICATION_ID, ETHEREUM_PRIVATE_KEY');
+  const badId=runFresh({'.env':'API_TOKEN=token\nAPPLICATION_ID=not-a-uuid\n'});
+  expect(badId.run.status).toBe(2);expect(badId.run.stderr).toContain('application UUID');expect(badId.calls).toBe('');
 });

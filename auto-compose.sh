@@ -19,7 +19,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 if [[ -n "$project" && ! "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then echo 'Invalid Compose project name.' >&2; exit 2; fi
-[[ -f .env ]] || { echo 'Missing .env: configure the existing services before deployment.' >&2; exit 1; }
+if [[ ! -f .env ]]; then
+  [[ -f .env.example ]] || { echo 'Missing .env: configure the existing services before deployment.' >&2; exit 1; }
+  # First run: start from the template, readable only by its owner because it holds keys.
+  (umask 077; cp .env.example .env)
+  echo 'Created .env from .env.example (permissions 600). Fill in at least:'
+  echo '  API_TOKEN, APPLICATION_ID   ChirpStack API token and application UUID'
+  echo '  ETHEREUM_PRIVATE_KEY        wallet key for this Console (use a test wallet first)'
+  echo 'For central or gateway mode also set CONSOLE_ROLE; see docs/deployment-guide.md.'
+  echo 'Then run ./auto-compose.sh again.'
+  exit 0
+fi
 # Read one .env setting without executing the file; strips surrounding quotes.
 env_value() {
   sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" .env | tail -1 \
@@ -33,8 +43,19 @@ as_root=(); [[ "$(id -u)" -eq 0 ]] || as_root=(sudo)
 secret_uid="${AGENT_SECRET_UID:-0}"
 [[ "$secret_uid" =~ ^[0-9]+$ ]] || { echo 'AGENT_SECRET_UID must be a numeric user ID.' >&2; exit 2; }
 has_credential() { "${as_root[@]}" test -s .data/agent/credential; }
+# Template values such as API_TOKEN=... crash the Console later with an unclear error; stop now instead.
+placeholders=$(sed -n -E "s/^[[:space:]]*([A-Za-z0-9_]+)[[:space:]]*=[[:space:]]*[\"']?(\.\.\.|REPLACE_WITH_[A-Za-z0-9_]*)[\"']?[[:space:]]*(#.*)?$/\1/p" .env | paste -sd, - | sed 's/,/, /g')
+# Central never talks to ChirpStack, so its template ChirpStack lines may stay as they are.
+if [[ "$role" == central ]]; then placeholders=$(tr -d ' ' <<<"$placeholders" | tr ',' '\n' | grep -vxE 'API_TOKEN|APPLICATION_ID' | paste -sd, - | sed 's/,/, /g' || true); fi
+[[ -z "$placeholders" ]] || { echo "Replace the placeholder values in .env: $placeholders" >&2; exit 2; }
+require_chirpstack() {
+  [[ -n "$(env_value API_TOKEN)" ]] || { echo 'Set API_TOKEN in .env to a ChirpStack API token.' >&2; exit 2; }
+  [[ "$(env_value APPLICATION_ID)" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] \
+    || { echo 'Set APPLICATION_ID in .env to your ChirpStack application UUID (Applications page in ChirpStack).' >&2; exit 2; }
+}
 case "$role" in
   standalone)
+    require_chirpstack
     compose_file=compose.yaml; default_image=ghcr.io/m3tering/console:main ;;
   central)
     compose_file=compose.central.yaml; default_image=ghcr.io/fluxion9/console:main
@@ -50,18 +71,16 @@ case "$role" in
     insecure=$(env_value CENTRAL_ALLOW_INSECURE_DEVELOPMENT)
     [[ "$central_url" =~ ^wss://[^/?#@[:space:]]+/?$ || ( "$insecure" == true && "$central_url" =~ ^ws://[^/?#@[:space:]]+/?$ ) ]] \
       || { echo 'Set CENTRAL_URL in .env to your central origin, for example wss://console.example.com (no path).' >&2; exit 2; }
-    for name in APPLICATION_ID API_TOKEN; do
-      [[ -n "$(env_value "$name")" ]] || { echo "Set $name in .env: the agent reads this gateway's ChirpStack uplinks with it." >&2; exit 2; }
-    done
+    require_chirpstack
     if ! has_credential && [[ -z "$(env_value AGENT_ENROLLMENT_TOKEN)" ]]; then
       echo 'This gateway is not enrolled yet. On central open Gateways, add this gateway, and paste its' >&2
       echo 'AGENT_ENROLLMENT_TOKEN=... line into .env. The token expires after ten minutes.' >&2; exit 2
     fi ;;
   *) echo 'CONSOLE_ROLE in .env must be standalone, central or gateway.' >&2; exit 2 ;;
 esac
-command -v docker >/dev/null || { echo 'Docker must already be installed.' >&2; exit 1; }
-docker compose version >/dev/null
-docker info >/dev/null
+command -v docker >/dev/null || { echo 'Docker is not installed. Install it with: curl -fsSL https://get.docker.com | sudo sh' >&2; exit 1; }
+docker compose version >/dev/null 2>&1 || { echo 'The Docker Compose plugin is missing; install docker-compose-plugin.' >&2; exit 1; }
+docker info >/dev/null 2>&1 || { echo 'Cannot reach Docker. Run with sudo, or: sudo usermod -aG docker "$USER" and log in again.' >&2; exit 1; }
 # Discover deployments belonging to this checkout, not unrelated Compose projects.
 if [[ -z "$project" ]]; then
   projects=()
