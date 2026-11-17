@@ -1,7 +1,7 @@
 # Optional image override for central/standalone. Prepare data ownership for UID 1000.
 services:
   console:
-    image: ${BROWSER_IMAGE:-ghcr.io/fluxion9/console-browser:feat-centralized-console}
+    image: ${BROWSER_IMAGE:-ghcr.io/fluxion9/console-browser:main}
     shm_size: 256mb
     mem_limit: 2g
     cpus: 2

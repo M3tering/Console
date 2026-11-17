@@ -66,7 +66,71 @@ test('central first start refuses a short administrator password before touching
 test('central restart does not require the bootstrap password', () => {
   expect(runCentral('CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\n',true).run.status).toBe(0);
 });
-test('gateway role is refused because it needs the agent alongside Console', () => {
-  const {run,calls}=runCentral('CONSOLE_ROLE=gateway\n');
-  expect(run.status).toBe(2);expect(run.stderr).toContain('compose.gateway.yaml');expect(calls).toBe('');
+test('an unknown role is refused before touching Docker', () => {
+  const {run,calls}=runCentral('CONSOLE_ROLE=manager\n');
+  expect(run.status).toBe(2);expect(run.stderr).toContain('standalone, central or gateway');expect(calls).toBe('');
+});
+
+// Gateway role: Console + agent, owner-only secrets, safe fallback. Fake docker/sudo only.
+function runGateway(environment:string,options:{credential?:boolean;journal?:boolean;agentState?:string;enrollOnUp?:boolean}={}) {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'console-gateway-'));
+  try {
+    for(const file of ['auto-compose.sh','compose.yaml','compose.gateway.yaml'])fs.copyFileSync(file,path.join(dir,file));
+    fs.writeFileSync(path.join(dir,'.env'),environment);
+    fs.mkdirSync(path.join(dir,'.data','agent'),{recursive:true,mode:0o700});
+    if(options.credential)fs.writeFileSync(path.join(dir,'.data','agent','credential'),'existing-credential-'.padEnd(80,'x'),{mode:0o600});
+    if(options.journal)fs.writeFileSync(path.join(dir,'.data','agent','operations.db'),'journal');
+    fs.writeFileSync(path.join(dir,'.data','agent','fallback-secret'),'keep-this-existing-secret'.padEnd(43,'k'),{mode:0o644});
+    const log=path.join(dir,'calls');fs.writeFileSync(log,'');
+    fs.writeFileSync(path.join(dir,'sudo'),'#!/bin/bash\nexec "$@"\n',{mode:0o755});
+    fs.writeFileSync(path.join(dir,'docker'),`#!/bin/bash
+printf '%s|%s\\n' "$*" "$CONSOLE_IMAGE" >> "$DEPLOY_LOG"
+case "$*" in
+  *'ps -aq console'*) echo old-container ;;
+  *'ps -q agent'*) echo agent-container ;;
+  *'ps -q console'*) echo new-container ;;
+  'inspect --format {{.Image}} old-container') echo sha256:old ;;
+  'inspect --format {{.Image}} new-container') echo sha256:new ;;
+  'inspect --format {{.Config.Image}} old-container') echo ghcr.io/m3tering/console:main ;;
+  *'{{.State.Status}}'*) echo "$AGENT_STATE" ;;
+  *'compose.gateway.yaml up --detach'*'--wait'*) [[ "$ENROLL_ON_UP" == true ]] && printf 'gateway-id:credential' > .data/agent/credential; true ;;
+esac
+`,{mode:0o755});
+    const run=spawnSync('bash',['auto-compose.sh','--project-name','site'],{cwd:dir,encoding:'utf8',env:{...process.env,PATH:dir+':'+process.env.PATH,DEPLOY_LOG:log,
+      AGENT_SECRET_UID:String(process.getuid!()),AGENT_READY_INTERVAL:'0',AGENT_STABLE_CHECKS:'2',AGENT_READY_CHECKS:'4',
+      AGENT_STATE:options.agentState||'running 0',ENROLL_ON_UP:String(!!options.enrollOnUp)}});
+    const stat=(name:string)=>{try{return fs.statSync(path.join(dir,'.data','agent',name)).mode&0o777;}catch{return null;}};
+    return {run,calls:fs.readFileSync(log,'utf8'),env:fs.readFileSync(path.join(dir,'.env'),'utf8'),
+      fallback:fs.readFileSync(path.join(dir,'.data','agent','fallback-secret'),'utf8'),modes:{fallback:stat('fallback-secret'),updater:stat('updater-secret'),agentDir:fs.statSync(path.join(dir,'.data','agent')).mode&0o777}};
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
+}
+const gatewayEnv='CONSOLE_ROLE=gateway\nCENTRAL_URL=wss://console.example.test\nAPPLICATION_ID=app\nAPI_TOKEN=token\n';
+test('gateway role enrolls: secrets are owner-only, standalone stops before Console and agent start together', () => {
+  const environment=gatewayEnv+'AGENT_ENROLLMENT_TOKEN='+'T'.repeat(43)+'\n';
+  const {run,calls,env,fallback,modes}=runGateway(environment,{enrollOnUp:true});
+  expect(run.stderr).toBe('');expect(run.status).toBe(0);
+  expect(calls).toContain('-f compose.gateway.yaml pull console agent|ghcr.io/fluxion9/console:main');
+  expect(calls.indexOf('stop console agent')).toBeGreaterThan(calls.indexOf('pull console agent'));
+  expect(calls.indexOf('up --detach --no-deps --no-build --pull never --wait --wait-timeout 240 console agent')).toBeGreaterThan(calls.indexOf('rm --force console agent'));
+  expect(calls).not.toContain('-f compose.yaml');
+  expect(modes).toEqual({fallback:0o600,updater:0o600,agentDir:0o700});
+  expect(fallback).toBe('keep-this-existing-secret'.padEnd(43,'k'));
+  expect(env).toBe(environment);
+  expect(run.stdout).toContain('remove the AGENT_ENROLLMENT_TOKEN line');
+});
+test('gateway role refuses to start without enrollment or with a bad central URL, before touching Docker', () => {
+  const missing=runGateway(gatewayEnv);
+  expect(missing.run.status).toBe(2);expect(missing.run.stderr).toContain('AGENT_ENROLLMENT_TOKEN');expect(missing.calls).toBe('');
+  const badUrl=runGateway(gatewayEnv.replace('wss://console.example.test','https://console.example.test/agent'),{credential:true});
+  expect(badUrl.run.status).toBe(2);expect(badUrl.run.stderr).toContain('CENTRAL_URL');expect(badUrl.calls).toBe('');
+});
+test('a failed first switch restores standalone only when the agent never handled reports', () => {
+  const safe=runGateway(gatewayEnv,{credential:true,agentState:'restarting 1'});
+  expect(safe.run.status).toBe(1);
+  expect(safe.calls).toContain('stop agent');
+  expect(safe.calls).toContain('-f compose.yaml up --detach --no-deps --no-build --pull never --force-recreate console|sha256:old');
+  const journal=runGateway(gatewayEnv,{credential:true,journal:true,agentState:'restarting 1'});
+  expect(journal.run.status).toBe(1);
+  expect(journal.calls).not.toContain('-f compose.yaml up');
+  expect(journal.run.stderr).toContain('standalone was NOT restarted');
 });

@@ -1,7 +1,7 @@
 # Opt-in test topology. Default compose.yaml is unchanged.
 services:
   console:
-    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:feat-centralized-console}
+    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:main}
     network_mode: host
     restart: unless-stopped
     env_file: [.env]
@@ -23,7 +23,7 @@ services:
       start_period: 30s
       retries: 24
   agent:
-    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:feat-centralized-console}
+    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:main}
     # Agent does not initialize extensions, contracts or a blockchain wallet.
     entrypoint: [node]
     command: [dist/agent/index.js]

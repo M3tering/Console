@@ -167,6 +167,7 @@
     clearInterval(tokenTimer);
     const expires=Date.now()+TOKEN_LIFETIME,expiry=$('gateway-enrollment-expiry');
     $('gateway-enrollment-name').textContent=name||'your gateway';
+    $('gateway-enrollment-url').textContent=`wss://${location.host}`;
     $('gateway-enrollment-token').textContent=token;$('gateway-enrollment').hidden=false;
     const tick=()=>{const left=Math.max(0,expires-Date.now());
       expiry.textContent=left?`Expires in ${Math.floor(left/60000)}:${String(Math.floor(left/1000)%60).padStart(2,'0')}`:'Expired: create a new token';
@@ -187,7 +188,8 @@
   $('gateway-enrollment-dismiss').onclick=clearToken;
   $('gateway-copy-token').onclick=async event=>{
     const button=event.currentTarget;
-    try{await navigator.clipboard.writeText(`AGENT_ENROLLMENT_TOKEN=${$('gateway-enrollment-token').textContent}`);
+    const lines=[...$('gateway-enrollment').querySelectorAll('.gw-token-line')].map(line=>line.textContent).join('\n');
+    try{await navigator.clipboard.writeText(lines);
       button.textContent='Copied';setTimeout(()=>{button.textContent='Copy';},1500);}
     catch{error('Select and copy the token manually.');}
   };

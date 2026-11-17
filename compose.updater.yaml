@@ -1,7 +1,7 @@
 # Add to compose.gateway.yaml only after owner review. This service alone has Docker access.
 services:
   updater:
-    image: ${UPDATER_IMAGE:-ghcr.io/fluxion9/console-updater:feat-centralized-console}
+    image: ${UPDATER_IMAGE:-ghcr.io/fluxion9/console-updater:main}
     restart: unless-stopped
     environment:
       REMOTE_UPDATES_ENABLED: ${REMOTE_UPDATES_ENABLED:-false}

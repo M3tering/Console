@@ -41,6 +41,7 @@
 .gw-token code,.gw-command{flex:1;min-width:0;display:block;padding:10px 12px;border-radius:var(--small-radius);
   background:#122127;color:#e7f0ea;overflow-wrap:anywhere;user-select:all}
 .gw-token-key{color:#9fc4ae}
+.gw-token-line{display:block}
 
 #gateway-error{margin-top:14px;color:var(--gw-revoked);font-weight:500}
 #gateway-error:empty{display:none}

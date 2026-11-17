@@ -13,6 +13,7 @@ while [[ $# -gt 0 ]]; do
     --help|-h)
       echo 'Usage: ./auto-compose.sh [--project-name NAME] [--image ghcr.io/OWNER/console:TAG]'
       echo 'Pulls the published image for this device, updates only Console, and preserves .env and all volumes.'
+      echo 'CONSOLE_ROLE in .env selects standalone (default), central, or gateway (Console + agent).'
       exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
@@ -26,6 +27,12 @@ env_value() {
 }
 role=$(env_value CONSOLE_ROLE | sed -n 's/^\([a-z]*\).*/\1/p')
 role="${role:-standalone}"
+services=(console)
+# Gateway secrets must belong to the user the containers run as (root in the published image).
+as_root=(); [[ "$(id -u)" -eq 0 ]] || as_root=(sudo)
+secret_uid="${AGENT_SECRET_UID:-0}"
+[[ "$secret_uid" =~ ^[0-9]+$ ]] || { echo 'AGENT_SECRET_UID must be a numeric user ID.' >&2; exit 2; }
+has_credential() { "${as_root[@]}" test -s .data/agent/credential; }
 case "$role" in
   standalone)
     compose_file=compose.yaml; default_image=ghcr.io/m3tering/console:main ;;
@@ -38,8 +45,19 @@ case "$role" in
       (( ${#password} >= 16 )) || { echo 'Set CENTRAL_ADMIN_PASSWORD in .env (at least 16 characters) for the first central start.' >&2; exit 2; }
     fi ;;
   gateway)
-    echo 'Gateway role needs the Console and agent together: see docs/centralized/deployment.md (compose.gateway.yaml).' >&2; exit 2 ;;
-  *) echo 'CONSOLE_ROLE in .env must be standalone or central for this script.' >&2; exit 2 ;;
+    compose_file=compose.gateway.yaml; default_image=ghcr.io/fluxion9/console:main; services=(console agent)
+    central_url=$(env_value CENTRAL_URL)
+    insecure=$(env_value CENTRAL_ALLOW_INSECURE_DEVELOPMENT)
+    [[ "$central_url" =~ ^wss://[^/?#@[:space:]]+/?$ || ( "$insecure" == true && "$central_url" =~ ^ws://[^/?#@[:space:]]+/?$ ) ]] \
+      || { echo 'Set CENTRAL_URL in .env to your central origin, for example wss://console.example.com (no path).' >&2; exit 2; }
+    for name in APPLICATION_ID API_TOKEN; do
+      [[ -n "$(env_value "$name")" ]] || { echo "Set $name in .env: the agent reads this gateway's ChirpStack uplinks with it." >&2; exit 2; }
+    done
+    if ! has_credential && [[ -z "$(env_value AGENT_ENROLLMENT_TOKEN)" ]]; then
+      echo 'This gateway is not enrolled yet. On central open Gateways, add this gateway, and paste its' >&2
+      echo 'AGENT_ENROLLMENT_TOKEN=... line into .env. The token expires after ten minutes.' >&2; exit 2
+    fi ;;
+  *) echo 'CONSOLE_ROLE in .env must be standalone, central or gateway.' >&2; exit 2 ;;
 esac
 command -v docker >/dev/null || { echo 'Docker must already be installed.' >&2; exit 1; }
 docker compose version >/dev/null
@@ -61,7 +79,7 @@ fi
 [[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo 'Invalid Compose project name.' >&2; exit 2; }
 compose=(docker compose --project-name "$project" -f "$compose_file")
 old_container=$("${compose[@]}" ps -aq console | head -1)
-old_id=''
+old_id='' old_role=''
 if [[ -n "$old_container" ]]; then
   old_id=$(docker inspect --format '{{.Image}}' "$old_container")
   old_ref=$(docker inspect --format '{{.Config.Image}}' "$old_container")
@@ -74,19 +92,61 @@ export CONSOLE_IMAGE="${image:-$default_image}"
 [[ "$CONSOLE_IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+(:[a-zA-Z0-9._-]+|@sha256:[a-f0-9]{64})$ ]] || { echo 'Specify a published GHCR image with an explicit tag or digest.' >&2; exit 2; }
 echo "Project: $project; role: $role; update image: $CONSOLE_IMAGE"
 "${compose[@]}" config --quiet
-# Keep the old service and image until the correct architecture is downloaded.
-"${compose[@]}" pull console
-"${compose[@]}" stop console
-"${compose[@]}" rm --force console
-if ! "${compose[@]}" up --detach --no-deps --no-build --pull never --wait --wait-timeout 240 console; then
-  echo 'Console failed readiness. Recent logs:' >&2
-  "${compose[@]}" logs --tail 80 console >&2 || true
-  if [[ -n "$old_id" ]]; then
+
+if [[ "$role" == gateway ]]; then
+  # Owner-only local secrets shared by Console and agent. Existing secrets are never replaced.
+  "${as_root[@]}" sh -c '
+    set -e; uid=$1; umask 077
+    mkdir -p .data/agent .data/updater
+    chmod 700 .data/agent .data/updater; chown "$uid" .data/agent .data/updater
+    for name in fallback-secret updater-secret; do
+      file=.data/agent/$name
+      [ -e "$file" ] || head -c 32 /dev/urandom | base64 | tr "+/" "-_" | tr -d "=\n" > "$file"
+      chmod 600 "$file"; chown "$uid" "$file"
+    done
+    if [ -e .data/agent/credential ]; then chmod 600 .data/agent/credential; chown "$uid" .data/agent/credential; fi
+  ' sh "$secret_uid"
+fi
+
+# The agent counts as ready once it has stayed up without restarting and holds a credential.
+agent_ready() {
+  local container status restarts check
+  container=$("${compose[@]}" ps -q agent | head -1); [[ -n "$container" ]] || return 1
+  for (( check=1; check<=${AGENT_READY_CHECKS:-45}; check++ )); do
+    read -r status restarts < <(docker inspect --format '{{.State.Status}} {{.RestartCount}}' "$container")
+    [[ "$status" == running && "$restarts" == 0 ]] || return 1
+    if (( check >= ${AGENT_STABLE_CHECKS:-5} )) && has_credential; then return 0; fi
+    sleep "${AGENT_READY_INTERVAL:-2}"
+  done
+  return 1
+}
+deploy_failed() {
+  echo "${services[*]} failed readiness. Recent logs:" >&2
+  "${compose[@]}" logs --tail 80 "${services[@]}" >&2 || true
+  if [[ -z "$old_id" ]]; then exit 1; fi
+  if [[ "$role" != gateway || "${old_role:-standalone}" == gateway ]]; then
     echo 'Restoring the previous image; persistent data has not been removed.' >&2
-    CONSOLE_IMAGE="$old_id" "${compose[@]}" up --detach --no-deps --no-build --pull never --force-recreate console || true
+    CONSOLE_IMAGE="$old_id" "${compose[@]}" up --detach --no-deps --no-build --pull never --force-recreate "${services[@]}" || true
+  elif ! "${as_root[@]}" test -e .data/agent/operations.db; then
+    # The agent never got past enrollment, so it handled no meter reports: standalone can safely resume.
+    echo 'Restoring the standalone Console; the agent never started handling reports.' >&2
+    "${compose[@]}" stop agent || true; "${compose[@]}" rm --force agent || true
+    CONSOLE_IMAGE="$old_id" docker compose --project-name "$project" -f compose.yaml up --detach --no-deps --no-build --pull never --force-recreate console || true
+  else
+    # Never run a standalone subscriber beside an agent journal: two deciders could answer one meter.
+    echo 'The agent has an operations journal, so standalone was NOT restarted automatically.' >&2
+    echo 'Fix the problem above and rerun this script. See docs/centralized/deployment.md to return to standalone.' >&2
   fi
   exit 1
-fi
+}
+
+# Keep the old service and image until the correct architecture is downloaded.
+"${compose[@]}" pull "${services[@]}"
+# Stopping Console first also stops a standalone MQTT subscriber before the agent takes over.
+"${compose[@]}" stop "${services[@]}"
+"${compose[@]}" rm --force "${services[@]}"
+"${compose[@]}" up --detach --no-deps --no-build --pull never --wait --wait-timeout 240 "${services[@]}" || deploy_failed
+if [[ "$role" == gateway ]]; then agent_ready || deploy_failed; fi
 new_id=$(docker inspect --format '{{.Image}}' "$("${compose[@]}" ps -q console)")
 if [[ -n "$old_id" && "$old_id" != "$new_id" && -z "$(docker ps -aq --filter "ancestor=$old_id")" ]]; then
   # No force: Docker keeps images that still have other tags/references.
@@ -98,6 +158,12 @@ if [[ "$role" == central ]]; then
 fi
 "${compose[@]}" ps
 echo 'Console updated. Database, extension volumes and .env were preserved.'
+if [[ "$role" == gateway ]]; then
+  echo 'Gateway agent is running. Its card on central should show Online within a minute.'
+  if [[ -n "$(env_value AGENT_ENROLLMENT_TOKEN)" ]]; then
+    echo 'Enrollment is complete: remove the AGENT_ENROLLMENT_TOKEN line from .env (it cannot be reused).'
+  fi
+fi
 if [[ "$role" == central ]]; then
   admin=$(env_value CENTRAL_ADMIN_USERNAME)
   echo "Central: https://$(env_value CENTRAL_DOMAIN) (sign in as ${admin:-admin})"
