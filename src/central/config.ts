@@ -2,6 +2,12 @@ import path from 'path';
 import { isIP } from 'net';
 
 export type ConsoleRole = 'standalone' | 'central' | 'gateway';
+/** Loopback port shared by the gateway Console's fallback and its agent. Not 3001:
+ * ChirpStack's Docker setup publishes 3001 for the Basic Station gateway bridge. */
+export const DEFAULT_GATEWAY_FALLBACK_PORT = 3011;
+export function gatewayFallbackPort(env: NodeJS.ProcessEnv = process.env): number {
+  return Number(env.GATEWAY_FALLBACK_PORT || DEFAULT_GATEWAY_FALLBACK_PORT);
+}
 export interface RoleConfig {
   role: ConsoleRole;
   development: boolean;

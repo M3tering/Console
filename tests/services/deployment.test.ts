@@ -79,7 +79,7 @@ test('an unknown role is refused before touching Docker', () => {
 });
 
 // Gateway role: Console + agent, owner-only secrets, safe fallback. Fake docker/sudo only.
-function runGateway(environment:string,options:{credential?:boolean;journal?:boolean;agentState?:string;enrollOnUp?:boolean;remote?:string;oldFiles?:string;oldHasAgent?:boolean}={}) {
+function runGateway(environment:string,options:{credential?:boolean;journal?:boolean;agentState?:string;enrollOnUp?:boolean;remote?:string;oldFiles?:string;oldHasAgent?:boolean;busyPort?:string}={}) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'console-gateway-'));
   try {
     for(const file of ['auto-compose.sh','compose.yaml','compose.gateway.yaml','compose.updater.yaml'])fs.copyFileSync(file,path.join(dir,file));
@@ -91,6 +91,10 @@ function runGateway(environment:string,options:{credential?:boolean;journal?:boo
     fs.writeFileSync(path.join(dir,'.data','agent','fallback-secret'),'keep-this-existing-secret'.padEnd(43,'k'),{mode:0o644});
     const log=path.join(dir,'calls');fs.writeFileSync(log,'');
     fs.writeFileSync(path.join(dir,'sudo'),'#!/bin/bash\nexec "$@"\n',{mode:0o755});
+    // Fake ss: reports a ChirpStack-style listener only when the test asks for a busy port.
+    fs.writeFileSync(path.join(dir,'ss'),`#!/bin/bash
+if [[ -n "$SS_BUSY" && "$*" == *"sport = :$SS_BUSY"* ]]; then echo 'LISTEN 0 4096 0.0.0.0:'"$SS_BUSY"' 0.0.0.0:* users:(("docker-proxy",pid=1600,fd=4))'; fi
+`,{mode:0o755});
     fs.writeFileSync(path.join(dir,'docker'),`#!/bin/bash
 printf '%s|%s|%s|%s|%s\\n' "$*" "$CONSOLE_IMAGE" "$UPDATER_IMAGE_REPOSITORY" "$UPDATER_SOURCE_REPOSITORY" "$UPDATER_IMAGE" >> "$DEPLOY_LOG"
 case "$*" in
@@ -110,7 +114,7 @@ esac
     const run=spawnSync('bash',['auto-compose.sh','--project-name','site'],{cwd:dir,encoding:'utf8',env:{...process.env,PATH:dir+':'+process.env.PATH,DEPLOY_LOG:log,
       AGENT_SECRET_UID:String(process.getuid!()),AGENT_READY_INTERVAL:'0',AGENT_STABLE_CHECKS:'2',AGENT_READY_CHECKS:'4',
       AGENT_STATE:options.agentState||'running 0',ENROLL_ON_UP:String(!!options.enrollOnUp),
-      OLD_FILES:options.oldFiles||'/site/compose.yaml',OLD_HAS_AGENT:String(options.oldHasAgent!==false)}});
+      OLD_FILES:options.oldFiles||'/site/compose.yaml',OLD_HAS_AGENT:String(options.oldHasAgent!==false),SS_BUSY:options.busyPort||''}});
     const stat=(name:string)=>{try{return fs.statSync(path.join(dir,'.data','agent',name)).mode&0o777;}catch{return null;}};
     return {run,calls:fs.readFileSync(log,'utf8'),env:fs.readFileSync(path.join(dir,'.env'),'utf8'),
       fallback:fs.readFileSync(path.join(dir,'.data','agent','fallback-secret'),'utf8'),modes:{fallback:stat('fallback-secret'),updater:stat('updater-secret'),agentDir:fs.statSync(path.join(dir,'.data','agent')).mode&0o777}};
@@ -254,4 +258,17 @@ test('a gateway pair rolls back to a previous image that does contain the agent'
 test('an agent that never enrolls is reported as such',()=>{
   const {run}=runGateway(gatewayEnv+'AGENT_ENROLLMENT_TOKEN='+'T'.repeat(43)+'\n');
   expect(run.status).toBe(1);expect(run.stderr).toContain('never stored a credential');
+});
+
+test('a fallback port taken by another program stops the switch and restores what was running',()=>{
+  const {run,calls}=runGateway(gatewayEnv,{credential:true,busyPort:'3011'});
+  expect(run.status).toBe(2);
+  expect(run.stderr).toContain('Port 3011 is already used by docker-proxy');
+  expect(calls).toContain('stop console agent');
+  expect(calls).not.toContain('rm --force');expect(calls).not.toContain('up --detach');
+  expect(calls).toContain('start console');
+});
+test('GATEWAY_FALLBACK_PORT in .env moves the check to that port',()=>{
+  expect(runGateway(gatewayEnv+'GATEWAY_FALLBACK_PORT=3101\n',{credential:true,busyPort:'3011'}).run.status).toBe(0);
+  expect(runGateway(gatewayEnv+'GATEWAY_FALLBACK_PORT=3101\n',{credential:true,busyPort:'3101'}).run.status).toBe(2);
 });

@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { connect, MqttClient } from 'mqtt';
 import WebSocket from 'ws';
-import { requireAgentConfig } from '../central/config';
+import { requireAgentConfig, gatewayFallbackPort } from '../central/config';
 import { readOwnerSecret, writeOwnerSecret } from '../central/secrets';
 import { OperationJournal, eventIdentity } from '../central/operations';
 import { UplinkCoordinator } from '../central/coordinator';
@@ -42,7 +42,7 @@ export async function runAgent():Promise<()=>Promise<void>> {
   let updatesEnabled=false;const updateStatuses=new Map<string,string>();
   const stateDirectory=path.dirname(config.credentialPath);
   const journal=new OperationJournal(path.join(stateDirectory,'operations.db'),config.queueLimit,event=>logger.info('Operation status',event));
-  const local=new LocalDecider(Number(process.env.GATEWAY_FALLBACK_PORT||3001),readOwnerSecret(config.fallbackSecretPath),config.decisionTimeoutMs);
+  const local=new LocalDecider(gatewayFallbackPort(),readOwnerSecret(config.fallbackSecretPath),config.decisionTimeoutMs);
   let socket:WebSocket|undefined,stopped=false,reconnect:ReturnType<typeof setTimeout>|undefined;
   let connectedAt=0,attempt=0,mqttState:Health['mqtt']='connecting',lastError:Health['lastError']='none';
   const central=new SocketDecider(()=>socket,config.decisionTimeoutMs);

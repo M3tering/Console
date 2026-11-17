@@ -188,6 +188,10 @@ agent_ready() {
   echo 'Agent check: the agent is running but never stored a credential; enrollment did not finish (check the token and that central is reachable).' >&2
   return 1
 }
+# The gateway Console's loopback fallback port must be free once our own Console has stopped.
+fallback_port=$(env_value GATEWAY_FALLBACK_PORT); fallback_port=${fallback_port:-3011}
+port_busy() { command -v ss >/dev/null && [[ -n "$(ss -ltnH "sport = :$1" 2>/dev/null)" ]]; }
+port_owner() { "${as_root[@]}" ss -ltnpH "sport = :$1" 2>/dev/null | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | head -1; }
 # Only images that contain the agent can run the gateway pair.
 image_has_agent() { docker run --rm --entrypoint test "$1" -f /opt/app/dist/agent/index.js >/dev/null 2>&1; }
 deploy_failed() {
@@ -220,6 +224,15 @@ deploy_failed() {
 if $manage_updater; then "${compose[@]}" stop updater; fi
 # Stopping Console first also stops a standalone MQTT subscriber before the agent takes over.
 "${compose[@]}" stop "${services[@]}"
+if [[ "$role" == gateway ]] && port_busy "$fallback_port"; then
+  owner=$(port_owner "$fallback_port")
+  echo "Port $fallback_port is already used by ${owner:-another program}. The gateway Console needs it for its local fallback." >&2
+  echo "Set GATEWAY_FALLBACK_PORT in .env to a free port (for example 3011 or 3101) and rerun. Nothing was changed." >&2
+  # Put back whatever was running; a service that did not exist yet simply stays absent.
+  for service in "${services[@]}"; do "${compose[@]}" start "$service" >/dev/null 2>&1 || true; done
+  if $manage_updater; then "${compose[@]}" start updater >/dev/null 2>&1 || true; fi
+  exit 2
+fi
 "${compose[@]}" rm --force "${services[@]}"
 "${compose[@]}" up --detach --no-deps --no-build --pull never --wait --wait-timeout 240 "${services[@]}" || deploy_failed
 if [[ "$role" == gateway ]]; then agent_ready || deploy_failed; fi

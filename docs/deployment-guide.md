@@ -314,6 +314,8 @@ docker compose -f compose.gateway.yaml logs -f agent
 | `unauthorized` / `denied` while pulling | The image package is private, or CI hasn't published it yet. Make the package public or `docker login ghcr.io`, and check the Actions run on `main` passed. |
 | Central: Console keeps restarting on first start | Usually a short `CENTRAL_ADMIN_PASSWORD`. Check `logs console`. |
 | Central: HTTPS doesn't work | DNS doesn't point at the server yet, or ports 80/443 are taken. |
+| Gateway: `Port 3011 is already used by …` | Another program uses the gateway Console's local fallback port. Add `GATEWAY_FALLBACK_PORT=3101` (any free port) to `.env` and rerun. Older setups used 3001, which clashes with ChirpStack's Basic Station bridge. |
+| Gateway: agent online once, then **Offline** for good | Usually the gateway Console couldn't start, often because of a port clash. Check `logs console` and rerun `./auto-compose.sh`; it now says what's wrong. |
 | Gateway: `This gateway is not enrolled yet` | Add the `AGENT_ENROLLMENT_TOKEN` line from central. |
 | Gateway: `Agent enrollment failed` in agent logs | The token expired or was already used. Get a new one from the gateway's card. |
 | Gateway card stays **Waiting to connect** | The gateway can't reach central on port 443, or `CENTRAL_URL` is wrong. Try `curl -I https://console.example.com` from the gateway. |

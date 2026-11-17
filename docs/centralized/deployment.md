@@ -94,7 +94,7 @@ requires revocation and a new token, not token reuse. Rotate credentials from
 central while connected; old/new overlap for two minutes until the agent persists
 and acknowledges the new credential. Revocation immediately disconnects it.
 
-Local fallback RPC listens on 127.0.0.1:3001 and requires the shared secret.
+Local fallback RPC listens on 127.0.0.1:3011 (`GATEWAY_FALLBACK_PORT`) and requires the shared secret.
 Never proxy that port. Gateway Console serves the existing LAN UI; the agent owns
 MQTT, uses a stable persistent QoS-1 session, and forwards only signed FPort 2
 reports. No autonomous MQTT takeover occurs when the agent dies: restart it and

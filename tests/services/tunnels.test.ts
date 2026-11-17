@@ -71,10 +71,13 @@ test('gateway allowlists are purpose-specific and metadata, Docker and fallback 
   const request={v:1 as const,type:'tunnel-open' as const,id:'t',purpose:'ssh' as const,host:'ssh',port:22};
   expect(await gatewayTarget(request,{})).toEqual({host:'127.0.0.1',port:22});
   await expect(gatewayTarget({...request,port:2375},{})).rejects.toThrow();
-  for(const [host,port] of [['169.254.169.254',80],['127.0.0.1',2375],['127.0.0.1',3001],['192.168.1.2',80]] as const){
+  for(const [host,port] of [['169.254.169.254',80],['127.0.0.1',2375],['127.0.0.1',3011],['192.168.1.2',80]] as const){
     await expect(gatewayTarget({...request,purpose:'browser',host,port},{})).rejects.toThrow();
   }
   expect(await gatewayTarget({...request,purpose:'browser',host:'192.168.1.2',port:80},{AGENT_BROWSER_ALLOW_LAN:'true'})).toEqual({host:'192.168.1.2',port:80});
+  // The fallback port stays blocked even if an owner allowlists it for Browser.
+  await expect(gatewayTarget({...request,purpose:'browser',host:'127.0.0.1',port:3011},{AGENT_BROWSER_PORTS:'3011'})).rejects.toThrow();
+  await expect(gatewayTarget({...request,purpose:'browser',host:'127.0.0.1',port:4011},{AGENT_BROWSER_PORTS:'4011',GATEWAY_FALLBACK_PORT:'4011'})).rejects.toThrow();
 });
 
 test('closing the agent link destroys active streams and refuses new sessions',async()=>{
