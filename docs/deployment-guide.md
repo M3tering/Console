@@ -95,7 +95,7 @@ only. Check with `sudo ss -ltnp | grep -E ':(80|443|3000)\b'`. It should print n
    CONSOLE_ROLE=central
    CENTRAL_DOMAIN=console.example.com
    CENTRAL_ADMIN_USERNAME=admin
-   CENTRAL_ADMIN_PASSWORD=<at least 16 characters>
+   CENTRAL_ADMIN_PASSWORD=<at least 7 characters>
    ETHEREUM_PRIVATE_KEY=<wallet key>
    ```
    Central doesn't use ChirpStack, so the template's `API_TOKEN` and
@@ -110,7 +110,7 @@ About the admin account:
 
 - It's created **only on the first start**. Changing `CENTRAL_ADMIN_PASSWORD`
   later does nothing.
-- A password shorter than 16 characters stops the first start with a clear error.
+- A password shorter than 7 characters stops the first start with a clear error.
 
 Central holds the wallet key that signs billing decisions. Treat the server as
 sensitive, and test with a test wallet first.
@@ -281,7 +281,7 @@ Settings are needed (✓), optional (opt) or not used (–) per setup.
 | `PORT` | opt | opt | opt | Default `3000` |
 | `CENTRAL_DOMAIN` | – | ✓ | – | DNS name for HTTPS |
 | `CENTRAL_ADMIN_USERNAME` | – | opt | – | Default `admin` |
-| `CENTRAL_ADMIN_PASSWORD` | – | ✓ first start | – | At least 16 characters |
+| `CENTRAL_ADMIN_PASSWORD` | – | ✓ first start | – | At least 7 characters |
 | `CENTRAL_URL` | – | – | ✓ | `wss://` + central domain, no path |
 | `AGENT_ENROLLMENT_TOKEN` | – | – | first start | From central; remove after enrolling |
 | `REMOTE_UPDATES_ENABLED` | – | – | opt | `true` makes the script run the signed updater |

@@ -61,7 +61,8 @@ test('central role deploys console and TLS proxy from the central compose file',
 });
 test('central first start refuses a short administrator password before touching Docker', () => {
   const {run,calls}=runCentral('CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\nCENTRAL_ADMIN_PASSWORD=short\n');
-  expect(run.status).toBe(2);expect(run.stderr).toContain('at least 16 characters');expect(calls).toBe('');
+  expect(run.status).toBe(2);expect(run.stderr).toContain('at least 7 characters');expect(calls).toBe('');
+  expect(runCentral('CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\nCENTRAL_ADMIN_PASSWORD=7chars!\n').run.status).toBe(0);
 });
 test('central ignores template ChirpStack placeholders but not other placeholders', () => {
   const base='CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\nCENTRAL_ADMIN_PASSWORD=a-very-long-password-1\nAPI_TOKEN=...\nAPPLICATION_ID=...\n';

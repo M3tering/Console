@@ -145,3 +145,8 @@ test('existing central databases gain the deleted column without losing gateways
     new SqliteIdentityStore(file).close(); // Re-opening is idempotent.
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('central passwords need at least 7 characters', async () => {
+  await expect(hashPassword('6chars')).rejects.toThrow('at least 7 characters');
+  expect(await verifyPassword('7chars!', await hashPassword('7chars!'))).toBe(true);
+});

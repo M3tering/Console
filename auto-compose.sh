@@ -87,7 +87,7 @@ case "$role" in
     # The administrator is created only on first start; later starts ignore the password.
     if [[ ! -s .data/central.db ]]; then
       password=$(env_value CENTRAL_ADMIN_PASSWORD)
-      (( ${#password} >= 16 )) || { echo 'Set CENTRAL_ADMIN_PASSWORD in .env (at least 16 characters) for the first central start.' >&2; exit 2; }
+      (( ${#password} >= 7 )) || { echo 'Set CENTRAL_ADMIN_PASSWORD in .env (at least 7 characters) for the first central start.' >&2; exit 2; }
     fi ;;
   gateway)
     compose_file=compose.gateway.yaml; default_image=${repo_image:-ghcr.io/fluxion9/console}:main; services=(console agent)

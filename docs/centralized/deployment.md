@@ -33,7 +33,7 @@ is not authorization to run either command on production.
 Start from `.env.example` only on a new checkout; never overwrite an existing
 `.env`. Configure the existing contract/module settings for an isolated test
 network, plus `CENTRAL_DOMAIN`, `CENTRAL_ADMIN_USERNAME` and a unique
-`CENTRAL_ADMIN_PASSWORD` of at least 16 characters. Set file permissions to 0600.
+`CENTRAL_ADMIN_PASSWORD` of at least 7 characters. Set file permissions to 0600.
 The bootstrap user is created once; changing its environment password does not
 silently reset an existing account. Central does not connect directly to MQTT,
 SSH or ChirpStack. Existing module hooks and contract configuration are still

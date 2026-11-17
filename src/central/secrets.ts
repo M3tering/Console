@@ -11,7 +11,7 @@ export function equalSecretHash(secret: string, expected: string): boolean {
 const derive = (password: string, salt: string): Promise<Buffer> => new Promise((resolve, reject) =>
   scrypt(password, salt, 64, { N: 16384, r: 8, p: 1 }, (error, value) => error ? reject(error) : resolve(value)));
 export async function hashPassword(password: string): Promise<string> {
-  if (password.length < 16 || Buffer.byteLength(password) > 1024) throw new Error('Central passwords must contain 16–1024 bytes.');
+  if (password.length < 7 || Buffer.byteLength(password) > 1024) throw new Error('Central passwords must have at least 7 characters (at most 1024 bytes).');
   const salt = randomBytes(16).toString('hex');
   return `scrypt$${salt}$${(await derive(password, salt)).toString('hex')}`;
 }
