@@ -223,10 +223,23 @@ To run a specific build, pass its tag or digest:
 ./auto-compose.sh --image ghcr.io/fluxion9/console@sha256:<digest>
 ```
 
-| Role | Default image on first install |
-|---|---|
-| Standalone | `ghcr.io/m3tering/console:main` |
-| Central and managed gateways | `ghcr.io/fluxion9/console:main` |
+**Which image is used.** The script follows the GitHub repository this checkout
+was cloned from (its `origin` remote). CI publishes each repository's images
+under its own name: a checkout of `fluxion9/Console` uses
+`ghcr.io/fluxion9/console:main`, and a checkout of `M3tering/Console` uses
+`ghcr.io/m3tering/console:main`.
+
+The image is chosen in this order:
+
+1. `--image` on the command line
+2. `CONSOLE_IMAGE` in `.env`
+3. The image already running, if it comes from the same repository and runs the
+   same role. This keeps a branch tag or digest you chose earlier.
+4. `ghcr.io/<owner>/<repo>:main` from the `origin` remote
+
+To switch a machine to another repository's builds, change its remote and
+update:
+`git remote set-url origin https://github.com/<owner>/Console.git && git pull && ./auto-compose.sh`.
 
 ## Going back to standalone
 
@@ -267,7 +280,7 @@ Settings are needed (✓), optional (opt) or not used (–) per setup.
 | `CENTRAL_ADMIN_PASSWORD` | – | ✓ first start | – | At least 16 characters |
 | `CENTRAL_URL` | – | – | ✓ | `wss://` + central domain, no path |
 | `AGENT_ENROLLMENT_TOKEN` | – | – | first start | From central; remove after enrolling |
-| `CONSOLE_IMAGE` | opt | opt | opt | Overrides the image the script uses |
+| `CONSOLE_IMAGE` | opt | opt | opt | Pins an image; otherwise it follows the checkout's GitHub repository |
 
 Advanced gateway settings (Browser ports, SSH port, queue size, remote updates)
 are listed in [`.env.example`](../.env.example) and

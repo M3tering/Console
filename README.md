@@ -622,7 +622,8 @@ To update the existing Docker deployment from GitHub Actions images (see
 
 Docker and its Compose plugin must already be installed. The script identifies
 this checkout's Compose project and running Console image, preserves its GHCR tag
-by default (otherwise `ghcr.io/m3tering/console:main`), and lets Docker select the
+when it comes from this checkout's GitHub repository (otherwise it uses
+`ghcr.io/<owner>/<repo>:main` from the `origin` remote), and lets Docker select the
 native architecture from the published manifest. It pulls before stopping Console,
 then stops/removes only that service, starts the updated image and waits for
 `/healthz`. Failed readiness prints logs and restores the previous image when

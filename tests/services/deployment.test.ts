@@ -167,3 +167,38 @@ test('template placeholders and a malformed application ID are refused before to
   const badId=runFresh({'.env':'API_TOKEN=token\nAPPLICATION_ID=not-a-uuid\n'});
   expect(badId.run.status).toBe(2);expect(badId.run.stderr).toContain('application UUID');expect(badId.calls).toBe('');
 });
+
+// The default image follows the GitHub repository this checkout came from.
+function runFromRepo(remote:string|null,oldRef:string,extraEnv='') {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'console-repo-'));
+  try {
+    for(const file of ['auto-compose.sh','compose.yaml'])fs.copyFileSync(file,path.join(dir,file));
+    fs.writeFileSync(path.join(dir,'.env'),'API_TOKEN=token\nAPPLICATION_ID=0b8c1a6e-4f2d-4c8a-9d3e-7a6b5c4d3e2f\n'+extraEnv);
+    if(remote){spawnSync('git',['init','-q'],{cwd:dir});spawnSync('git',['remote','add','origin',remote],{cwd:dir});}
+    const log=path.join(dir,'calls');fs.writeFileSync(log,'');
+    fs.mkdirSync(path.join(dir,'bin'));
+    fs.writeFileSync(path.join(dir,'bin','docker'),`#!/bin/bash
+printf '%s|%s\\n' "$*" "$CONSOLE_IMAGE" >> "$DEPLOY_LOG"
+case "$*" in
+  *'ps -aq console'*) echo old-container ;;
+  *'ps -q console'*) echo new-container ;;
+  'inspect --format {{.Image}} old-container') echo sha256:old ;;
+  'inspect --format {{.Image}} new-container') echo sha256:new ;;
+  'inspect --format {{.Config.Image}} old-container') echo "$OLD_REF" ;;
+esac
+`,{mode:0o755});
+    const run=spawnSync('bash',['auto-compose.sh','--project-name','site'],{cwd:dir,encoding:'utf8',env:{...process.env,CONSOLE_IMAGE:'',PATH:path.join(dir,'bin')+':'+process.env.PATH,DEPLOY_LOG:log,OLD_REF:oldRef}});
+    const pulled=/pull console\|(\S+)/.exec(fs.readFileSync(log,'utf8'))?.[1];
+    return {run,pulled};
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
+}
+test.each([
+  ['an SSH remote is lower-cased into the GHCR name','git@github.com:Fluxion9/Console.git','ghcr.io/fluxion9/console:main','','ghcr.io/fluxion9/console:main'],
+  ['a switched remote moves off the old repository image','https://github.com/fluxion9/Console','ghcr.io/m3tering/console:main','','ghcr.io/fluxion9/console:main'],
+  ['a branch tag from the same repository is kept','https://github.com/M3tering/Console.git','ghcr.io/m3tering/console:feat-x','','ghcr.io/m3tering/console:feat-x'],
+  ['CONSOLE_IMAGE in .env wins over the repository default','git@github.com:fluxion9/Console.git','ghcr.io/fluxion9/console:main','CONSOLE_IMAGE=ghcr.io/fluxion9/console:v2\n','ghcr.io/fluxion9/console:v2'],
+  ['without git the previous default is kept',null,'ghcr.io/m3tering/console:main','','ghcr.io/m3tering/console:main'],
+])('%s',(_name,remote,oldRef,extraEnv,expected)=>{
+  const {run,pulled}=runFromRepo(remote,oldRef,extraEnv);
+  expect(run.stderr).toBe('');expect(run.status).toBe(0);expect(pulled).toBe(expected);
+});

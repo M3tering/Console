@@ -35,6 +35,21 @@ env_value() {
   sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" .env | tail -1 \
     | sed -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
 }
+# An image set in .env applies unless --image or the shell already chose one.
+image="${image:-$(env_value CONSOLE_IMAGE)}"
+# CI publishes images as ghcr.io/<owner>/<repo>, named after the GitHub repository,
+# so follow the repository this checkout was cloned from.
+repo_image=''
+if remote=$(git remote get-url origin 2>/dev/null); then
+  case "$remote" in
+    git@github.com:*) slug=${remote#git@github.com:} ;;
+    ssh://git@github.com/*) slug=${remote#ssh://git@github.com/} ;;
+    https://github.com/*|https://*@github.com/*) slug=${remote#*github.com/} ;;
+    *) slug='' ;;
+  esac
+  slug=${slug%/}; slug=${slug%.git}; slug=$(tr '[:upper:]' '[:lower:]' <<<"$slug")
+  if [[ "$slug" =~ ^[a-z0-9._-]+/[a-z0-9._-]+$ ]]; then repo_image="ghcr.io/$slug"; fi
+fi
 role=$(env_value CONSOLE_ROLE | sed -n 's/^\([a-z]*\).*/\1/p')
 role="${role:-standalone}"
 services=(console)
@@ -56,9 +71,9 @@ require_chirpstack() {
 case "$role" in
   standalone)
     require_chirpstack
-    compose_file=compose.yaml; default_image=ghcr.io/m3tering/console:main ;;
+    compose_file=compose.yaml; default_image=${repo_image:-ghcr.io/m3tering/console}:main ;;
   central)
-    compose_file=compose.central.yaml; default_image=ghcr.io/fluxion9/console:main
+    compose_file=compose.central.yaml; default_image=${repo_image:-ghcr.io/fluxion9/console}:main
     [[ -n "$(env_value CENTRAL_DOMAIN)" ]] || { echo 'Set CENTRAL_DOMAIN in .env to the DNS name pointing at this server.' >&2; exit 2; }
     # The administrator is created only on first start; later starts ignore the password.
     if [[ ! -s .data/central.db ]]; then
@@ -66,7 +81,7 @@ case "$role" in
       (( ${#password} >= 16 )) || { echo 'Set CENTRAL_ADMIN_PASSWORD in .env (at least 16 characters) for the first central start.' >&2; exit 2; }
     fi ;;
   gateway)
-    compose_file=compose.gateway.yaml; default_image=ghcr.io/fluxion9/console:main; services=(console agent)
+    compose_file=compose.gateway.yaml; default_image=${repo_image:-ghcr.io/fluxion9/console}:main; services=(console agent)
     central_url=$(env_value CENTRAL_URL)
     insecure=$(env_value CENTRAL_ALLOW_INSECURE_DEVELOPMENT)
     [[ "$central_url" =~ ^wss://[^/?#@[:space:]]+/?$ || ( "$insecure" == true && "$central_url" =~ ^ws://[^/?#@[:space:]]+/?$ ) ]] \
@@ -104,12 +119,17 @@ if [[ -n "$old_container" ]]; then
   old_ref=$(docker inspect --format '{{.Config.Image}}' "$old_container")
   old_role=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$old_container" | sed -n 's/^CONSOLE_ROLE=//p' | tail -1)
   echo "Current Console: $old_ref ($old_id)"
-  # Reuse the running image only for the same role: a standalone image may lack central support.
-  if [[ -z "$image" && "$old_ref" == ghcr.io/* && "${old_role:-standalone}" == "$role" ]]; then image="$old_ref"; fi
+  # Keep the running tag or digest only for the same role (a standalone image may lack central
+  # support) and the same repository as this checkout (the remote may have been switched).
+  old_repo=${old_ref%@*}; old_repo=${old_repo%:*}
+  if [[ -z "$image" && "$old_ref" == ghcr.io/* && "${old_role:-standalone}" == "$role" && ( -z "$repo_image" || "$old_repo" == "$repo_image" ) ]]; then
+    image="$old_ref"
+  fi
 fi
 export CONSOLE_IMAGE="${image:-$default_image}"
 [[ "$CONSOLE_IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+(:[a-zA-Z0-9._-]+|@sha256:[a-f0-9]{64})$ ]] || { echo 'Specify a published GHCR image with an explicit tag or digest.' >&2; exit 2; }
 echo "Project: $project; role: $role; update image: $CONSOLE_IMAGE"
+[[ -z "$repo_image" ]] || echo "Image repository from git origin: $repo_image"
 "${compose[@]}" config --quiet
 
 if [[ "$role" == gateway ]]; then
