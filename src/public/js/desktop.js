@@ -8,7 +8,6 @@
   const all = (selector, parent = document) => [...parent.querySelectorAll(selector)];
   const mobile = window.matchMedia('(max-width: 700px)');
   const paths = {
-    manager: '<rect x="3" y="2" width="18" height="20" rx="3"/><path d="M7 11a5 5 0 0 1 10 0m-5 0 3-4M7 16h3m4 0h3M7 19h10"/><circle cx="12" cy="11" r="1"/>',
     radio: '<circle cx="12" cy="12" r="2"/><path d="m12 14-4 8h8l-4-8M7.8 7.8a6 6 0 0 0 0 8.4m8.4-8.4a6 6 0 0 1 0 8.4M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14"/>',
     meter: '<path d="M13 2 5 14h6l-1 8 9-13h-6z"/>',
     terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/>',

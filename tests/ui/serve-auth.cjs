@@ -1,6 +1,4 @@
 // Production HTTP/WebSocket access checks, with no MQTT, chain, or SSH login.
-process.env.M3TER_MANAGER_USERNAME = 'test-manager';
-process.env.M3TER_MANAGER_PASSWORD = 'test-only-manager-password';
 delete process.env.CONSOLE_USERNAME;
 delete process.env.CONSOLE_PASSWORD;
 process.env.BACKEND_MODULES = '';
@@ -18,6 +16,5 @@ upstream.listen(0, '127.0.0.1', async () => {
   const ssh = await require('./ssh-fixture.cjs')();
   attachTerminal(server,ssh.target);
   server.on('close',()=>ssh.server.close());
-  await require('./manager-fixture.cjs')(app);
   server.listen(4174, '0.0.0.0', () => console.log('Authentication test server ready on 4174'));
 });

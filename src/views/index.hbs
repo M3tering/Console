@@ -12,7 +12,6 @@
       <button class="desktop-icon" id="browser-icon" data-app-id="browser" data-app-label="Browser" data-app-description="Explore the web" data-icon-name="browser"><span class="app-art" data-icon="browser"></span><span class="icon-label">Browser</span></button>
       <button class="desktop-icon" id="paint-icon" data-app-id="paint" data-app-label="Paint" data-app-description="Draw and save a picture" data-icon-name="paint"><span class="app-art" data-icon="paint"></span><span class="icon-label">Paint</span></button>
       <button class="desktop-icon" id="chirpstack-icon" data-app-id="chirpstack" data-app-label="ChirpStack" data-app-description="Manage your LoRaWAN network" data-icon-name="radio"><span class="app-art" data-icon="radio"></span><span class="icon-label">ChirpStack</span></button>
-      <button class="desktop-icon" id="m3ter-manager-icon" data-app-id="m3ter-manager" data-app-label="M3ter Manager" data-app-description="Live meter telemetry and downlink control" data-icon-name="manager"><span class="app-art" data-icon="manager"></span><span class="icon-label">M3ter Manager</span></button>
       {{#each icons}}
       <button class="desktop-icon" id="{{id}}-icon" data-app-id="{{id}}" data-app-label="{{label}}" data-app-description="Console extension"><span class="app-art extension-art">{{{iconHtml}}}</span><span class="icon-label">{{label}}</span></button>
       {{/each}}
@@ -43,7 +42,6 @@
         <p id="paint-status" role="status">Draw with a mouse, pen, or finger. Your drawing stays open when switching apps.</p>
         <div class="paint-surface"><canvas id="paint-canvas" width="1200" height="800" aria-label="Drawing canvas">Drawing requires canvas support.</canvas></div>
       </section>
-      {{> m3ter-manager}}
       {{#each windows}}
       <section class="app-window extension-window" id="{{id}}" data-window-title="{{title}}" aria-label="{{title}}" hidden><div class="window-content {{containerClass}}">{{{contentHtml}}}</div></section>
       {{/each}}

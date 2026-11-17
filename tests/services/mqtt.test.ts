@@ -20,7 +20,7 @@ function uplink(nonce = 1, device = 'device-a', energy = 1000000) {
   Buffer.from(key.slice(2), 'hex').copy(data, 74);
   return Buffer.from(JSON.stringify({ deviceInfo: { devEui: device }, data: data.toString('base64') }));
 }
-beforeEach(() => {
+function resetFixture() {
   jest.resetAllMocks();
   meter = { publicKey: key, tokenId: 1, latestNonce: 0, devEui: 'device-a' }; records = [];
   (verifyPayloadSignature as jest.Mock).mockReturnValue(true);
@@ -35,7 +35,8 @@ beforeEach(() => {
   (store.getAllTransactionRecords as jest.Mock).mockImplementation(() => records);
   (store.getTransactionByNonce as jest.Mock).mockImplementation(nonce => records.find(record => record.nonce === nonce));
   (store.recordMeterTransaction as jest.Mock).mockImplementation((_, record) => { records.push(record); meter.latestNonce = record.nonce; });
-});
+}
+beforeEach(resetFixture);
 
 test.each(['{', '{}', 'null', '{"deviceInfo":{}}', '{"deviceInfo":{"devEui":"device-a"}}'])('malformed uplink %s stays inside the error boundary', async input => {
   await expect(handleMessage(Buffer.from(input))).resolves.toBeUndefined();
@@ -95,6 +96,14 @@ test('persistence failure never acknowledges uncommitted data and releases the l
   await handleMessage(uplink()); expect(enqueue).toHaveBeenCalledTimes(1);
 });
 
+test('the injected transport receives the identical billing reply without contacting gRPC', async () => {
+  const sink = jest.fn().mockResolvedValue(undefined);
+  await handleMessage(uplink(), sink);
+  expect(sink).toHaveBeenCalledWith({ devEui: 'device-a', fPort: 2, confirmed: false, bytes: [1,0,0,0,0,0,0,0,0] });
+  expect(enqueue).not.toHaveBeenCalled();
+  expect(records).toHaveLength(1);
+});
+
 test('collector decodes explicitly marked hex using the same bytes as the existing transport', async () => {
   const event=JSON.parse(uplink().toString()), hex=Buffer.from(event.data,'base64').toString('hex');
   event.data=hex;event.dataEncoding='hex';
@@ -117,16 +126,16 @@ test('shared MQTT URL preserves the original default, supports remote protocols,
   } finally {process.env=environment;}
 });
 
-test('one broker connection fans out independently, preserves collection on monitoring failure, and resubscribes once', async () => {
+test('one collector broker connection delivers reports and resubscribes once', async () => {
   const { EventEmitter } = require('events');
-  const mqtt = require('mqtt'), monitor = require('../../src/m3ter/monitor');
+  const mqtt = require('mqtt');
   const { handleUplinks, stopUplinks } = require('../../src/services/mqtt');
   const oldApp=process.env.APPLICATION_ID, oldHost=process.env.CHIRPSTACK_HOST;
   process.env.APPLICATION_ID='11111111-1111-4111-8111-111111111111'; process.env.CHIRPSTACK_HOST='existing-broker';
   const client = new EventEmitter(); client.end=jest.fn(); client.stream={destroy:jest.fn()};
   client.subscribe=jest.fn((topic:any,options:any,done:any)=>done(null,[{qos:1}]));
   mqtt.connect.mockReturnValue(client);
-  const collect=jest.fn().mockResolvedValue(undefined), observed=jest.spyOn(monitor,'ingestEvent').mockImplementation(()=>{throw new Error('database unavailable');});
+  const collect=jest.fn().mockResolvedValue(undefined);
   try {
     await handleUplinks(undefined,collect);await handleUplinks(undefined,collect);
     expect(mqtt.connect).toHaveBeenCalledTimes(1);
@@ -135,11 +144,43 @@ test('one broker connection fans out independently, preserves collection on moni
     client.emit('connect');client.emit('connect');expect(client.subscribe).toHaveBeenCalledTimes(2);
     const body=Buffer.from(JSON.stringify({deviceInfo:{devEui:'0102030405060708'},fPort:2,data:'AAAA'}));
     client.emit('message',`application/${process.env.APPLICATION_ID}/device/0102030405060708/event/up`,body);
-    await Promise.resolve();expect(collect).toHaveBeenCalledWith(body);expect(observed).toHaveBeenCalled();
-    observed.mockImplementation(()=>true);collect.mockRejectedValueOnce(new Error('collector unavailable'));
+    await Promise.resolve();expect(collect).toHaveBeenCalledWith(body);
+    collect.mockRejectedValueOnce(new Error('collector unavailable'));
     client.emit('message',`application/${process.env.APPLICATION_ID}/device/0102030405060708/event/up`,body);
-    await Promise.resolve();await Promise.resolve();expect(observed).toHaveBeenCalledTimes(2);
+    await Promise.resolve();await Promise.resolve();expect(collect).toHaveBeenCalledTimes(2);
     client.emit('error',Object.assign(new Error('network'),{code:'ECONNRESET'}));expect(client.end).not.toHaveBeenCalled();
     stopUplinks();await handleUplinks(undefined,collect);expect(mqtt.connect.mock.calls[1][0].clientId).not.toBe(clientId);
-  } finally { stopUplinks();observed.mockRestore();if(oldApp===undefined)delete process.env.APPLICATION_ID;else process.env.APPLICATION_ID=oldApp;if(oldHost===undefined)delete process.env.CHIRPSTACK_HOST;else process.env.CHIRPSTACK_HOST=oldHost; }
+  } finally { stopUplinks();if(oldApp===undefined)delete process.env.APPLICATION_ID;else process.env.APPLICATION_ID=oldApp;if(oldHost===undefined)delete process.env.CHIRPSTACK_HOST;else process.env.CHIRPSTACK_HOST=oldHost; }
+});
+
+// Execute the frozen baseline body against the same doubles, rather than deriving
+// expected decisions from the new implementation.
+test.each(['valid', 'invalid-signature', 'stale', 'bootstrap', 'duplicate', 'extension-error'])('billing is identical to baseline: %s', async scenario => {
+  const fs = require('node:fs'), vm = require('node:vm'), ts = require('typescript');
+  const source = fs.readFileSync(require('node:path').join(__dirname, '../fixtures/handle-message-baseline.txt'), 'utf8');
+  const exports = {};
+  const quiet = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  const context = { exports, Buffer, Date, Set, logger: quiet, createMeterLogger: () => quiet,
+    deviceLocks: new Set(), meterLocks: new Set(), ...store,
+    getLatestTransactionNonce, runHook, notifyHook, verifyPayloadSignature, enqueue,
+    encode: require('../../src/lib/encode').encode,
+    decodePayload: require('../../src/lib/decode').decodePayload,
+    uplinkPayload: require('../../src/lib/uplink-payload').uplinkPayload,
+    meterIdFromPublicKeyContractCall: require('../../src/utils/contracts').meterIdFromPublicKeyContractCall,
+    applicationId: () => 'fixture', collectorAccepted: () => undefined };
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, context);
+  const outputs = [];
+  for (const implementation of [context.exports.handleMessage, handleMessage]) {
+    resetFixture();
+    if (scenario === 'invalid-signature') (verifyPayloadSignature as jest.Mock).mockReturnValue(false);
+    if (scenario === 'extension-error') (runHook as jest.Mock).mockRejectedValue(new Error('fixture extension failure'));
+    if (scenario === 'stale') meter.latestNonce = 8;
+    await implementation(uplink(scenario === 'bootstrap' ? 0 : 1));
+    if (scenario === 'duplicate') await implementation(uplink(1, 'device-a', 2000000));
+    outputs.push({ downlinks: (enqueue as jest.Mock).mock.calls.map(([device, bytes]) => [device, bytes]),
+      records: records.map(({receivedAt, ...record}) => record), latestNonce: meter.latestNonce,
+      distribution: (notifyHook as jest.Mock).mock.calls.filter(([hook]) => hook === 'onTransactionDistribution').length,
+      errors: (notifyHook as jest.Mock).mock.calls.filter(([hook]) => hook === 'onMessageError').length });
+  }
+  expect(outputs[1]).toEqual(outputs[0]);
 });

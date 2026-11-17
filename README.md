@@ -76,297 +76,6 @@ npm install
 npm run dev
 ```
 
-## M3ter Manager
-
-**M3ter Manager** is a built-in desktop application for Switch Cumulus telemetry
-and technician downlinks. Launch it from the desktop, dock, or application
-launcher. Its Overview, Live monitoring, Analytics, Commands, Queue, and Meter
-information sections share the selected device, desktop theme, and responsive
-window environment. On phones the desktop presents one active full-screen window.
-
-### Configuration and startup
-
-Configure only the Manager login and existing ChirpStack connection:
-
-```dotenv
-M3TER_MANAGER_USERNAME=operator
-M3TER_MANAGER_PASSWORD=your-strong-manager-password
-APPLICATION_ID=your-chirpstack-application-uuid
-CHIRPSTACK_HOST=localhost
-API_TOKEN=your-server-side-chirpstack-api-token
-CHIRPSTACK_REST_URL=http://localhost:8090
-M3TER_INACTIVE_SECONDS=300
-```
-
-`CHIRPSTACK_REST_URL` is the origin of **chirpstack-rest-api**, not the web UI.
-It defaults to `http://CHIRPSTACK_HOST:8090`. The separately configured
-`CHIRPSTACK_WEB_URL` continues to serve the embedded ChirpStack web application.
-The REST proxy must be reachable from the console process/container. For a
-loopback-only proxy connected to a local plaintext gRPC server, its command is:
-
-```sh
-chirpstack-rest-api --server 127.0.0.1:8080 --bind 127.0.0.1:8090 --insecure
-```
-
-See the [official REST proxy documentation](https://github.com/chirpstack/chirpstack-rest-api)
-for installation and TLS options. No browser CORS or direct access to port 8090
-is needed. The API token needs device/application/profile read access and device
-queue enqueue/read/flush access for the configured application. MQTT requires
-permission to subscribe to that application's events. Configure ChirpStack's
-MQTT integration to publish JSON. Manager reuses the Console's original
-`CHIRPSTACK_HOST` connection on port 1883 (localhost by default). Optional
-`MQTT_URL=mqtt://broker.example:1883` overrides the shared broker address for both
-consumers; `mqtts://`, `ws://`, and `wss://` are also supported. URL credentials,
-when required by the broker, stay on the backend. No separate client is created. Opening or closing Manager does not own or stop this connection.
-Both consumers receive messages independently; monitoring errors cannot disable
-the collector. The old monitor-only toggle has been removed: collection remains enabled.
-
-```sh
-npm run build
-npm start
-```
-
-Then open the console on its configured port (3000 by default) and
-launch **M3ter Manager**. The dashboard stays accessible while MQTT reconnects.
-
-If a relay rejects, stalls, or interrupts Manager's WebSocket, the dashboard
-falls back to authenticated HTTP updates, waiting five seconds between completed
-refreshes. The connection indicator identifies this fallback separately from
-MQTT connectivity. WebSockets retry in the background every 30 seconds; receiving
-a valid stream update restores live mode and stops polling. Closing Manager or
-ending its session stops these retries. Requests time out after 15 seconds so a
-stalled relay cannot leave a refresh pending indefinitely. This requires no new
-configuration and does not change the Console's MQTT connection or authentication.
-
-### Architecture and API
-
-Console is public. Only Manager's API and live stream require a Manager session.
-Set `M3TER_MANAGER_PASSWORD`; the optional username defaults to `admin`.
-Missing passwords leave only Manager locked. Sessions use eight-hour HttpOnly,
-SameSite cookies; logout, expiry, password changes and server restarts revoke them.
-Credentials are never returned in API responses or browser storage.
-
-All manager operators share the configured administrator identity. Records and operations are scoped to `APPLICATION_ID`;
-this does not introduce a separate multi-user/tenant authorization system.
-
-| Responsibility | Implementation |
-| --- | --- |
-| Desktop view and theme integration | `src/views/partials/m3ter-manager.hbs`, `src/public/css/m3ter-manager.css` |
-| Selection, telemetry, navigation, live connection | `src/public/js/m3ter-manager.js` |
-| Accessible SVG charts with pointer/keyboard inspection | `src/public/js/m3ter-charts.js` |
-| Command forms, previews, confirmation, queue/history | `src/public/js/m3ter-commands.js` |
-| Device discovery and scoped REST access | `src/m3ter/chirpstack.ts` |
-| Decoder registry and existing decoder/signature reuse | `src/m3ter/decoder.ts` |
-| MQTT ingestion, diagnostics, activity, delivery correlation | `src/m3ter/monitor.ts`, existing `src/services/mqtt.ts` |
-| SQLite tables and historical queries | `src/m3ter/store.ts` |
-| Command catalogue and exact frame generation | `src/m3ter/commands.ts` |
-| Authenticated API and real-time stream | `src/m3ter/api.ts`, `src/services/socket-router.ts` |
-
-The shared WebSocket router checks browser request provenance without any origin
-environment variable. `/m3ter-manager/live` also requires a Manager session;
-`/terminal` uses the SSH credentials supplied inside its own application.
-
-All HTTP routes below are prefixed with `/api/m3ter-manager`:
-
-| Method | Route | Purpose |
-| --- | --- | --- |
-| GET / POST / DELETE | `/session` | Check access / sign in / sign out |
-| GET | `/config` | Command catalogue, MQTT state, activity threshold |
-| GET | `/devices?search=&offset=` | Name/DevEUI search, 50 devices per page |
-| GET | `/devices/:devEui` | Sanitized device metadata, latest reading, known key |
-| GET | `/devices/:devEui/history?from=&to=&offset=&limit=` | Millisecond UTC date range, reading page and chart samples |
-| GET | `/devices/:devEui/events?offset=` | Device events and application-wide MQTT observations |
-| GET | `/devices/:devEui/commands?offset=` | Persistent command history |
-| POST | `/commands/preview` | Validate a command ID/parameter and produce exact bytes |
-| POST | `/devices/:devEui/commands` | Validate and enqueue an unconfirmed downlink |
-| GET | `/devices/:devEui/queue` | Up to 100 pending ChirpStack queue items |
-| DELETE | `/devices/:devEui/queue` | Clear all queued items after explicit DevEUI confirmation |
-
-### Telemetry and historical data
-
-One MQTT client subscribes to
-`application/{APPLICATION_ID}/device/+/event/+`. It validates both the topic and
-event identity, handles `up`, `ack`, `txack`, `join`, `location`, `log`, and `status`,
-and reconnects/resubscribes without creating another client when a meter changes.
-Monitoring persistence and the existing collector are isolated consumers. A unique client ID is generated for each Console process.
-
-The usage-report decoder accepts **FPort 2, 74 or 106 bytes**. It wraps the
-existing `decodePayload` implementation: uint32 BE nonce; uint32 BE energy divided
-by 1,000,000; 64-byte Ed25519 signature; uint16 BE voltage divided by 10; optional
-32-byte public key. Existing console keys and subsequently learned keys support
-74-byte uplinks. Signature verification covers **only bytes 0–7**, not voltage.
-A first-seen key establishes cryptographic consistency, not independently verified
-device identity. Invalid/unverified signatures are labeled, never claimed valid.
-No GPS is extracted from these payloads. Device location comes only from validated
-ChirpStack device location events. A `phaseMode` device tag of `three-phase`,
-`phase-a`, `phase-b`, or `phase-c` may describe configured metadata; it is not a
-firmware acknowledgment. In three-phase metadata mode the dashboard separately
-labels the transmitted voltage sum and calculated mean (sum / 3).
-
-Additive SQLite tables store raw MQTT payloads/metadata separately from decoded
-readings, device state, and command audit history. Device/time indexes support
-bounded queries. Uplinks deduplicate by ChirpStack event ID, or by a stable tuple
-of device/event type/source time/frame counter/payload when an ID is absent.
-Identical values with distinct events are preserved. Without an event ID or
-source timestamp, events are retained separately rather than risking data loss.
-Usage-report source timestamps are preserved in metadata; invalid timestamps use receipt time. The Overview's
-Last Uplink uses the persisted console reception time of a successfully decoded,
-non-duplicate FPort 2 uplink. FPort 4, MQTT heartbeats, connection events, UI refreshes and decode
-errors cannot reset it. Source timestamps still drive the existing Analytics.
-
-MQTT payload transport is explicit: native ChirpStack `data` remains Base64;
-hex producers supply `dataHex` or `data` with `dataEncoding: "hex"`. Hex must contain
-complete byte pairs, without separators or a `0x` prefix. No alphabet guessing is
-used. Both collector and Manager use the same byte conversion. Live Monitoring
-shows the hexadecimal bytes and preserves the original field, encoding, and text
-for inspection. The collector still receives only usage reports; monitoring never
-causes an energy acknowledgment or a blockchain operation.
-
-#### FPort 4 electrical monitoring
-
-`src/m3ter/electrical.ts` implements the supplied Switch Cumulus version 1 layout:
-exactly 97 bytes, big-endian, with signed active/reactive power, power factor, and
-temperature. Other lengths/versions are retained as diagnostics without updating
-meter state. Unsupported uplink ports are ignored. FPort 4 is never a downlink port.
-Live Monitoring displays per-phase voltage/current/power/power factor, neutral
-currents, frequency, temperature, cumulative forward/reverse counters, and reported
-relay/phase/PGA status. No FPort 2 value substitutes for missing FPort 4 data.
-
-Native ChirpStack `data` is Base64. A valid `object` with `type: "telemetry"` is
-preferred; unknown/incomplete schemas fall back to raw bytes. The current normalized
-object adapter accepts `version`, `flags`, `uptime`, `voltage`/`current` (`a,b,c`),
-`activePower`/`reactivePower`/`powerFactor`/`forwardEnergy`/`reverseEnergy`
-(`a,b,c,total`), `neutralMeasured`, `neutralCalculated`, `frequency`, and `temperature`.
-All values are already scaled in the units displayed. `type: "report"` objects
-can supply `nonce`, `energy` (kWh), `voltage` (V), and `signature` (hex); raw report
-bytes are still required for independent signature verification. Values are never
-rescaled a second time. Original codec objects, payload text, and encoding are retained
-for inspection. The referenced firmware files, `telemetry.md`, and upstream
-`tools/chirpstack-codec.js` were not available in this checkout during implementation;
-the adapter's compatibility with that codec's actual field names still needs verification.
-Raw-byte support follows the complete layout supplied in the development request.
-
-Monitoring uses the actual ChirpStack `time`, retaining Console receipt time
-separately. A missing/invalid measurement timestamp rejects that frame as a
-diagnostic rather than substituting a UI refresh clock. Metadata includes device,
-application, frame counter, deduplication ID, gateways, RSSI/SNR, and decoder source.
-Deduplication uses the event ID, otherwise device/frame counter and observed boot
-session (allowing counters to restart); a bounded persistent recent-key window
-also protects against replay after history eviction. Delayed/equal-time frames
-cannot replace the latest state or add energy.
-
-Per-channel forward/reverse differences are calculated in integer counter units.
-The first frame establishes a baseline. Lower uptime starts a new boot baseline
-without adding reset energy or erasing observed totals. An unexplained counter
-decrease retains that channel's high-water baseline until recovery or reboot,
-avoiding artificial consumption. Persistent totals mean **observed increases since
-monitoring began**, not complete lifetime or billing totals. Gaps may omit power
-samples but do not invalidate later counter differences. Average positive total
-power × elapsed time / 3,600,000 is an advisory cross-check; a discrepancy greater
-than max(0.01 kWh, 50% of the estimate) is explained, never used to rewrite counters.
-
-Freshness is separate from MQTT status and FPort 2 activity: stale after three
-estimated intervals. Three consistent observed gaps establish cadence; otherwise
-the last requested interval is explicitly provisional, or the 60-second firmware
-default is labeled as cadence unknown. Enable/disable requests remain unverified;
-subsequent frames provide evidence, and silence alone never proves disablement.
-
-Additive `manager_electrical_readings` and `manager_electrical_state` tables keep
-monitoring separate from usage accounting. Raw frames remain in `manager_events`.
-Both new tables are initialized safely on an existing database; no original table
-is rebuilt. `GET /api/m3ter-manager/devices/:devEui/telemetry` provides the latest
-state and paginated monitoring history (50 rows, `offset` parameter), protected by
-the existing Manager session and application scope.
-
-Charts plot **raw accumulator snapshots**, not independent interval consumption.
-Repeated and growing values with the same nonce stay pending. A consecutive nonce
-advance closes the previous observed cycle: its high-water mark is a **lower bound**,
-not proof of a billed or settled amount. Where the local collector recorded that
-cycle, its exact accepted energy is shown separately. Nonce zero is not repeatedly
-credited. Decreases, nonce gaps/regressions, invalid signatures and delayed reports
-are flagged, not credited as fresh consumption. Manager sends no automatic acknowledgments.
-Firmware source is not present here: observed transitions cannot establish unobserved
-energy, reset causes, downlink execution, or blockchain settlement.
-
-The database retains **100 usage-report records globally by default**, including malformed
-payloads. Set optional `M3TER_TELEMETRY_LIMIT` to a positive integer to change this
-limit. Invalid values log a warning and safely fall back to 100. The limit applies
-on startup and after every insertion, and prunes their raw event copies too. A separate small per-device state
-preserves the pending nonce/high-water mark and latest reading after eviction or
-restart. Existing history is replayed once before migration trims it. Non-telemetry activity, command history, device configuration and all
-original Console tables are preserved. SQLite reuses freed pages; migration does
-not rewrite or vacuum unrelated tables. Date ranges cover the retained window only.
-FPort 4 has a separate **global cap using the same `M3TER_TELEMETRY_LIMIT`** (default
-100), including monitoring decode failures and raw event copies. Thus up to 100
-usage reports plus 100 monitoring records are retained by default. FPort 4 cannot
-evict usage history. Monitoring baselines, latest sample, and observed totals survive
-both pruning and process restarts. Command records and original Console data are untouched.
-
-### Command safety and delivery evidence
-
-All existing command types remain, with four additional telemetry actions (three
-firmware command codes) defined centrally:
-
-| Action | FPort | Hex | Base64 |
-| --- | --- | --- | --- |
-| Enable telemetry | 2 | `2301` | `IwE=` |
-| Disable telemetry | 2 | `2300` | `IwA=` |
-| Telemetry interval: 60 seconds | 2 | `24003C` | `JAA8` |
-| Telemetry interval: 300 seconds | 2 | `24012C` | `JAEs` |
-| Request Telemetry Now | 2 | `25` | `JQ==` |
-
-Intervals are 10–65535 seconds; disable requires confirmation. Firmware v1.0.4+
-is required for these new operations, and older-meter support is not inferred
-merely from device discovery. Existing preview, idempotency, history, and queue
-controls apply to all new actions.
-
-The backend reconstructs payloads from IDs and validated integer parameters,
-enforces lengths and FPorts 2/3, and rejects raw payload/FPort overrides. Class B,
-calibration, and FUOTA ports 200–202 are not exposed. Billing, restart, relay
-hardware, and Class A controls require explicit confirmation. Queue clearing
-requires a confirmation naming the selected DevEUI and removes all pending items,
-including items created by other applications.
-
-Commands are recorded before enqueueing. A UUID request ID makes a repeated
-submission idempotent, including retry after a lost HTTP response. A timeout or
-ambiguous upstream failure is **unknown**, not automatically retried. Inspect the
-queue before issuing a new request. A console restart marks interrupted enqueues
-unknown. The upstream queue item uses the same UUID for event correlation.
-
-`queued` means REST acceptance; the Queue tab shows pending delivery.
-`transmitted` means a gateway `txack`, **not** proven device delivery. Only an
-acknowledged `ack` event marks `delivered`; even this does not prove firmware
-execution. Commands default to unconfirmed, so device acknowledgments may never
-arrive. Events match both DevEUI and queue item ID; no relay state or applied
-configuration is inferred from queue acceptance. Confirmed deliveries are retained
-when a queue is cleared. MQTT activity/inactivity is explicitly observational.
-
-### Validation and preview boundaries
-
-```sh
-npm test -- --runInBand
-npm run test:ui
-npm run preview:ui
-```
-
-The preview at `http://127.0.0.1:4173` includes a **labeled simulated M3TER network**.
-Sign in there with **`demo` / `demo-manager`** (preview only).
-Its local REST and MQTT simulators never contact real meters; downlinks there only
-modify fixture queues. Browser integration tests exercise the production API,
-SQLite store, authenticated WebSocket routing, and a real MQTT.js TCP connection
-to a simulator. Unit tests cover every supplied command Base64 value, parameter
-boundaries, payload lengths and scaling, signatures, isolation, deduplication,
-reset segments, persistence, and pagination. Browser tests cover switching meters,
-MQTT reconnection, command confirmation/idempotency, queue operations, error
-recovery, charts and all four themes on desktop/tablet/phone sizes.
-
-The referenced firmware source is not included in this checkout; implementation
-uses the supplied firmware specification and existing console decoder. No live
-ChirpStack/meter validation is implied by simulator test results. Richer telemetry
-decoders and command-specific firmware acknowledgments are not implemented without
-their firmware specifications. The current protocol cannot verify relay state,
-the applied reporting interval, restart completion, or applied phase configuration.
-
 ## ChirpStack desktop application
 
 Open **ChirpStack** from the desktop, dock, or application launcher. Its web
@@ -381,7 +90,7 @@ or use an HTTPS origin. Only an origin is supported, without credentials or a
 subpath. In Docker this address must be reachable from the console container.
 
 Sign in with your **ChirpStack credentials** inside the app. There is no Console
-login wrapping the proxy. Its Bearer token is forwarded; Manager cookies and the
+login wrapping the proxy. Its Bearer token is forwarded; Console cookies and the
 server's `API_TOKEN` are never forwarded as browser credentials.
 ChirpStack browser storage is namespaced so its logout cannot erase desktop
 preferences. Reload restarts the embedded page; theme changes and minimizing
@@ -961,7 +670,7 @@ Use the original project name and data directory to preserve the same volumes.
 
 The old **M3ters** meter-list application has been removed from the desktop,
 along with its exclusive `/delete-meter` UI endpoint. The collector's database,
-MQTT service, and meter records are preserved. **M3ter Manager** remains available.
+MQTT service, and meter records are preserved. The removed M3ter Manager is no longer available.
 
 The Browser starts with a Google search interface. Queries use
 `https://www.google.com/search?q=` with URL encoding and open in a new tab because
@@ -969,9 +678,9 @@ Google blocks embedded search pages. HTTP(S) addresses can still open inside the
 Browser; its external link supports sites that block embedding.
 
 `compose.yaml` passes the existing `.env` into the single Console container,
-which hosts both consumers. The update script leaves that file and persistent
-volumes intact, including `MQTT_URL`, `CHEFSTACK_URL`, `M3TER_TELEMETRY_LIMIT`, and
-`M3TER_MANAGER_PASSWORD`. No deployment-script or workflow changes are required.
+which hosts the collector. The update script leaves that file and persistent
+volumes intact, including `MQTT_URL` and `CHEFSTACK_URL`. Obsolete Manager settings
+are ignored with one startup warning; their values are never logged.
 
 Application feedback is scoped to its owning window. Extension actions preserve
 the originating window even if another app is focused while a request completes.
@@ -980,3 +689,27 @@ pass `null` for a desktop-wide notice. `AppFeedback.showDialog(dialog, appElemen
 provides an app-contained dialog; `AppFeedback.confirm(appElement, title, message)`
 returns a promise for confirmations. These dialogs allow switching to other apps
 and inherit the owning application's light/dark mode.
+
+## Changes on the centralized Console feature branch
+
+M3ter Manager has been removed in every role. This removes its meter command
+controls (relay, interval, class, gain and phase), telemetry history, charts and
+raw event inspector. Use the ChirpStack app's device queue for technician downlinks
+and your monitoring platform for telemetry. The Console billing collector and
+its protocol remain intact.
+
+Existing Manager database tables are not dropped or modified during startup.
+To remove them manually, first stop Console and back up `.data/m3tering.db`, then
+run the following only against the backup-reviewed deployment database:
+
+```sh
+sqlite3 .data/m3tering.db 'BEGIN; DROP TABLE IF EXISTS manager_readings; DROP TABLE IF EXISTS manager_electrical_readings; DROP TABLE IF EXISTS manager_events; DROP TABLE IF EXISTS manager_commands; DROP TABLE IF EXISTS manager_accumulators; DROP TABLE IF EXISTS manager_electrical_state; DROP TABLE IF EXISTS manager_devices; DROP TABLE IF EXISTS manager_schema; COMMIT;'
+```
+
+This optional cleanup deletes historical Manager data permanently. It does not
+touch `meters` or `transactions`. No update or startup runs it automatically.
+
+The feature's [architecture inventory](docs/centralized/current-architecture.md)
+and [design decisions](docs/centralized/design.md) track the central/agent work.
+The feature is not ready for deployment until its documented safety gates and
+integration tests are complete.

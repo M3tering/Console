@@ -1,5 +1,5 @@
-import { decodePayload } from '../lib/decode';
-import { verifyPayloadSignature } from '../lib/utils';
+import { decodePayload } from '../decode';
+import { verifyPayloadSignature } from '../utils';
 import { decodeElectrical, ElectricalTelemetry } from './electrical';
 
 export type Telemetry = {

@@ -1,5 +1,5 @@
 import { generateKeyPairSync, sign } from 'crypto';
-import { decodeTelemetry, reportObject } from '../../src/m3ter/decoder';
+import { decodeTelemetry, reportObject } from '../../src/lib/protocol/decoder';
 import { decodePayload } from '../../src/lib/decode';
 const keys = generateKeyPairSync('ed25519');
 const publicKey = keys.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);

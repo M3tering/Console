@@ -19,13 +19,8 @@ test('Google query is encoded in a top-level search; direct addresses still open
   await expect(page.locator('#browser iframe')).toHaveAttribute('src','http://127.0.0.1:4173/browser-home.html');
 });
 
-test('only M3ter Manager remains in launcher and window naming', async ({page}) => {
+test('removed Manager is absent from desktop, launcher and window registry', async ({page}) => {
   await page.route(/https:\/\//,route=>route.abort()); await page.goto('/');
-  await expect(page.locator('[data-app-id="m3ters"], [data-app-id="metas"], #m3ters')).toHaveCount(0);
-  await expect(page.locator('#m3ter-manager-icon')).toHaveText('M3ter Manager');
-  await expect(page.locator('.launcher-app[data-app-id="m3ter-manager"]')).toHaveText('M3ter Manager');
-  await page.evaluate(()=>Desktop.launch('m3ter-manager'));
-  await expect(page.locator('#m3ter-manager .window-title')).toHaveText('M3ter Manager');
-  await expect(page).toHaveTitle('M3ter Manager · M3tering Console');
-  expect(await page.locator('body').textContent()).not.toContain('M3TER Manager');
+  await expect(page.locator('[data-app-id="m3ters"], [data-app-id="metas"], [data-app-id="m3ter-manager"], #m3ter-manager')).toHaveCount(0);
+  await expect(page).toHaveTitle('M3tering Console · Desktop');
 });

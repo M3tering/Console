@@ -3,7 +3,6 @@ import Database from "better-sqlite3";
 import type { Database as DatabaseType, Statement as DatabaseStatementType } from "better-sqlite3";
 import { MeterRecord, TransactionRecord } from "../types";
 import { createLogger } from "../utils/logger";
-import { initializeManagerStore } from '../m3ter/store';
 
 const logger = createLogger("[sqlite]");
 
@@ -34,7 +33,6 @@ export default function setupDatabase(databaseName = "m3tering.db") {
   initializeTransactionsTable();
   initializeMetersTable();
   prepareQueries();
-  initializeManagerStore(db);
 }
 
 export function deleteDatabase(databaseName = "m3tering.db") {

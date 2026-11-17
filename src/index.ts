@@ -6,8 +6,10 @@ attachTerminal(server);
 import { loadExtensionsFromConfig, loadUIExtensionsFromConfig, runHook, notifyHook } from './lib/utils';
 import setupDatabase from './store/sqlite';
 import { createLogger } from './utils/logger';
+import { warnRemovedManagerSettings } from './lib/legacy-config';
 
 const logger = createLogger('[index]');
+warnRemovedManagerSettings(process.env, message => logger.warn(message));
 
 (async function () {
   try {

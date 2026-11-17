@@ -3,7 +3,6 @@ import { create } from 'express-handlebars';
 import express, { Express, Request, Response } from 'express';
 import { requireSameOrigin } from './auth';
 import { proxyChirpstack } from './chirpstack';
-import { managerRouter, attachManagerStream } from '../m3ter/api';
 import { createLogger } from '../utils/logger';
 import { getUIComponents, invokeUIAction } from '../lib/utils';
 
@@ -32,7 +31,6 @@ app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
 app.use(express.json());
 app.use(express.static('./src/public'));
 app.use(express.urlencoded({ extended: true }));
-app.use('/api/m3ter-manager', managerRouter);
 
 app.get('/', async (req: Request, res: Response, next) => {
   try {
@@ -63,7 +61,6 @@ app.post('/api/actions/:moduleId/:actionId', async (req: Request, res: Response,
 });
 
 export const server = http.createServer(app);
-attachManagerStream(server);
 
 export function startServer() {
   server.once('error', (error: NodeJS.ErrnoException) => {
