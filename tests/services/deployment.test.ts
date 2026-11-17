@@ -34,3 +34,39 @@ esac
     else expect(calls).toContain('image rm sha256:old');
   } finally {fs.rmSync(dir,{recursive:true,force:true});}
 });
+
+// Central role is chosen from .env; shares the same isolated Docker adapter.
+function runCentral(environment:string, existingDb=false) {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'console-central-'));
+  try {
+    for(const file of ['auto-compose.sh','compose.yaml','compose.central.yaml'])fs.copyFileSync(file,path.join(dir,file));
+    fs.writeFileSync(path.join(dir,'.env'),environment);
+    fs.mkdirSync(path.join(dir,'.data'));if(existingDb)fs.writeFileSync(path.join(dir,'.data','central.db'),'db');
+    const log=path.join(dir,'calls');fs.writeFileSync(log,'');
+    fs.writeFileSync(path.join(dir,'docker'),`#!/bin/bash
+printf '%s|%s\\n' "$*" "$CONSOLE_IMAGE" >> "$DEPLOY_LOG"
+case "$*" in *'ps -q console'*) echo new-container ;; esac
+`,{mode:0o755});
+    const run=spawnSync('bash',['auto-compose.sh','--project-name','central'],{cwd:dir,encoding:'utf8',env:{...process.env,PATH:dir+':'+process.env.PATH,DEPLOY_LOG:log}});
+    return {run,calls:fs.readFileSync(log,'utf8')};
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
+}
+test('central role deploys console and TLS proxy from the central compose file', () => {
+  const {run,calls}=runCentral('CONSOLE_ROLE=central\nCENTRAL_DOMAIN="console.example.test"\nCENTRAL_ADMIN_PASSWORD=a-very-long-password-1\n');
+  expect(run.status).toBe(0);
+  expect(calls).toContain('-f compose.central.yaml pull console|ghcr.io/fluxion9/console:main');
+  expect(calls).toMatch(/up --detach tls-proxy/);
+  expect(calls).not.toContain('-f compose.yaml');
+  expect(run.stdout).toContain('https://console.example.test');
+});
+test('central first start refuses a short administrator password before touching Docker', () => {
+  const {run,calls}=runCentral('CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\nCENTRAL_ADMIN_PASSWORD=short\n');
+  expect(run.status).toBe(2);expect(run.stderr).toContain('at least 16 characters');expect(calls).toBe('');
+});
+test('central restart does not require the bootstrap password', () => {
+  expect(runCentral('CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\n',true).run.status).toBe(0);
+});
+test('gateway role is refused because it needs the agent alongside Console', () => {
+  const {run,calls}=runCentral('CONSOLE_ROLE=gateway\n');
+  expect(run.status).toBe(2);expect(run.stderr).toContain('compose.gateway.yaml');expect(calls).toBe('');
+});

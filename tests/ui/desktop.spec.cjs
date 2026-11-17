@@ -279,16 +279,16 @@ test('desktop visual references and large/small icon layouts remain usable', asy
 });
 
 test('icon selection clears outside the desktop and applications retain independent color modes', async ({page})=>{
-  await page.goto('/');await page.locator('[data-app-id="m3ter-manager"].desktop-icon').click();
-  await page.locator('#m3ter-manager .window-titlebar').click();await expect(page.locator('.desktop-icon.selected')).toHaveCount(0);
-  await page.locator('#m3ter-manager .window-color-mode').selectOption('dark');
+  await page.goto('/');await page.locator('[data-app-id="paint"].desktop-icon').click();
+  await page.locator('#paint .window-titlebar').click();await expect(page.locator('.desktop-icon.selected')).toHaveCount(0);
+  await page.locator('#paint .window-color-mode').selectOption('dark');
   await openSettings(page);await page.locator('#settings .window-color-mode').selectOption('light');
   await page.locator('[data-theme-choice="linux"]').click();
-  await expect(page.locator('#m3ter-manager')).toHaveAttribute('data-color-mode','dark');await expect(page.locator('#settings')).toHaveAttribute('data-color-mode','light');
+  await expect(page.locator('#paint')).toHaveAttribute('data-color-mode','dark');await expect(page.locator('#settings')).toHaveAttribute('data-color-mode','light');
   expect(await page.locator('#settings').evaluate(el=>getComputedStyle(el).colorScheme)).toBe('light');
-  expect(await page.locator('#m3ter-manager').evaluate(el=>getComputedStyle(el).colorScheme)).toBe('dark');
-  await page.reload();await page.evaluate(()=>{Desktop.launch('m3ter-manager');Desktop.launch('settings');});
-  await expect(page.locator('#m3ter-manager')).toHaveAttribute('data-color-mode','dark');await expect(page.locator('#settings')).toHaveAttribute('data-color-mode','light');
+  expect(await page.locator('#paint').evaluate(el=>getComputedStyle(el).colorScheme)).toBe('dark');
+  await page.reload();await page.evaluate(()=>{Desktop.launch('paint');Desktop.launch('settings');});
+  await expect(page.locator('#paint')).toHaveAttribute('data-color-mode','dark');await expect(page.locator('#settings')).toHaveAttribute('data-color-mode','light');
   await page.locator('#settings .window-color-mode').selectOption('theme');
   expect(await page.locator('#settings').evaluate(el=>getComputedStyle(el).colorScheme)).toBe('dark');
   for(const width of [320,390,768,1440]) {

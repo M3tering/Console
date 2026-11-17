@@ -45,6 +45,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        platform: [linux/amd64, linux/arm64]
+        variant: [console, browser, updater]
         include:
           - platform: linux/amd64
             runner: ubuntu-latest
@@ -61,7 +63,9 @@ jobs:
 
       - name: Normalize image names
         run: |
-          echo "CONSOLE_IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          suffix=""
+          if [[ "${{ matrix.variant }}" != console ]]; then suffix="-${{ matrix.variant }}"; fi
+          echo "CONSOLE_IMAGE_NAME=${GITHUB_REPOSITORY,,}$suffix" >> "$GITHUB_ENV"
 
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
@@ -93,38 +97,56 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          target: ${{ matrix.variant }}
           push: ${{ github.event_name != 'pull_request' }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.CONSOLE_IMAGE_NAME }},push-by-digest=true
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.CONSOLE_IMAGE_NAME }}:buildcache-${{ matrix.arch }}
           cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max', env.REGISTRY, env.CONSOLE_IMAGE_NAME, matrix.arch) || '' }}
 
+      - name: Attest published platform image
+        if: github.event_name != 'pull_request'
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.CONSOLE_IMAGE_NAME }}
+          subject-digest: ${{ steps.build-console.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
       - name: Save digests to files
         if: github.event_name != 'pull_request'
         run: |
-          echo ${{ steps.build-console.outputs.digest }} > digests-${{ matrix.arch }}-console-digest.txt
+          echo ${{ steps.build-console.outputs.digest }} > digests-${{ matrix.arch }}-${{ matrix.variant }}-digest.txt
 
       - name: Upload digests artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v6
         with:
-          name: digests-${{ matrix.arch }}
+          name: digests-${{ matrix.arch }}-${{ matrix.variant }}
           path: |
-            digests-${{ matrix.arch }}-console-digest.txt
+            digests-${{ matrix.arch }}-${{ matrix.variant }}-digest.txt
 
   create-manifests:
+    strategy:
+      matrix:
+        variant: [console, browser, updater]
     needs: build-platform
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
       - name: Normalize image names
         run: |
-          echo "CONSOLE_IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          suffix=""
+          if [[ "${{ matrix.variant }}" != console ]]; then suffix="-${{ matrix.variant }}"; fi
+          echo "CONSOLE_IMAGE_NAME=${GITHUB_REPOSITORY,,}$suffix" >> "$GITHUB_ENV"
 
       - name: Download all digests
         uses: actions/download-artifact@v7
         with:
-          pattern: digests-*
+          pattern: digests-*-${{ matrix.variant }}
           merge-multiple: true
 
       - name: Log in to GitHub Container Registry
@@ -144,11 +166,12 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.CONSOLE_IMAGE_NAME }}
 
       - name: Create multi-arch manifest for Console
+        id: manifest
         env:
           IMAGE_TAGS: ${{ steps.meta-console.outputs.tags }}
         run: |
-          AMD64_DIGEST=$(cat digests-amd64-console-digest.txt)
-          ARM64_DIGEST=$(cat digests-arm64-console-digest.txt)
+          AMD64_DIGEST=$(cat digests-amd64-${{ matrix.variant }}-digest.txt)
+          ARM64_DIGEST=$(cat digests-arm64-${{ matrix.variant }}-digest.txt)
           echo "AMD64_DIGEST=$AMD64_DIGEST"
           echo "ARM64_DIGEST=$ARM64_DIGEST"
           TAG_ARGS=()
@@ -157,6 +180,18 @@ jobs:
               TAG_ARGS+=(--tag "$tag")
             fi
           done <<< "$IMAGE_TAGS"
-          docker buildx imagetools create "${TAG_ARGS[@]}" \
+          docker buildx imagetools create --metadata-file manifest.json "${TAG_ARGS[@]}" \
             "$REGISTRY/$CONSOLE_IMAGE_NAME@$AMD64_DIGEST" \
             "$REGISTRY/$CONSOLE_IMAGE_NAME@$ARM64_DIGEST"
+
+          DIGEST=$(jq -r '."containerimage.descriptor".digest' manifest.json)
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Attest published multi-architecture manifest
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.CONSOLE_IMAGE_NAME }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false

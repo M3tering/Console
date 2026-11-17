@@ -11,6 +11,8 @@ import type {
   UIAction,
 } from "../types";
 import { createLogger } from "../utils/logger";
+import { publishManaged } from '../central/distribution';
+import { decodePayload } from './decode';
 
 const logger = createLogger("[utils]");
 
@@ -69,6 +71,22 @@ export async function runHook<K extends keyof Hooks>(hook: K, ...args: Parameter
 export async function notifyHook<K extends keyof Hooks>(hook: K, ...args: Parameters<NonNullable<Hooks[K]>>) {
   try { await runHook(hook, ...args); }
   catch (error) { logger.error(`Notification hook ${hook} failed:`, error); }
+}
+
+/** Managed roles publish centrally with a durable claim per extension and nonce.
+ * Built-in cron/UI publishers additionally share destination-level claims. */
+export async function distributeManaged(records: TransactionRecord[]): Promise<void> {
+  if (process.env.CONSOLE_ROLE !== 'central') return;
+  for (const [index, extension] of extensions.entries()) {
+    const publish = extension.onTransactionDistribution;
+    if (!publish) continue;
+    for (const record of records) {
+      try {
+        await publishManaged(`hook:${defaultConfigurations.modules[index]}`, [record], async () =>
+          publish.call(extension, record.identifier, decodePayload(Buffer.from(record.raw, 'hex')), records));
+      } catch { logger.error('Managed distribution remains uncertain; automatic resubmission is blocked.'); }
+    }
+  }
 }
 
 /**

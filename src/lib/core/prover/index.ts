@@ -4,6 +4,7 @@ import { buildBatchPayload, retry } from '../../utils';
 import { getAllTransactionRecords, getTransactionByNonce } from '../../../store/sqlite';
 import type { BatchTransactionPayload, DecodedPayload, Hooks, TransactionRecord } from '../../../types';
 import { createLogger } from '../../../utils/logger';
+import { managedRole, publishManaged } from '../../../central/distribution';
 
 const PREFERRED_PROVER_NODE = process.env.PREFERRED_PROVER_NODE;
 const logger = createLogger('[prover-job]');
@@ -12,6 +13,7 @@ export default class implements Hooks {
   private proverSchedule: string = process.env.PROVER_CRONSCHEDULE || '0 0 * * *'; // default to every 24 hours
 
   async onAfterInit() {
+    if (process.env.CONSOLE_ROLE === 'gateway') return;
     if (!PREFERRED_PROVER_NODE) {
       logger.warn('No PREFERRED_PROVER_NODE configured. Prover hooks will not be registered.');
       return;
@@ -106,6 +108,8 @@ export default class implements Hooks {
   }
 
   async sendPendingTransactionsToProver(proverURL: string, pendingTransactions: TransactionRecord[]) {
+    if (managedRole()) return publishManaged(`prover:${proverURL}`, pendingTransactions,
+      records => this.sendTransactionsToProver(proverURL, buildBatchPayload(records)));
     logger.info('[info] Sending', pendingTransactions.length, 'transactions to prover at', proverURL);
 
     const requestPayload = buildBatchPayload(pendingTransactions);
