@@ -109,8 +109,12 @@ only. Check with `sudo ss -ltnp | grep -E ':(80|443|3000)\b'`. It should print n
 About the admin account:
 
 - It's created **only on the first start**. Changing `CENTRAL_ADMIN_PASSWORD`
-  later does nothing.
+  in `.env` later does nothing.
 - A password shorter than 7 characters stops the first start with a clear error.
+- **To change the password**, sign in and click **Account** in the top bar. Enter
+  your current password and the new one (at least 7 characters). Any other device
+  signed in to that account is signed out; you stay signed in. After five attempts
+  in 15 minutes, further attempts are blocked for a while.
 
 Central holds the wallet key that signs billing decisions. Treat the server as
 sensitive, and test with a test wallet first.

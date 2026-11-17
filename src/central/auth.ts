@@ -29,6 +29,8 @@ export interface CentralAuthOptions { development: boolean; trustedProxies: stri
 export class CentralAuth {
   private limiter = new RateLimit(10, 60000);
   private globalLimiter = new RateLimit(100, 60000, 1);
+  // Per account: a stolen session must not become a way to guess the current password.
+  private passwordLimiter = new RateLimit(5, 15 * 60000);
   private dummyHash: Promise<string> = hashPassword('non-user authentication timing placeholder');
   constructor(private store: IdentityStore, private options: CentralAuthOptions) {}
   private name(): string { return this.options.development ? 'console_dev_session' : cookieName; }
@@ -67,6 +69,11 @@ export class CentralAuth {
     }, express.urlencoded({ extended: false, limit: '3kb', parameterLimit: 2 }), (req, res, next) => { void this.login(req, res).catch(next); });
     machineRoutes?.(app);
     app.use(this.requireLogin);
+    app.get('/api/account', (_req, res) => { res.json({ username: res.locals.centralUser.username }); });
+    app.post('/api/account/password', (req, res, next) => {
+      if (!this.passwordLimiter.allow(res.locals.centralUser.id)) { res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' }); return; }
+      next();
+    }, express.json({ limit: '3kb' }), (req, res, next) => { void this.changePassword(req, res).catch(next); });
     app.post('/logout', (req, res) => {
       const session = this.session(req);
       this.store.endSession(this.token(req));
@@ -89,6 +96,23 @@ export class CentralAuth {
     res.locals.centralUser = session;
     next();
   };
+  private async changePassword(req: Request, res: Response): Promise<void> {
+    const session = res.locals.centralUser as SessionIdentity;
+    const current: unknown = req.body?.current, next: unknown = req.body?.next;
+    if (typeof current !== 'string' || typeof next !== 'string' || !current || !next) {
+      res.status(400).json({ error: 'Enter your current password and a new password.' }); return;
+    }
+    const user = this.store.user(session.username);
+    if (!user || !await verifyPassword(current, user.passwordHash)) {
+      this.store.audit(session.id, 'password-change-failure');
+      res.status(400).json({ error: 'Your current password is incorrect.' }); return;
+    }
+    if (next === current) { res.status(400).json({ error: 'Choose a new password that differs from the current one.' }); return; }
+    let hash: string;
+    try { hash = await hashPassword(next); } catch { res.status(400).json({ error: 'The new password needs at least 7 characters.' }); return; }
+    this.store.changePassword(user.id, hash, this.token(req));
+    res.json({ changed: true });
+  }
   private async login(req: Request, res: Response): Promise<void> {
     const username = typeof req.body?.username === 'string' ? req.body.username : '';
     const user = validUsername.test(username) ? this.store.user(username) : null;

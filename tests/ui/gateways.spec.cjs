@@ -87,3 +87,33 @@ test('gateways can be added, renamed and deleted from the management dialog',asy
   await page.locator('#gateway-dialog-close').click();
   await expect(page.locator('#gateway-enrollment-token')).toHaveText('');
 });
+
+test('the account dialog changes the password and reports mistakes',async({page})=>{
+  const posts=[];
+  await page.route('**/api/gateways',route=>route.fulfill({json:{selected:null,gateways:[]}}));
+  await page.route('**/api/account',route=>route.fulfill({json:{username:'admin'}}));
+  await page.route('**/api/account/password',route=>{const body=route.request().postDataJSON();posts.push(body);
+    return body.current==='right-pass'?route.fulfill({json:{changed:true}}):route.fulfill({status:400,json:{error:'Your current password is incorrect.'}});});
+  await page.goto('/?central=1');
+  await page.getByRole('button',{name:'Account',exact:true}).click();
+  await expect(page.locator('#account-user')).toHaveText('Signed in as admin');
+  await expect(page.getByLabel('Current password')).toBeFocused();
+  await page.getByLabel('Current password').fill('right-pass');
+  await page.getByLabel('New password',{exact:true}).fill('newpass1');
+  await page.getByLabel('Confirm new password').fill('newpass2');
+  await page.getByRole('button',{name:'Change password'}).click();
+  await expect(page.locator('#password-message')).toHaveText('The new passwords don’t match.');
+  expect(posts).toEqual([]);
+  await page.getByLabel('Current password').fill('wrong-pass');
+  await page.getByLabel('Confirm new password').fill('newpass1');
+  await page.getByRole('button',{name:'Change password'}).click();
+  await expect(page.locator('#password-message')).toHaveText('Your current password is incorrect.');
+  await expect(page.getByLabel('Current password')).toHaveValue('');
+  await page.getByLabel('Current password').fill('right-pass');
+  await page.getByRole('button',{name:'Change password'}).click();
+  await expect(page.locator('#password-message')).toContainText('Password changed.');
+  expect(posts.at(-1)).toEqual({current:'right-pass',next:'newpass1'});
+  await expect(page.getByLabel('New password',{exact:true})).toHaveValue('');
+  await page.getByRole('button',{name:'Close',exact:true}).click();
+  await expect(page.locator('#account-dialog')).toBeHidden();
+});

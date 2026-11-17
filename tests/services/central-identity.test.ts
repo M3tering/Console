@@ -150,3 +150,13 @@ test('central passwords need at least 7 characters', async () => {
   await expect(hashPassword('6chars')).rejects.toThrow('at least 7 characters');
   expect(await verifyPassword('7chars!', await hashPassword('7chars!'))).toBe(true);
 });
+
+test('changePassword swaps the hash, ends other sessions and is audited', async () => {
+  store.addUser('operator', await hashPassword('first-password'));
+  const user = store.user('operator')!, keep = store.createSession(user.id), other = store.createSession(user.id);
+  store.changePassword(user.id, await hashPassword('second-pass'), keep);
+  expect(await verifyPassword('second-pass', store.user('operator')!.passwordHash)).toBe(true);
+  expect(store.session(keep)?.username).toBe('operator');expect(store.session(other)).toBeNull();
+  expect(() => store.changePassword(user.id, 'plain-text', keep)).toThrow();
+  expect(() => store.changePassword('missing', store.user('operator')!.passwordHash, keep)).toThrow('User not found.');
+});

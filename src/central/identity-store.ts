@@ -7,6 +7,7 @@ import type { Health } from './protocol';
 
 export type AuditAction = 'login-success' | 'login-failure' | 'logout' | 'enrolment-created' | 'enrolled' |
   'credential-rotated' | 'credential-rotation-acknowledged' | 'credential-revoked' | 'gateway-renamed' | 'gateway-deleted' |
+  'password-changed' | 'password-change-failure' |
   'device-assignment' | 'state-downlink-uncertain' | 'terminal-start' | 'terminal-end' | 'browser-start' | 'browser-end' | 'state-downlink' | 'update-status';
 export interface GatewayIdentity { id: string; name: string; revoked: boolean; enrolled: boolean; lastHeartbeat: number | null; version: string | null }
 export interface GatewayUpdate {id:string;gateway:string;image:string;status:UpdateStatus;history:Array<{status:UpdateStatus;time:number}>}
@@ -25,6 +26,7 @@ export interface IdentityStore {
   acknowledgeRotation(gateway: string, credential: string): boolean;
   revoke(gateway: string, actor: string): void;
   addUser(username: string, passwordHash: string): void;
+  changePassword(user: string, passwordHash: string, keepSession: string): void;
   user(username: string): UserIdentity | null;
   createSession(user: string, ttlMs?: number): string;
   session(token: string): SessionIdentity | null;
@@ -182,6 +184,15 @@ export class SqliteIdentityStore implements IdentityStore {
   addUser(username: string, passwordHash: string): void {
     if (!/^[A-Za-z0-9_.@-]{1,100}$/.test(username) || !/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/.test(passwordHash)) throw new Error('Invalid user or password hash.');
     this.db.prepare('INSERT INTO central_users VALUES (?,?,?)').run(randomUUID(), username, passwordHash);
+  }
+  /** Replaces a password hash and ends every other session of that user; keepSession stays signed in. */
+  changePassword(user: string, passwordHash: string, keepSession: string): void {
+    if (!/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/.test(passwordHash)) throw new Error('Invalid password hash.');
+    this.db.transaction(() => {
+      if (!this.db.prepare('UPDATE central_users SET passwordHash=? WHERE id=?').run(passwordHash, user).changes) throw new Error('User not found.');
+      this.db.prepare('DELETE FROM central_sessions WHERE userId=? AND tokenHash<>?').run(user, hashSecret(keepSession));
+      this.audit(user, 'password-changed');
+    })();
   }
   user(username: string): UserIdentity | null {
     return this.db.prepare('SELECT * FROM central_users WHERE username=?').get(username) as UserIdentity | undefined || null;

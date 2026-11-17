@@ -122,3 +122,22 @@
 }
 [data-theme="retro"] #gateway-dialog h2{font-size:16px;line-height:1.6}
 [data-theme="retro"] #gateway-dialog h3{font-size:11px;line-height:1.7}
+
+/* Account: change password */
+#account-dialog{width:min(440px,calc(100% - 2rem));padding:26px 28px}
+.account-form{display:grid;gap:14px;margin:0}
+.account-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:4px}
+.account-head .eyebrow{font-size:11px;letter-spacing:.12em;color:var(--muted)}
+#account-dialog h2{font-family:var(--display-font);font-size:22px;margin:2px 0 4px}
+#account-dialog .account-head p{margin:0;font-size:13px;color:var(--muted)}
+#account-close{font-size:22px;line-height:1}
+.account-form label{display:grid;gap:6px;font:600 13px var(--font);color:var(--text)}
+#account-dialog .account-hint{margin:-4px 0 0;font-size:12.5px;color:var(--muted)}
+#account-dialog .account-message{margin:0;padding:10px 12px;border-radius:var(--small-radius);font-size:13px;font-weight:500}
+#account-dialog .account-message:empty{display:none}
+.account-message.is-error{background:color-mix(in srgb,#b5434c 12%,var(--surface));color:#b5434c}
+.account-message.is-ok{background:color-mix(in srgb,#2f8a57 12%,var(--surface));color:#2f8a57}
+#account-dialog .dialog-actions{margin-top:6px}
+[data-theme="retro"] #account-dialog h2{font-size:15px;line-height:1.6}
+[data-theme="linux"] .account-message.is-error{color:#f19aa1}
+[data-theme="linux"] .account-message.is-ok{color:#8fd1a8}

@@ -3,7 +3,7 @@
   <header class="topbar">
     <button class="brand" data-launcher-toggle aria-label="Open application launcher" aria-expanded="false" aria-controls="app-launcher"><span class="brand-mark" aria-hidden="true">m³</span><span>M3tering<span class="brand-secondary"> Console</span></span></button>
     <div class="topbar-location"><span class="status-dot"></span><span id="active-app-name">Desktop</span></div>
-    {{#if central}}<div class="gateway-control"><label for="gateway-select" class="sr-only">Selected gateway</label><select id="gateway-select"><option value="">Select a gateway</option></select><button class="quiet-button" id="manage-gateways">Gateways</button><form action="/logout" method="post"><button class="quiet-button">Sign out</button></form></div>{{/if}}
+    {{#if central}}<div class="gateway-control"><label for="gateway-select" class="sr-only">Selected gateway</label><select id="gateway-select"><option value="">Select a gateway</option></select><button class="quiet-button" id="manage-gateways">Gateways</button><button class="quiet-button" id="open-account">Account</button><form action="/logout" method="post"><button class="quiet-button">Sign out</button></form></div>{{/if}}
     <div class="topbar-trailing"><button class="quiet-button" data-open-settings title="Personalize desktop" aria-label="Open Settings"><span data-icon="settings"></span></button><time id="desktop-clock"></time></div>
   </header>
   {{#if central}}
@@ -16,6 +16,18 @@
     <h3 class="gw-list-title">Your gateways</h3>
     <div id="gateway-list"></div>
     <p class="gw-note">Uncertain replies are held for reconciliation. A newer report supersedes an older unresolved reply; uncertainty never sends a relay command.</p>
+  </dialog>
+  <dialog id="account-dialog" aria-labelledby="account-dialog-title">
+    <form id="password-form" class="account-form">
+      <header class="account-head"><div><span class="eyebrow">ACCOUNT</span><h2 id="account-dialog-title">Change password</h2><p id="account-user">Signed in to the central workspace</p></div><button type="button" class="quiet-button" id="account-close" aria-label="Close account settings">×</button></header>
+      <input type="text" name="username" id="account-username" autocomplete="username" hidden>
+      <label>Current password<input class="nes-input" type="password" name="current" autocomplete="current-password" required maxlength="1024"></label>
+      <label>New password<input class="nes-input" type="password" name="next" autocomplete="new-password" required minlength="7" maxlength="1024" aria-describedby="password-hint"></label>
+      <label>Confirm new password<input class="nes-input" type="password" name="confirm" autocomplete="new-password" required minlength="7" maxlength="1024"></label>
+      <p id="password-hint" class="account-hint">At least 7 characters. Any other device signed in to this account will be signed out.</p>
+      <p id="password-message" class="account-message" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="nes-btn" id="account-cancel">Close</button><button class="nes-btn is-primary" id="password-submit">Change password</button></div>
+    </form>
   </dialog>
   <dialog id="gateway-confirm" aria-labelledby="gateway-confirm-title"><form method="dialog"><h2 id="gateway-confirm-title"></h2><p id="gateway-confirm-body"></p><div class="dialog-actions"><button class="nes-btn" value="cancel" autofocus>Cancel</button><button class="nes-btn is-error" value="confirm" id="gateway-confirm-action"></button></div></form></dialog>
   {{/if}}
