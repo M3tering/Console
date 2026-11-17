@@ -86,6 +86,15 @@ export class GatewayHub {
       try{const g=this.identities.createGateway(String(req.body?.name||''),res.locals.centralUser.id);res.status(201).json({...g,token:this.identities.enrollment(g.id,res.locals.centralUser.id)});}
       catch{res.status(400).json({error:'Provide a valid gateway name.'});}
     });
+    app.post('/api/gateways/:id/rename',(req,res)=>{
+      try{res.json(this.identities.renameGateway(req.params.id,String(req.body?.name??''),res.locals.centralUser.id));}
+      catch{res.status(400).json({error:'Provide a name of 1–100 printable characters for an existing gateway.'});}
+    });
+    app.post('/api/gateways/:id/delete',(req,res)=>{
+      try{this.identities.deleteGateway(req.params.id,res.locals.centralUser.id);}catch{res.status(404).json({error:'Gateway not found.'});return;}
+      // Same fencing as revocation: the credential is gone, so drop the live link and its tunnels now.
+      this.clearRotation(req.params.id);this.sockets.get(req.params.id)?.terminate();res.json({deleted:true});
+    });
     app.post('/api/gateways/:id/revoke',(req,res)=>{this.identities.revoke(req.params.id,res.locals.centralUser.id);this.sockets.get(req.params.id)?.terminate();res.json({revoked:true});});
     app.post('/api/gateways/:id/enrollment',(req,res)=>{
       try{res.json({token:this.identities.enrollment(req.params.id,res.locals.centralUser.id)});}catch{res.status(409).json({error:'Revoke the previous identity before enrolling again.'});}

@@ -6,9 +6,9 @@ import { validImageDigest } from './protocol';
 import type { Health } from './protocol';
 
 export type AuditAction = 'login-success' | 'login-failure' | 'logout' | 'enrolment-created' | 'enrolled' |
-  'credential-rotated' | 'credential-rotation-acknowledged' | 'credential-revoked' |
+  'credential-rotated' | 'credential-rotation-acknowledged' | 'credential-revoked' | 'gateway-renamed' | 'gateway-deleted' |
   'device-assignment' | 'state-downlink-uncertain' | 'terminal-start' | 'terminal-end' | 'browser-start' | 'browser-end' | 'state-downlink' | 'update-status';
-export interface GatewayIdentity { id: string; name: string; revoked: boolean; lastHeartbeat: number | null; version: string | null }
+export interface GatewayIdentity { id: string; name: string; revoked: boolean; enrolled: boolean; lastHeartbeat: number | null; version: string | null }
 export interface GatewayUpdate {id:string;gateway:string;image:string;status:UpdateStatus;history:Array<{status:UpdateStatus;time:number}>}
 export interface DeviceGateway { devEui:string; gateway:string; observedGateway:string; overridden:boolean; lastSeen:number }
 export interface UserIdentity { id: string; username: string; passwordHash: string }
@@ -16,6 +16,8 @@ export interface SessionIdentity { id: string; username: string; expires: number
 export interface IdentityStore {
   createGateway(name: string, actor: string): GatewayIdentity;
   gateways(): GatewayIdentity[];
+  renameGateway(gateway: string, name: string, actor: string): GatewayIdentity;
+  deleteGateway(gateway: string, actor: string): void;
   enrollment(gateway: string, actor: string, ttlMs?: number): string;
   exchange(token: string): { gateway: string; credential: string } | null;
   authenticateAgent(credential: string): string | null;
@@ -75,23 +77,55 @@ export class SqliteIdentityStore implements IdentityStore {
       CREATE TABLE IF NOT EXISTS central_hostkeys(gateway TEXT PRIMARY KEY REFERENCES central_gateways(id),hash TEXT NOT NULL);
       INSERT OR IGNORE INTO central_schema VALUES (1);
     `))();
+    // Version 2: deleted gateways are hidden and fenced, but their history is kept.
+    const columns = (this.db.prepare('PRAGMA table_info(central_gateways)').all() as Array<{ name: string }>).map(column => column.name);
+    if (!columns.includes('deleted')) this.db.transaction(() => {
+      this.db.exec('ALTER TABLE central_gateways ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0');
+      this.db.exec('INSERT OR IGNORE INTO central_schema VALUES (2)');
+    })();
+  }
+  private static gatewayName(name: string): string {
+    if (!name.trim() || name.length > 100 || /[\x00-\x1f]/.test(name)) throw new Error('Gateway name must contain 1–100 printable characters.');
+    return name.trim();
   }
   createGateway(name: string, actor: string): GatewayIdentity {
-    if (!name.trim() || name.length > 100 || /[\x00-\x1f]/.test(name)) throw new Error('Gateway name must contain 1–100 printable characters.');
+    const clean = SqliteIdentityStore.gatewayName(name);
     const id = randomUUID();
-    this.db.prepare('INSERT INTO central_gateways (id,name) VALUES (?,?)').run(id, name.trim());
+    this.db.prepare('INSERT INTO central_gateways (id,name) VALUES (?,?)').run(id, clean);
     this.audit(actor, 'enrolment-created', id);
-    return { id, name: name.trim(), revoked: false, lastHeartbeat: null, version: null };
+    return { id, name: clean, revoked: false, enrolled: false, lastHeartbeat: null, version: null };
   }
   gateways(): GatewayIdentity[] {
-    return (this.db.prepare('SELECT id,name,revoked,lastHeartbeat,version FROM central_gateways ORDER BY name').all() as
-      Array<Omit<GatewayIdentity, 'revoked'> & { revoked: number }>).map(row => ({ ...row, revoked: !!row.revoked }));
+    return (this.db.prepare(`SELECT id,name,revoked,credentialHash IS NOT NULL AS enrolled,lastHeartbeat,version
+      FROM central_gateways WHERE deleted=0 ORDER BY name COLLATE NOCASE`).all() as
+      Array<Omit<GatewayIdentity, 'revoked' | 'enrolled'> & { revoked: number; enrolled: number }>)
+      .map(row => ({ ...row, revoked: !!row.revoked, enrolled: !!row.enrolled }));
+  }
+  renameGateway(gateway: string, name: string, actor: string): GatewayIdentity {
+    const clean = SqliteIdentityStore.gatewayName(name);
+    return this.db.transaction(() => {
+      if (!this.db.prepare('UPDATE central_gateways SET name=? WHERE id=? AND deleted=0').run(clean, gateway).changes) throw new Error('Gateway not found.');
+      this.audit(actor, 'gateway-renamed', gateway, clean);
+      return this.gateways().find(g => g.id === gateway)!;
+    })();
+  }
+  /** Removes a gateway from use: its credential and pending enrollments are destroyed
+   * and device pins released. Rows are kept so billing, audit and outcome history stay intact. */
+  deleteGateway(gateway: string, actor: string): void {
+    this.db.transaction(() => {
+      const result = this.db.prepare(`UPDATE central_gateways SET deleted=1,revoked=1,credentialHash=NULL,previousHash=NULL,previousUntil=NULL
+        WHERE id=? AND deleted=0`).run(gateway);
+      if (!result.changes) throw new Error('Gateway not found.');
+      this.db.prepare('DELETE FROM central_enrollments WHERE gateway=?').run(gateway);
+      this.db.prepare('UPDATE central_devices SET overrideGateway=NULL WHERE overrideGateway=?').run(gateway);
+      this.audit(actor, 'gateway-deleted', gateway);
+    })();
   }
   enrollment(gateway: string, actor: string, ttlMs = 10 * 60000): string {
     if (!Number.isInteger(ttlMs) || ttlMs < 1000 || ttlMs > 3600000) throw new Error('Invalid enrollment lifetime.');
     const token = newSecret();
     this.db.transaction(() => {
-      const row = this.db.prepare('SELECT credentialHash,revoked FROM central_gateways WHERE id=?').get(gateway) as { credentialHash: string | null; revoked: number } | undefined;
+      const row = this.db.prepare('SELECT credentialHash,revoked FROM central_gateways WHERE id=? AND deleted=0').get(gateway) as { credentialHash: string | null; revoked: number } | undefined;
       if (!row || (row.credentialHash && !row.revoked)) throw new Error('Revoke an enrolled gateway before replacing its identity.');
       this.db.prepare('DELETE FROM central_enrollments WHERE gateway=? OR expires<=?').run(gateway, this.now());
       this.db.prepare('INSERT INTO central_enrollments (tokenHash,gateway,expires) VALUES (?,?,?)').run(hashSecret(token), gateway, this.now() + ttlMs);

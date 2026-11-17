@@ -108,3 +108,40 @@ test('downlink outcome replay is idempotent and distinguishes uncertain attempts
     expect(inspect.prepare("SELECT action FROM central_audit WHERE subject='report' ORDER BY id").all()).toEqual([{action:'state-downlink-uncertain'},{action:'state-downlink'}]);inspect.close();
   }finally{identity.close();fs.rmSync(directory,{recursive:true,force:true});}
 });
+
+test('gateways can be renamed with the same name rules and the change is audited', () => {
+  const g = store.createGateway('Old name', 'admin');
+  expect(store.renameGateway(g.id, '  Rooftop A  ', 'admin')).toMatchObject({ id: g.id, name: 'Rooftop A', enrolled: false });
+  expect(store.gateways().map(x => x.name)).toEqual(['Rooftop A']);
+  for (const bad of ['', '   ', 'x'.repeat(101), 'bad\nname']) expect(() => store.renameGateway(g.id, bad, 'admin')).toThrow();
+  expect(() => store.renameGateway('missing', 'Name', 'admin')).toThrow('Gateway not found.');
+});
+
+test('deleting a gateway fences its credential and hides it while keeping history', () => {
+  const g = store.createGateway('Doomed', 'admin'), keep = store.createGateway('Keeper', 'admin');
+  const { credential } = store.exchange(store.enrollment(g.id, 'admin'))!;
+  expect(store.gateways().find(x => x.id === g.id)?.enrolled).toBe(true);
+  store.observeDevice('0011223344556677', g.id);store.assignDevice('0011223344556677', g.id, 'admin');
+  store.deleteGateway(g.id, 'admin');
+  expect(store.gateways().map(x => x.id)).toEqual([keep.id]);
+  expect(store.authenticateAgent(credential)).toBeNull();
+  expect(() => store.enrollment(g.id, 'admin')).toThrow();
+  expect(() => store.renameGateway(g.id, 'Back', 'admin')).toThrow();
+  expect(() => store.deleteGateway(g.id, 'admin')).toThrow('Gateway not found.');
+  expect(store.devices()[0]).toMatchObject({ devEui: '0011223344556677', overridden: false });
+});
+
+test('existing central databases gain the deleted column without losing gateways', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'central-migrate-')), file = path.join(dir, 'central.db');
+  try {
+    const legacy = new Database(file);
+    legacy.exec(`CREATE TABLE central_gateways (id TEXT PRIMARY KEY, name TEXT NOT NULL, credentialHash TEXT UNIQUE,
+      previousHash TEXT UNIQUE, previousUntil INTEGER, revoked INTEGER NOT NULL DEFAULT 0, lastHeartbeat INTEGER, version TEXT);
+      INSERT INTO central_gateways (id,name) VALUES ('legacy-id','Legacy');`);
+    legacy.close();
+    const migrated = new SqliteIdentityStore(file);
+    expect(migrated.gateways()).toMatchObject([{ id: 'legacy-id', name: 'Legacy', revoked: false, enrolled: false }]);
+    migrated.close();
+    new SqliteIdentityStore(file).close(); // Re-opening is idempotent.
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

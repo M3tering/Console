@@ -58,6 +58,24 @@ test('authenticated outbound link returns the same stored decision by ChirpStack
   }finally{client?.disconnect();await f.close();}
 });
 
+test('rename updates the list; delete disconnects the agent and removes the gateway',async()=>{
+  const f=await fixture();
+  try{
+    const ws=await f.connect();
+    const post=(path:string,body?:unknown)=>fetch(f.base+path,{method:'POST',headers:{cookie:f.cookie,origin:f.base,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+    const renamed=await post(`/api/gateways/${f.enrolled.gateway}/rename`,{name:'Renamed gateway'});
+    expect(renamed.status).toBe(200);expect(await renamed.json()).toMatchObject({name:'Renamed gateway'});
+    expect((await post(`/api/gateways/${f.enrolled.gateway}/rename`,{name:''})).status).toBe(400);
+    const closed=once(ws,'close');
+    expect((await post(`/api/gateways/${f.enrolled.gateway}/delete`)).status).toBe(200);await closed;
+    const list=await (await fetch(f.base+'/api/gateways',{headers:{cookie:f.cookie}})).json() as {gateways:unknown[]};
+    expect(list.gateways).toEqual([]);
+    expect(f.store.authenticateAgent(f.enrolled.credential)).toBeNull();
+    expect((await post(`/api/gateways/${f.enrolled.gateway}/delete`)).status).toBe(404);
+    expect((await fetch(`${f.base}/api/gateways/${f.enrolled.gateway}/delete`,{method:'POST',headers:{cookie:f.cookie,origin:'https://foreign.invalid'}})).status).toBe(403);
+  }finally{await f.close();}
+});
+
 test('central routes and socket upgrades refuse missing credentials and cross-site sessions',async()=>{
   const f=await fixture();
   try{
