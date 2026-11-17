@@ -8,6 +8,7 @@ import type { Duplex } from 'stream';
 import { BrowserProxy, browserURL, browserAddress } from './proxy';
 import { CDP } from './cdp';
 import type { ConsoleRole } from '../central/config';
+import { browserProcessLifetime, removeBrowserProfile } from './lifecycle';
 
 const execute=promisify(execFile);
 interface Paused {requestId:string;networkId?:string;frameId:string;resourceType:string;request:{url:string;method:string;headers:Record<string,string>}}
@@ -20,8 +21,13 @@ export class BrowserEngine {
   private main='';private typed?:string;private closed=false;private ready=false;
   private width=1024;private height=700;private current='about:blank';private activity=Date.now();private born=Date.now();
   private timer?:ReturnType<typeof setInterval>;private queued=false;
+  private starting?:Promise<void>;private stopProcess?:()=>Promise<void>;
   constructor(private options:EngineOptions){}
-  async start():Promise<void>{
+  start():Promise<void>{
+    this.starting=this.initialize();
+    return this.starting;
+  }
+  private async initialize():Promise<void>{
     if(!path.isAbsolute(this.options.executable)||!fs.existsSync(this.options.executable))throw new Error('Browser engine not available. Install the optional browser image.');
     if(this.options.testUnsandboxed&&process.env.NODE_ENV!=='test')throw new Error('Unsandboxed browser is allowed only in test fixtures.');
     this.directory=fs.mkdtempSync(path.join(os.tmpdir(),'console-browser-'));fs.chmodSync(this.directory,0o700);
@@ -32,12 +38,14 @@ export class BrowserEngine {
       const certificate=fs.readFileSync(cert,'utf8');const spki=createHash('sha256').update(new X509Certificate(certificate).publicKey.export({type:'spki',format:'der'})).digest('base64');
       this.proxy=new BrowserProxy({role:this.options.role,gateway:this.options.gateway,key:fs.readFileSync(key,'utf8'),cert:certificate,tunnel:this.options.tunnel});
       const proxyPort=await this.proxy.listen();
+      if(this.closed)throw new Error('Browser session closed.');
       const args=['--headless=new','--remote-debugging-address=127.0.0.1','--remote-debugging-port=0',`--user-data-dir=${this.directory}/profile`,
         `--proxy-server=http://127.0.0.1:${proxyPort}`,'--proxy-bypass-list=<-loopback>',`--ignore-certificate-errors-spki-list=${spki}`,
         '--disable-background-networking','--disable-component-update','--disable-sync','--disable-extensions','--disable-default-apps','--no-first-run',
         '--force-webrtc-ip-handling-policy=disable_non_proxied_udp','--disable-quic','--disable-features=MediaRouter','--js-flags=--max-old-space-size=128','--window-size=1024,700','about:blank'];
       if(this.options.testUnsandboxed)args.push('--no-sandbox');
       this.process=spawn(this.options.executable,args,{stdio:['ignore','ignore','pipe'],env:{PATH:process.env.PATH,HOME:this.directory,TMPDIR:this.directory,XDG_CACHE_HOME:path.join(this.directory,'cache'),LANG:'C.UTF-8'}});
+      this.stopProcess=browserProcessLifetime(this.process);
       let stderr='';this.process.stderr?.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-8192);});
       const endpoint=await new Promise<string>((resolve,reject)=>{
         const timeout=setTimeout(()=>{cleanup();reject(new Error('Browser engine could not start with its sandbox.'));},12000);
@@ -135,13 +143,16 @@ export class BrowserEngine {
     try{const title=await this.cdp.call<{result:{value?:string}}>('Runtime.evaluate',{expression:'document.title',returnByValue:true});this.options.emit({type:'navigation',url:this.current,title:(title.result.value||'Browser').slice(0,200)});}catch{}finally{this.queued=false;}
   }
   close():void{
-    const first=!this.closed;this.closed=true;this.ready=false;clearInterval(this.timer);
-    const cdp=this.cdp,browser=this.browser,proxy=this.proxy,child=this.process,directory=this.directory;
-    this.cdp=undefined;this.browser=undefined;this.proxy=undefined;this.process=undefined;
-    cdp?.close();browser?.close();proxy?.close();
-    const remove=()=>{if(directory)fs.rmSync(directory,{recursive:true,force:true});};
-    if(child&&child.exitCode===null&&child.signalCode===null){child.kill('SIGTERM');const timer=setTimeout(()=>child.kill('SIGKILL'),2000);timer.unref();child.once('exit',()=>{clearTimeout(timer);remove();});}
-    else remove();
-    if(first)this.options.emit({type:'closed'});
+    if(this.closed)return;
+    this.closed=true;this.ready=false;clearInterval(this.timer);
+    this.cdp?.close();this.browser?.close();
+    // Startup may still be writing certificates or opening a CDP connection.
+    // Wait for it and Chromium's stdio/process closure before removing the profile.
+    void Promise.resolve(this.starting).catch(()=>{}).then(async()=>{
+      this.cdp?.close();this.browser?.close();this.proxy?.close();
+      await this.stopProcess?.();
+      await removeBrowserProfile(this.directory);
+    }).catch(()=>console.warn('Browser session cleanup failed; temporary profile could not be removed.'));
+    this.options.emit({type:'closed'});
   }
 }

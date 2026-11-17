@@ -98,6 +98,9 @@
     const next = L.move(positions, id, destination, grid);
     // Save by stable application ID only on drop or keyboard movement, not during pointer motion.
     updatePreferences({ positions: next });
+    // Commit both icons in an occupied-cell swap in this event, not a later frame.
+    cancelAnimationFrame(layoutFrame);
+    layout();
     const p = next[id];
     announce(`${registry.get(id).label} moved to column ${p.col + 1}, row ${p.row + 1}.`);
   }

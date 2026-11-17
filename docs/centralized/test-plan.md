@@ -21,11 +21,15 @@ No test contacts real MQTT/ChirpStack, a gateway, meter or blockchain.
 - Address classification, unusual IPv4 encodings, IPv4-mapped IPv6, metadata
   refusal, DNS pinning contract, mixed-address refusal and private routing policy.
 
-The latest full `npm test -- --runInBand --silent` run passed **239 tests in
-32 suites**, with TypeScript checking and a clean Jest exit. The full
-`PLAYWRIGHT_BROWSERS_PATH=/tmp/console-ci-browsers npm run test:ui` run passed
-**28 tests**. After gateway-local DNS hardening, the three Browser Playwright
-cases passed again. No existing UI tests were disabled or weakened. A Browser
+After the CI cleanup fixes, the full `npm test -- --runInBand --silent` run passed
+**243 tests in 33 suites**, with TypeScript checking and a clean Jest exit. The
+full `CI=1 PLAYWRIGHT_BROWSERS_PATH=/tmp/console-ci-browsers npm run test:ui` run
+passed **28 tests** in three minutes. Both ran separately on Node 24.16.0 with
+cached Chromium headless shell. No existing UI tests were disabled or weakened.
+An initial concurrent run hit an authentication test timeout; a UI trace also
+recorded `ERR_NETWORK_CHANGED` while loading desktop scripts. The independent
+full reruns above passed without source or assertion changes for those issues.
+A Browser
 credential-URL notification regression found in the first run was fixed in the
 application, preserving the original notification test.
 
@@ -90,11 +94,21 @@ and failed because sudo requires an interactive password unavailable here. The
 successful UI runs used existing cached Chromium. That install step is not
 reported as passing.
 
-GitHub's connected account is `MADjnr` and repository permissions report
-`push: false` for `fluxion9/Console`. A Git push dry-run also failed because no
-HTTPS username/credential is configured. No remote ref has been changed, no CI
-run is claimed, and no PR can be opened from an unpublished branch. Reconnect as
-an authorized account before the required push, CI watch and draft PR.
+The user published the branch. GitHub run
+[44147348218](https://github.com/fluxion9/Console/actions/runs/44147348218)
+passed dependency installation, unit tests and Chromium installation, then failed
+six UI tests; image builds/publication were skipped. Five UI failures followed
+an uncaught `ENOTEMPTY` while Browser cleanup deleted a still-active Chromium
+profile, which terminated the shared test server. The sixth observed an occupied
+icon-cell swap before its deferred layout frame ran.
+
+The corrections make Browser shutdown idempotent, wait for startup and child
+process closure, retry profile deletion asynchronously and contain cleanup
+errors. Icon drops now commit both icon positions synchronously. Regression
+tests cover repeated shutdown, startup cancellation, process close versus exit,
+termination escalation and cleanup failure containment. Existing UI assertions
+and workflows remain unchanged. A new green remote run is still required before
+claiming published images or both architecture builds pass.
 
 Docker validation was left unfinished at the user's request. An AMD64 build
 completed Node 20/Alpine dependency installation and TypeScript compilation, but
