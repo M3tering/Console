@@ -2,9 +2,11 @@ import http from 'http';
 import { create } from 'express-handlebars';
 import express, { Express, Request, Response } from 'express';
 import { requireSameOrigin } from './auth';
-import { proxyChirpstack } from './chirpstack';
+import { proxyChirpstack, proxyChirpstackThrough } from './chirpstack';
 import { createLogger } from '../utils/logger';
 import { getUIComponents, invokeUIAction } from '../lib/utils';
+import { central, config } from '../central/runtime';
+import { protectBrowserSockets } from './socket-router';
 
 const logger = createLogger('[server]');
 export const app: Express = express();
@@ -24,7 +26,17 @@ const hbs = create({
 app.engine('hbs', hbs.engine);
 app.set('view engine', 'hbs');
 app.set('views', './src/views');
-app.use('/chirpstack', proxyChirpstack);
+central?.auth.mount(app,central.hub.machineRoutes);
+const gatewayHub=central?.hub;
+app.use('/chirpstack', gatewayHub ? (req,res) => {
+  const gateway=gatewayHub.selected(req);if(!gateway){res.status(409).send('Select a gateway first.');return;}
+  void gatewayHub.open(gateway,'chirpstack','chirpstack',8080).then(stream=>{
+    if(req.destroyed||res.destroyed){stream.destroy();return;}
+    const agent=new http.Agent({keepAlive:false});agent.createConnection=()=>stream;
+    res.once('close',()=>{agent.destroy();stream.destroy();});
+    proxyChirpstackThrough(req,res,new URL(stream.upstreamOrigin||'http://chirpstack:8080'),agent);
+  }).catch(()=>{if(!res.headersSent)res.status(502).send('Gateway ChirpStack is unavailable.');else res.destroy();});
+} : proxyChirpstack);
 app.use(requireSameOrigin);
 app.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer'); next(); });
 app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
@@ -39,7 +51,7 @@ app.get('/', async (req: Request, res: Response, next) => {
 
     logger.info('Rendering index page with icons and windows');
 
-    res.render('index', { icons, windows });
+    res.render('index', { icons, windows, central:config.role==='central' });
     logger.info('Server handled GET request at `/`');
   } catch (error) { next(error); }
 });
@@ -61,6 +73,7 @@ app.post('/api/actions/:moduleId/:actionId', async (req: Request, res: Response,
 });
 
 export const server = http.createServer(app);
+if(central){protectBrowserSockets(server,central.auth.authorize);central.hub.mount(app,server);}
 
 export function startServer() {
   server.once('error', (error: NodeJS.ErrnoException) => {

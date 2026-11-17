@@ -1,0 +1,37 @@
+# Opt-in central test topology; supply CENTRAL_DOMAIN and central credentials.
+services:
+  console:
+    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:feat-centralized-console}
+    network_mode: host
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      CONSOLE_ROLE: central
+      CONSOLE_HOST: 127.0.0.1
+      CENTRAL_TRUSTED_PROXIES: 127.0.0.1,::1
+    volumes:
+      - ./.data:/opt/app/.data
+      - console_extension_sources:/opt/app/src/extensions
+      - console_extension_builds:/opt/app/dist/extensions
+    healthcheck:
+      test: [CMD, node, scripts/healthcheck.cjs]
+      interval: 5s
+      timeout: 4s
+      start_period: 30s
+      retries: 24
+  tls-proxy:
+    image: caddy:2-alpine
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      CENTRAL_DOMAIN: ${CENTRAL_DOMAIN:?Set a DNS name for central TLS}
+      CONSOLE_PORT: ${PORT:-3000}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - console_tls_data:/data
+      - console_tls_config:/config
+volumes:
+  console_extension_sources:
+  console_extension_builds:
+  console_tls_data:
+  console_tls_config:

@@ -3,8 +3,13 @@
   <header class="topbar">
     <button class="brand" data-launcher-toggle aria-label="Open application launcher" aria-expanded="false" aria-controls="app-launcher"><span class="brand-mark" aria-hidden="true">m³</span><span>M3tering<span class="brand-secondary"> Console</span></span></button>
     <div class="topbar-location"><span class="status-dot"></span><span id="active-app-name">Desktop</span></div>
+    {{#if central}}<div class="gateway-control"><label for="gateway-select" class="sr-only">Selected gateway</label><select id="gateway-select"><option value="">Select a gateway</option></select><button class="quiet-button" id="manage-gateways">Gateways</button><form action="/logout" method="post"><button class="quiet-button">Sign out</button></form></div>{{/if}}
     <div class="topbar-trailing"><button class="quiet-button" data-open-settings title="Personalize desktop" aria-label="Open Settings"><span data-icon="settings"></span></button><time id="desktop-clock"></time></div>
   </header>
+  {{#if central}}
+  <p id="gateway-status" role="status">Choose a gateway to access its applications.</p>
+  <dialog id="gateway-dialog" aria-labelledby="gateway-dialog-title"><header><h2 id="gateway-dialog-title">Gateways</h2><button id="gateway-dialog-close" aria-label="Close gateway management">×</button></header><p>Uncertain replies are held for reconciliation. A newer report supersedes an older unresolved reply; uncertainty never sends a relay command.</p><div id="gateway-list"></div><form id="gateway-create"><label>Gateway name<input name="name" required maxlength="100" autocomplete="off"></label><button class="nes-btn">Create enrollment</button></form><div id="gateway-enrollment" hidden><p>One-time enrollment token. It expires in ten minutes. Store it only in the gateway's private configuration.</p><code id="gateway-enrollment-token"></code><button id="gateway-copy-token" class="nes-btn">Copy token</button></div><p id="gateway-error" role="alert"></p></dialog>
+  {{/if}}
   <main id="desktop" aria-label="Desktop">
     <div class="desktop-heading" aria-hidden="true"><span class="eyebrow">YOUR ENERGY. YOUR ENVIRONMENT.</span><h1>A little more<br>connected.</h1><p>M3tering Console <span> / </span> Provider workspace</p></div>
     <div id="desktop-scroll"><div id="desktop-icons" tabindex="-1" aria-label="Applications">

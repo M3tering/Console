@@ -47,7 +47,7 @@ export class CentralAuth {
     return `${this.name()}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${expired ? 0 : 28800}${this.options.development ? '' : '; Secure'}`;
   }
   /** Mount before static files, reverse proxies, parsers and application routes. */
-  mount(app: Express): void {
+  mount(app: Express, machineRoutes?: (app:Express)=>void): void {
     app.use((req, res, next) => {
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Referrer-Policy', 'no-referrer');
@@ -63,6 +63,7 @@ export class CentralAuth {
       if (!this.globalLimiter.allow('login') || !this.limiter.allow(req.socket.remoteAddress || 'unknown')) { res.status(429).send('Too many attempts. Try again later.'); return; }
       next();
     }, express.urlencoded({ extended: false, limit: '3kb', parameterLimit: 2 }), (req, res, next) => { void this.login(req, res).catch(next); });
+    machineRoutes?.(app);
     app.use(this.requireLogin);
     app.post('/logout', (req, res) => {
       const session = this.session(req);

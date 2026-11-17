@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import { hashSecret, newSecret } from './secrets';
+import type { Health } from './protocol';
 
 export type AuditAction = 'login-success' | 'login-failure' | 'logout' | 'enrolment-created' | 'enrolled' |
   'credential-rotated' | 'credential-rotation-acknowledged' | 'credential-revoked' |
@@ -23,6 +24,9 @@ export interface IdentityStore {
   session(token: string): SessionIdentity | null;
   endSession(token: string): void;
   audit(actor: string, action: AuditAction, gateway?: string, subject?: string): void;
+  heartbeat(gateway:string,health:Health):void;
+  health(gateway:string):Health|null;
+  verifyHostKey(gateway:string,hash:string):boolean;
   close(): void;
 }
 
@@ -53,6 +57,8 @@ export class SqliteIdentityStore implements IdentityStore {
       CREATE TABLE IF NOT EXISTS central_audit (
         id INTEGER PRIMARY KEY, timestamp INTEGER NOT NULL, actor TEXT NOT NULL,
         action TEXT NOT NULL, gateway TEXT, subject TEXT);
+      CREATE TABLE IF NOT EXISTS central_health (gateway TEXT PRIMARY KEY REFERENCES central_gateways(id), health TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS central_hostkeys(gateway TEXT PRIMARY KEY REFERENCES central_gateways(id),hash TEXT NOT NULL);
       INSERT OR IGNORE INTO central_schema VALUES (1);
     `))();
   }
@@ -111,7 +117,7 @@ export class SqliteIdentityStore implements IdentityStore {
   }
   acknowledgeRotation(gateway: string, credential: string): boolean {
     return this.db.transaction(() => {
-      const result = this.db.prepare('UPDATE central_gateways SET previousHash=NULL,previousUntil=NULL WHERE id=? AND credentialHash=? AND revoked=0')
+      const result = this.db.prepare('UPDATE central_gateways SET previousHash=NULL,previousUntil=NULL WHERE id=? AND credentialHash=? AND revoked=0 AND previousHash IS NOT NULL')
         .run(gateway, hashSecret(credential));
       if (result.changes) this.audit('agent', 'credential-rotation-acknowledged', gateway);
       return !!result.changes;
@@ -151,4 +157,16 @@ export class SqliteIdentityStore implements IdentityStore {
     this.db.prepare('INSERT INTO central_audit(timestamp,actor,action,gateway,subject) VALUES (?,?,?,?,?)').run(this.now(), actor, action, gateway ?? null, subject ?? null);
   }
   close(): void { this.db.close(); }
+  heartbeat(gateway:string,health:Health):void {
+    this.db.transaction(()=>{
+      this.db.prepare('UPDATE central_gateways SET lastHeartbeat=?,version=? WHERE id=? AND revoked=0').run(this.now(),health.version,gateway);
+      this.db.prepare('INSERT INTO central_health VALUES (?,?) ON CONFLICT(gateway) DO UPDATE SET health=excluded.health').run(gateway,JSON.stringify(health));
+    })();
+  }
+  health(gateway:string):Health|null {const row=this.db.prepare('SELECT health FROM central_health WHERE gateway=?').get(gateway) as {health:string}|undefined;return row?JSON.parse(row.health) as Health:null;}
+  verifyHostKey(gateway:string,hash:string):boolean {
+    if(!/^[a-fA-F0-9]{64}$/.test(hash))return false;
+    this.db.prepare('INSERT OR IGNORE INTO central_hostkeys VALUES (?,?)').run(gateway,hash);
+    const row=this.db.prepare('SELECT hash FROM central_hostkeys WHERE gateway=?').get(gateway) as {hash:string};return row.hash===hash;
+  }
 }

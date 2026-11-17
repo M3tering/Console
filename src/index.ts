@@ -2,7 +2,28 @@ import 'dotenv/config';
 import { handleUplinks } from './services/mqtt';
 import { server, startServer } from './services/server';
 import { attachTerminal } from './services/ssh';
-attachTerminal(server);
+import { central, config, initializeManagedRole } from './central/runtime';
+if(!central)attachTerminal(server);
+else {
+ const runtime=central;
+ const sessions=new Map<string,{user:string;gateway:string}>();
+ attachTerminal(server,undefined,{
+  connection:async request=>{
+    const gateway=runtime.hub.selected(request);if(!gateway)throw new Error('Select a gateway.');
+    const sock=await runtime.hub.open(gateway,'ssh','ssh',22);
+    return {sock,hostHash:'sha256',hostVerifier:(hash:string)=>runtime.identities.verifyHostKey(gateway,hash)};
+  },
+  audit:(request,event,session)=>{
+    if(event==='start'){
+      const user=runtime.auth.session(request),gateway=runtime.hub.selected(request);
+      if(user&&gateway)sessions.set(session,{user:user.id,gateway});
+    }
+    const actor=sessions.get(session);
+    if(actor)runtime.identities.audit(actor.user,event==='start'?'terminal-start':'terminal-end',actor.gateway,session);
+    if(event==='end')sessions.delete(session);
+  },
+});
+}
 import { loadExtensionsFromConfig, loadUIExtensionsFromConfig, runHook, notifyHook } from './lib/utils';
 import setupDatabase from './store/sqlite';
 import { createLogger } from './utils/logger';
@@ -34,11 +55,13 @@ warnRemovedManagerSettings(process.env, message => logger.warn(message));
 
     await runHook('onDatabaseSetup');
 
+    await initializeManagedRole();
+
     try {
       logger.info('Initializing MQTT handling...');
 
       // Start MQTT handling
-      await handleUplinks();
+      if(config.role==='standalone')await handleUplinks();
 
       logger.info('MQTT handling initialized successfully');
     } catch (mqttError) {

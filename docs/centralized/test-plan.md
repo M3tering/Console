@@ -21,12 +21,21 @@ No test contacts real MQTT/ChirpStack, a gateway, meter or blockchain.
 - Address classification, unusual IPv4 encodings, IPv4-mapped IPv6, metadata
   refusal, DNS pinning contract, mixed-address refusal and private routing policy.
 
-The completed `npm test -- --runInBand --silent` run passed **193 tests in 24
-suites**, including HTTP-auth injection tests, in approximately 15 seconds.
-The desktop suite passed 24 of 25 tests; the remaining new removal assertion
-expected the wrong desktop title. After correcting it, the two Browser tests
-passed on a targeted rerun. No existing application behavior was changed to
-satisfy that assertion. This is not a full post-fix suite rerun.
+The latest full `npm test -- --runInBand --silent` run passed **217 tests in
+29 suites**. The full `PLAYWRIGHT_BROWSERS_PATH=/tmp/console-ci-browsers npm run
+test:ui` run passed **27 tests**, including the new gateway status/selection UI
+and existing Paint, Terminal, ChirpStack, themes, touch and responsive behavior.
+All three Compose files passed `docker compose config --quiet` using disposable
+placeholder configuration. No containers were started by this validation.
+
+Added safety coverage includes response loss after enqueue, down before offer,
+duplicate delivery, overtaken uncertain reports, several newer reports while an
+older handler remains active, slow committed decisions, process restart fences,
+empty queues after delivery, durable replay and destination publication claims.
+Central/local RPC tests verify stored decisions, human versus agent
+authentication, heartbeat counters, secret exclusion and immediate revocation.
+SSH fixtures exercise authentication, bidirectional data, resize and cleanup.
+A 180 kB binary HTTP/gRPC-Web stream exercises tunnel flow control.
 
 A first attempt could not locate the Playwright browser; the successful runs used
 the existing `/tmp/console-ci-browsers` installation. The required
@@ -36,12 +45,13 @@ successful reproduction of that CI installation step.
 
 ## Coverage still required before publication
 
-The agent/central/local integration, durable ownership, uncertain outcomes,
-reconciliation/distribution, lease handoff, bounded spool and crash recovery must
-be implemented and tested. The required billing safety decision is recorded in
-`design.md`. Browser engine/proxy/PNA tests, SSH tunnel tests, ChirpStack streaming
-tunnel tests, updater verification and rollback tests, and central gateway UI
-tests remain outstanding. Classifier tests alone do not prove proxy enforcement.
+The four explicitly requested uncertain-operation scenarios are covered. More
+coverage is still needed for full agent MQTT lifecycle, production-mode TLS
+proxies, complete gateway application routing, and real hardware behavior.
+Browser engine/proxy/PNA tests, signed updater verification/rollback and full
+architecture builds remain outstanding. Classifier tests alone do not prove
+proxy enforcement. The agent-failure policy intentionally has no automatic
+lease takeover; see the safety rationale in `design.md`.
 
 Before any push run the exact dependency, unit, UI and Docker checks requested in
 the task. Do not publish or report a green workflow before doing so. The local
@@ -70,7 +80,7 @@ billing. Record gateway architecture, firmware, image digests and signing identi
    Explicitly test an enqueue response lost after the queue accepted it.
 5. Restart the agent during each ownership/enqueue transition. Check the journal
    and queue for duplicates; test both Consoles down, ordered drain, spool bounds,
-   lease handoff and firmware behavior after unanswered reports.
+   the documented no-takeover policy and firmware behavior after unanswered reports.
 6. Open central Terminal for this gateway; authenticate against a test SSH user,
    resize, disconnect and reconnect. Check host-key change refusal, idle/session
    limits and purpose allowlists. Verify audit entries contain no credentials or
