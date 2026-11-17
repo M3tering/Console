@@ -5,6 +5,7 @@ import { buildBatchPayload, retry } from "../../utils";
 import type { Hooks, TransactionRecord } from "../../../types";
 import { getSyncedPendingTransactions } from "../../sync";
 import { createLogger } from "../../../utils/logger";
+import { managedRole, publishManaged } from '../../../central/distribution';
 
 const logger = createLogger("[streamr]");
 
@@ -19,6 +20,7 @@ export default class implements Hooks {
   private cronSchedule: string = process.env.STREAMR_CRONSCHEDULE || "0 * * * *";
 
   async onAfterInit() {
+    if (process.env.CONSOLE_ROLE === 'gateway') return;
     logger.info(
       "Registering Streamr cron job... Schedule: ",
       this.cronSchedule,
@@ -57,6 +59,12 @@ export default class implements Hooks {
   }
 
   async publishPendingTransactionsToStreamr(STREAMR_STREAM_ID: string, pendingTransactions: TransactionRecord[]) {
+    if (managedRole()) return publishManaged(`streamr:${STREAMR_STREAM_ID}`, pendingTransactions,
+      records => this.publishBatch(STREAMR_STREAM_ID, records));
+    return this.publishBatch(STREAMR_STREAM_ID, pendingTransactions);
+  }
+
+  private async publishBatch(STREAMR_STREAM_ID: string, pendingTransactions: TransactionRecord[]) {
     const streamrClient = new StreamrClient({
       auth: {
         privateKey: ETHEREUM_PRIVATE_KEY!,

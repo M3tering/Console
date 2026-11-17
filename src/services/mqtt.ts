@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { applicationId } from '../lib/chirpstack-config';
 import { enqueue } from './grpc';
 import type { DownlinkSink } from './downlink';
+import { managedBilling } from '../central/billing-context';
 import { encode } from '../lib/encode';
 import {
   getAllTransactionRecords, getMeterByDevEui, getMeterByPublicKey,
@@ -22,14 +23,8 @@ const meterLocks = new Set<string>();
 let collectorClient: MqttClient | undefined;
 
 // Existing process-level broker configuration, also reused by the opt-in agent.
-export function mqttConnection(): string | { host: string; port: number } {
-  if (!process.env.MQTT_URL) return { host: process.env.CHIRPSTACK_HOST || 'localhost', port: 1883 };
-  try {
-    const url = new URL(process.env.MQTT_URL);
-    if (!['mqtt:', 'mqtts:', 'ws:', 'wss:'].includes(url.protocol) || !url.hostname || url.hash) throw new Error();
-    return process.env.MQTT_URL;
-  } catch { throw new Error('MQTT_URL must be a valid mqtt, mqtts, ws or wss broker URL.'); }
-}
+export { mqttConnection } from '../lib/mqtt-config';
+import { mqttConnection } from '../lib/mqtt-config';
 // Optional arguments are dependency injection for integration tests, not configuration.
 export async function handleUplinks(connection = mqttConnection(), collect = handleMessage): Promise<boolean> {
   if (collectorClient) return true;
@@ -157,7 +152,13 @@ export async function handleMessage(blob: Buffer, downlink: DownlinkSink = chirp
     } finally {
       // Delivery services run after the downlink attempt and cannot prevent it.
       // notifyHook isolates failures so later delivery extensions still run.
-      if (newTransaction) void notifyHook('onTransactionDistribution', meter.tokenId, decoded, getAllTransactionRecords());
+      if (newTransaction) {
+        const context = managedBilling.getStore();
+        if (context) {
+          const record = getTransactionByNonce(decoded.nonce, meter.tokenId);
+          if (record) context.distribution.push(record);
+        } else void notifyHook('onTransactionDistribution', meter.tokenId, decoded, getAllTransactionRecords());
+      }
     }
   } catch (error) {
     log.error('Error handling MQTT message:', error);
