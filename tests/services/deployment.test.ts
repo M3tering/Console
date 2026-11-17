@@ -78,11 +78,12 @@ test('an unknown role is refused before touching Docker', () => {
 });
 
 // Gateway role: Console + agent, owner-only secrets, safe fallback. Fake docker/sudo only.
-function runGateway(environment:string,options:{credential?:boolean;journal?:boolean;agentState?:string;enrollOnUp?:boolean}={}) {
+function runGateway(environment:string,options:{credential?:boolean;journal?:boolean;agentState?:string;enrollOnUp?:boolean;remote?:string}={}) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'console-gateway-'));
   try {
-    for(const file of ['auto-compose.sh','compose.yaml','compose.gateway.yaml'])fs.copyFileSync(file,path.join(dir,file));
+    for(const file of ['auto-compose.sh','compose.yaml','compose.gateway.yaml','compose.updater.yaml'])fs.copyFileSync(file,path.join(dir,file));
     fs.writeFileSync(path.join(dir,'.env'),environment);
+    if(options.remote){spawnSync('git',['init','-q'],{cwd:dir});spawnSync('git',['remote','add','origin',options.remote],{cwd:dir});}
     fs.mkdirSync(path.join(dir,'.data','agent'),{recursive:true,mode:0o700});
     if(options.credential)fs.writeFileSync(path.join(dir,'.data','agent','credential'),'existing-credential-'.padEnd(80,'x'),{mode:0o600});
     if(options.journal)fs.writeFileSync(path.join(dir,'.data','agent','operations.db'),'journal');
@@ -90,7 +91,7 @@ function runGateway(environment:string,options:{credential?:boolean;journal?:boo
     const log=path.join(dir,'calls');fs.writeFileSync(log,'');
     fs.writeFileSync(path.join(dir,'sudo'),'#!/bin/bash\nexec "$@"\n',{mode:0o755});
     fs.writeFileSync(path.join(dir,'docker'),`#!/bin/bash
-printf '%s|%s\\n' "$*" "$CONSOLE_IMAGE" >> "$DEPLOY_LOG"
+printf '%s|%s|%s|%s|%s\\n' "$*" "$CONSOLE_IMAGE" "$UPDATER_IMAGE_REPOSITORY" "$UPDATER_SOURCE_REPOSITORY" "$UPDATER_IMAGE" >> "$DEPLOY_LOG"
 case "$*" in
   *'ps -aq console'*) echo old-container ;;
   *'ps -q agent'*) echo agent-container ;;
@@ -196,9 +197,31 @@ test.each([
   ['an SSH remote is lower-cased into the GHCR name','git@github.com:Fluxion9/Console.git','ghcr.io/fluxion9/console:main','','ghcr.io/fluxion9/console:main'],
   ['a switched remote moves off the old repository image','https://github.com/fluxion9/Console','ghcr.io/m3tering/console:main','','ghcr.io/fluxion9/console:main'],
   ['a branch tag from the same repository is kept','https://github.com/M3tering/Console.git','ghcr.io/m3tering/console:feat-x','','ghcr.io/m3tering/console:feat-x'],
-  ['CONSOLE_IMAGE in .env wins over the repository default','git@github.com:fluxion9/Console.git','ghcr.io/fluxion9/console:main','CONSOLE_IMAGE=ghcr.io/fluxion9/console:v2\n','ghcr.io/fluxion9/console:v2'],
+  ['CONSOLE_IMAGE in .env is ignored in favour of the repository','git@github.com:fluxion9/Console.git','ghcr.io/m3tering/console:main','CONSOLE_IMAGE=ghcr.io/m3tering/console:v2\n','ghcr.io/fluxion9/console:main'],
   ['without git the previous default is kept',null,'ghcr.io/m3tering/console:main','','ghcr.io/m3tering/console:main'],
 ])('%s',(_name,remote,oldRef,extraEnv,expected)=>{
   const {run,pulled}=runFromRepo(remote,oldRef,extraEnv);
   expect(run.stderr).toBe('');expect(run.status).toBe(0);expect(pulled).toBe(expected);
+});
+
+test('remote updates: the updater runs with trust taken from the checkout repository',()=>{
+  const {run,calls}=runGateway(gatewayEnv+'REMOTE_UPDATES_ENABLED=true\n',{credential:true,remote:'git@github.com:Fluxion9/Console.git'});
+  expect(run.stderr).toBe('');expect(run.status).toBe(0);
+  expect(calls).toContain('-f compose.gateway.yaml -f compose.updater.yaml');
+  expect(calls.indexOf('stop updater')).toBeGreaterThan(-1);
+  expect(calls.indexOf('stop updater')).toBeLessThan(calls.indexOf('stop console agent'));
+  expect(calls).toContain('up --detach --no-deps --force-recreate updater|ghcr.io/fluxion9/console:main|ghcr.io/fluxion9/console|Fluxion9/Console|ghcr.io/fluxion9/console-updater:main');
+});
+test('remote updates are refused without a GitHub origin remote to trust',()=>{
+  const {run,calls}=runGateway(gatewayEnv+'REMOTE_UPDATES_ENABLED=true\n',{credential:true});
+  expect(run.status).toBe(2);expect(run.stderr).toContain('GitHub origin remote');expect(calls).not.toContain('pull');
+});
+test('the updater has no built-in trusted repository',async()=>{
+  const saved={...process.env};
+  try{
+    Object.assign(process.env,{UPDATER_DEPLOY_DIRECTORY:'/deploy',UPDATER_STATE_DIRECTORY:'/state',UPDATER_SOCKET:'/agent/u.sock',UPDATER_SECRET_PATH:'/agent/s'});
+    delete process.env.UPDATER_IMAGE_REPOSITORY;delete process.env.UPDATER_SOURCE_REPOSITORY;
+    const { runUpdater }=await import('../../src/updater/index');
+    await expect(runUpdater()).rejects.toThrow('UPDATER_IMAGE_REPOSITORY and UPDATER_SOURCE_REPOSITORY are required.');
+  }finally{process.env=saved;}
 });

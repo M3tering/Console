@@ -187,7 +187,7 @@ The activity tiles appear once a gateway has reported in:
 | **Revoke access** | Disconnects the gateway and cancels its credential, but keeps the card |
 | **Rotate credential** | Issues a new credential to an online gateway without interrupting it |
 | **New enrollment token** / **Re-enroll** | Issues a fresh one-time token for a gateway that isn't connected |
-| **Remote updates** | Pushes a signed image to the gateway. The gateway owner must enable this locally first; see [advanced options](centralized/deployment.md#optional-signed-updater). |
+| **Remote updates** | Pushes a signed image to the gateway. The gateway owner enables it by adding `REMOTE_UPDATES_ENABLED=true` to `.env` and running `./auto-compose.sh`; see [advanced options](centralized/deployment.md#optional-signed-updater). |
 
 **Reconnecting a revoked or deleted gateway.** The gateway still holds its old,
 now useless credential. Remove it before using a new token:
@@ -232,10 +232,14 @@ under its own name: a checkout of `fluxion9/Console` uses
 The image is chosen in this order:
 
 1. `--image` on the command line
-2. `CONSOLE_IMAGE` in `.env`
-3. The image already running, if it comes from the same repository and runs the
+2. The image already running, if it comes from the same repository and runs the
    same role. This keeps a branch tag or digest you chose earlier.
-4. `ghcr.io/<owner>/<repo>:main` from the `origin` remote
+3. `ghcr.io/<owner>/<repo>:main` from the `origin` remote
+
+Images are never read from `.env`. If an old `CONSOLE_IMAGE` line is there, the
+script says it's ignored; delete it. The optional updater
+(`ghcr.io/<owner>/<repo>-updater:main`) and the repository it trusts for signed
+remote updates follow the same remote.
 
 To switch a machine to another repository's builds, change its remote and
 update:
@@ -280,7 +284,7 @@ Settings are needed (✓), optional (opt) or not used (–) per setup.
 | `CENTRAL_ADMIN_PASSWORD` | – | ✓ first start | – | At least 16 characters |
 | `CENTRAL_URL` | – | – | ✓ | `wss://` + central domain, no path |
 | `AGENT_ENROLLMENT_TOKEN` | – | – | first start | From central; remove after enrolling |
-| `CONSOLE_IMAGE` | opt | opt | opt | Pins an image; otherwise it follows the checkout's GitHub repository |
+| `REMOTE_UPDATES_ENABLED` | – | – | opt | `true` makes the script run the signed updater |
 
 Advanced gateway settings (Browser ports, SSH port, queue size, remote updates)
 are listed in [`.env.example`](../.env.example) and

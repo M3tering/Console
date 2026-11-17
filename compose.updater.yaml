@@ -1,12 +1,13 @@
-# Add to compose.gateway.yaml only after owner review. This service alone has Docker access.
+# Started by ./auto-compose.sh on gateways when REMOTE_UPDATES_ENABLED=true. This service alone has Docker access.
+# Image and signature trust follow the checkout's GitHub repository; auto-compose.sh sets them.
 services:
   updater:
-    image: ${UPDATER_IMAGE:-ghcr.io/fluxion9/console-updater:main}
+    image: ${UPDATER_IMAGE:?Run ./auto-compose.sh; it sets the updater image from the checkout's repository}
     restart: unless-stopped
     environment:
       REMOTE_UPDATES_ENABLED: ${REMOTE_UPDATES_ENABLED:-false}
-      UPDATER_IMAGE_REPOSITORY: ${UPDATER_IMAGE_REPOSITORY:-ghcr.io/fluxion9/console}
-      UPDATER_SOURCE_REPOSITORY: ${UPDATER_SOURCE_REPOSITORY:-fluxion9/Console}
+      UPDATER_IMAGE_REPOSITORY: ${UPDATER_IMAGE_REPOSITORY:?Run ./auto-compose.sh; it sets the trusted image repository}
+      UPDATER_SOURCE_REPOSITORY: ${UPDATER_SOURCE_REPOSITORY:?Run ./auto-compose.sh; it sets the trusted source repository}
       UPDATER_ALLOWED_REFS: ${UPDATER_ALLOWED_REFS:-refs/heads/main}
       UPDATER_PROJECT: ${COMPOSE_PROJECT_NAME:?Set the existing gateway Compose project name}
       UPDATER_DEPLOY_DIRECTORY: ${UPDATER_DEPLOY_DIRECTORY:?Set the absolute host checkout path}

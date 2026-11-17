@@ -118,9 +118,10 @@ gateway's `central_hostkeys` record. Do not routinely disable host-key validatio
 ## Optional Browser engine
 
 The default image intentionally omits Chromium. For a central or standalone test
-server, add `-f compose.browser.yaml` to its Compose commands. This selects
-`ghcr.io/fluxion9/console-browser:feat-centralized-console`, an optional target of
-the same Dockerfile, with Alpine Chromium/OpenSSL and a non-root runtime. Ensure
+server, add `-f compose.browser.yaml` to its Compose commands. `./auto-compose.sh`
+does not manage this override yet, so run those commands by hand with
+`BROWSER_IMAGE=ghcr.io/<owner>/<repo>-browser:main` matching your checkout. The
+browser image is an optional target of the same Dockerfile, with Alpine Chromium/OpenSSL and a non-root runtime. Ensure
 its data and extension volumes are owned by UID 1000. Do not blindly apply this
 override to a managed gateway pair: both services must use the same image and
 owner-file UID. Small gateways can keep Browser unavailable and use central's
@@ -138,30 +139,28 @@ The optional Compose profile bounds the whole Console/engine to 2 GiB, 2 CPUs an
 ## Optional signed updater
 
 Only `compose.updater.yaml` mounts Docker. The agent never receives Docker access.
-Set these gateway-owner variables in the existing protected `.env`:
+To enable remote updates, add this to the gateway's protected `.env` and run
+`./auto-compose.sh`:
 
 ```dotenv
 REMOTE_UPDATES_ENABLED=true
-COMPOSE_PROJECT_NAME=YOUR_EXISTING_PROJECT
-UPDATER_DEPLOY_DIRECTORY=/absolute/host/path/to/Console
-UPDATER_IMAGE_REPOSITORY=ghcr.io/fluxion9/console
-UPDATER_SOURCE_REPOSITORY=fluxion9/Console
-UPDATER_ALLOWED_REFS=refs/heads/main,refs/heads/feat/centralized-console
-UPDATER_RECONNECT_TIMEOUT_MS=180000
+# Optional: UPDATER_ALLOWED_REFS (default refs/heads/main), UPDATER_RECONNECT_TIMEOUT_MS
 ```
 
-The test branch must be explicitly trusted; remove it after testing. If the
+The script starts the updater and keeps it current on every run. It sets the
+Compose project and the absolute checkout path itself, and mounts that same path
+into the updater so Compose bind mounts resolve on the Docker host. If the
 registry/API requires authentication, set `UPDATER_GITHUB_TOKEN` to a narrowly
-scoped read token. Only the updater receives it. The exact same absolute checkout
-path is mounted into the updater so Compose bind mounts resolve on the Docker
-host, not a fictitious container path.
+scoped read token; only the updater receives it.
 
-```sh
-docker compose -f compose.gateway.yaml -f compose.updater.yaml up -d
-```
-
-The trust identity is GitHub's OIDC issuer, source repository `fluxion9/Console`,
-workflow `fluxion9/Console/.github/workflows/ci.yml`, and the allowed source refs.
+The trusted repository is **not** configured in `.env`. It is taken from the
+checkout's GitHub `origin` remote. For a checkout of `<owner>/<repo>` the trust
+identity is GitHub's OIDC issuer, source repository `<owner>/<repo>`, workflow
+`<owner>/<repo>/.github/workflows/ci.yml`, and the allowed source refs. Accepted
+images are `ghcr.io/<owner>/<repo>@sha256:…`, and the updater image is
+`ghcr.io/<owner>/<repo>-updater:main`. Remote updates are refused if the checkout
+has no GitHub remote. The updater itself has no built-in repository and won't
+start without one.
 `gh attestation verify` checks signed provenance and subject digest before the
 updater pulls/restarts anything. The workflow attests each published platform and
 manifest, never pull-request builds. An unsigned/wrongly signed digest is refused.
@@ -175,7 +174,7 @@ Failed readiness or no authenticated agent reconnect within the configured windo
 rolls back; interrupted replacement rolls back on updater restart. Failed digests
 are blocked from automatic retry. No general shell command/script is accepted.
 
-Set `REMOTE_UPDATES_ENABLED=false` locally and restart only updater to disable
+Set `REMOTE_UPDATES_ENABLED=false` locally and rerun `./auto-compose.sh` (or restart only the updater) to disable
 remote updates; central cannot override this. Rollout is manual, one gateway at a
 time; there is no automatic latest-main scheduler. A remote update does not rewrite
 `.env` image preferences: record/pin a successful image there before a later manual

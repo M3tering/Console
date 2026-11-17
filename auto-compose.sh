@@ -35,11 +35,13 @@ env_value() {
   sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" .env | tail -1 \
     | sed -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
 }
-# An image set in .env applies unless --image or the shell already chose one.
-image="${image:-$(env_value CONSOLE_IMAGE)}"
+# Images come from the repository this checkout follows, never from .env.
+if [[ -n "$(env_value CONSOLE_IMAGE)" ]]; then
+  echo 'Note: CONSOLE_IMAGE in .env is ignored; images follow this checkout'"'"'s GitHub repository. Remove that line, and use --image to pin a build.'
+fi
 # CI publishes images as ghcr.io/<owner>/<repo>, named after the GitHub repository,
 # so follow the repository this checkout was cloned from.
-repo_image=''
+repo_image='' source_repo=''
 if remote=$(git remote get-url origin 2>/dev/null); then
   case "$remote" in
     git@github.com:*) slug=${remote#git@github.com:} ;;
@@ -47,8 +49,15 @@ if remote=$(git remote get-url origin 2>/dev/null); then
     https://github.com/*|https://*@github.com/*) slug=${remote#*github.com/} ;;
     *) slug='' ;;
   esac
-  slug=${slug%/}; slug=${slug%.git}; slug=$(tr '[:upper:]' '[:lower:]' <<<"$slug")
-  if [[ "$slug" =~ ^[a-z0-9._-]+/[a-z0-9._-]+$ ]]; then repo_image="ghcr.io/$slug"; fi
+  slug=${slug%/}; slug=${slug%.git}
+  if [[ "$slug" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+    source_repo=$slug; repo_image="ghcr.io/$(tr '[:upper:]' '[:lower:]' <<<"$slug")"
+  fi
+fi
+# The optional updater and browser images, and the updater's signature trust, follow the same repository.
+if [[ -n "$repo_image" ]]; then
+  export UPDATER_IMAGE="$repo_image-updater:main" BROWSER_IMAGE="$repo_image-browser:main"
+  export UPDATER_IMAGE_REPOSITORY="$repo_image" UPDATER_SOURCE_REPOSITORY="$source_repo"
 fi
 role=$(env_value CONSOLE_ROLE | sed -n 's/^\([a-z]*\).*/\1/p')
 role="${role:-standalone}"
@@ -112,6 +121,15 @@ if [[ -z "$project" ]]; then
 fi
 [[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo 'Invalid Compose project name.' >&2; exit 2; }
 compose=(docker compose --project-name "$project" -f "$compose_file")
+# Gateways: run the signed updater when the owner enabled it, or keep an existing one current.
+manage_updater=false
+if [[ "$role" == gateway ]] && { [[ "$(env_value REMOTE_UPDATES_ENABLED)" == true ]] ||
+    [[ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$project" --filter label=com.docker.compose.service=updater)" ]]; }; then
+  [[ -n "$repo_image" ]] || { echo 'Remote updates need a GitHub origin remote: the updater only trusts images signed by that repository.' >&2; exit 2; }
+  manage_updater=true
+  export COMPOSE_PROJECT_NAME="$project" UPDATER_DEPLOY_DIRECTORY="$PWD"
+  compose+=(-f compose.updater.yaml)
+fi
 old_container=$("${compose[@]}" ps -aq console | head -1)
 old_id='' old_role=''
 if [[ -n "$old_container" ]]; then
@@ -181,11 +199,18 @@ deploy_failed() {
 
 # Keep the old service and image until the correct architecture is downloaded.
 "${compose[@]}" pull "${services[@]}"
+# The updater must not replace Console and agent while this script does.
+if $manage_updater; then "${compose[@]}" stop updater; fi
 # Stopping Console first also stops a standalone MQTT subscriber before the agent takes over.
 "${compose[@]}" stop "${services[@]}"
 "${compose[@]}" rm --force "${services[@]}"
 "${compose[@]}" up --detach --no-deps --no-build --pull never --wait --wait-timeout 240 "${services[@]}" || deploy_failed
 if [[ "$role" == gateway ]]; then agent_ready || deploy_failed; fi
+if $manage_updater; then
+  # Recreate so a changed REMOTE_UPDATES_ENABLED or trust setting applies; it recovers interrupted jobs on start.
+  { "${compose[@]}" pull updater && "${compose[@]}" up --detach --no-deps --force-recreate updater; } \
+    || { echo 'Console and agent are running, but the updater did not start; remote updates are unavailable.' >&2; exit 1; }
+fi
 new_id=$(docker inspect --format '{{.Image}}' "$("${compose[@]}" ps -q console)")
 if [[ -n "$old_id" && "$old_id" != "$new_id" && -z "$(docker ps -aq --filter "ancestor=$old_id")" ]]; then
   # No force: Docker keeps images that still have other tags/references.
