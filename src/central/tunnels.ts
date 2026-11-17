@@ -4,7 +4,7 @@ import tls from 'tls';
 import { randomUUID } from 'crypto';
 import WebSocket from 'ws';
 import { CentralMessage, TunnelMessage, TunnelPurpose, MAX_TUNNEL_CHUNK } from './protocol';
-import { normalizeHost, resolveTarget } from './destinations';
+import { normalizeHost, resolveTarget, classifyAddress } from './destinations';
 import { chirpstackTarget } from '../services/chirpstack';
 
 type Open = Extract<CentralMessage,{type:'tunnel-open'}>;
@@ -24,10 +24,10 @@ export async function gatewayTarget(request:Open,env:NodeJS.ProcessEnv=process.e
     return {host:resolved.address,port:Number(target.port||(target.protocol==='https:'?443:80)),secure:target.protocol==='https:',servername:normalizeHost(target.hostname),origin:target.origin};
   }
   const target=await resolveTarget(request.host);
-  if(target.classification!=='local')throw new Error('Browser tunnels are restricted to local destinations.');
+  if(target.classification!=='local'||classifyAddress(target.address)!=='local')throw new Error('Browser tunnels are restricted to local destinations.');
   const loopback=target.address==='::1'||target.address.startsWith('127.')||/^::ffff:7f[\da-f]{2}:/.test(target.address);
   if(!loopback&&env.AGENT_BROWSER_ALLOW_LAN!=='true')throw new Error('Gateway owner has not enabled browser access to the LAN.');
-  const denied=new Set([22,2375,2376,Number(env.GATEWAY_FALLBACK_PORT||3001),Number(env.GATEWAY_UPDATER_PORT||3002)]);
+  const denied=new Set([22,Number(env.AGENT_SSH_PORT||22),2375,2376,Number(env.GATEWAY_FALLBACK_PORT||3001),Number(env.GATEWAY_UPDATER_PORT||3002)]);
   if(denied.has(request.port))throw new Error('This infrastructure port is not a browser target.');
   const allowed=(env.AGENT_BROWSER_PORTS||'80,443,3000,8080,8090').split(',').map(Number);
   if(!allowed.includes(request.port))throw new Error('Gateway owner has not allowed this browser port.');

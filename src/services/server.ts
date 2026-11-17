@@ -6,6 +6,7 @@ import { proxyChirpstack, proxyChirpstackThrough } from './chirpstack';
 import { createLogger } from '../utils/logger';
 import { getUIComponents, invokeUIAction } from '../lib/utils';
 import { central, config } from '../central/runtime';
+import { attachBrowser } from '../browser/service';
 import { protectBrowserSockets } from './socket-router';
 
 const logger = createLogger('[server]');
@@ -74,6 +75,19 @@ app.post('/api/actions/:moduleId/:actionId', async (req: Request, res: Response,
 
 export const server = http.createServer(app);
 if(central){protectBrowserSockets(server,central.auth.authorize);central.hub.mount(app,server);}
+
+const browserRuntime=central;
+const browserActors=new WeakMap<http.IncomingMessage,string>();
+attachBrowser(server,{role:config.role,gateway:request=>browserRuntime?.hub.selected(request)||null,
+  owner:browserRuntime?request=>browserRuntime.auth.session(request)?.id||'unauthorized':undefined,
+  tunnel:browserRuntime?(gateway,host,port)=>browserRuntime.hub.open(gateway,'browser',host,port):undefined,
+  audit:browserRuntime?(request,event,gateway)=>{
+    if(event==='browser-start'){const actor=browserRuntime.auth.session(request)?.id;if(actor)browserActors.set(request,actor);}
+    const actor=browserActors.get(request);if(actor)browserRuntime.identities.audit(actor,event,gateway);
+    if(event==='browser-end')browserActors.delete(request);
+  }:undefined,
+  testUnsandboxed:process.env.NODE_ENV==='test'&&process.env.BROWSER_UNSANDBOXED_TEST==='true',
+});
 
 export function startServer() {
   server.once('error', (error: NodeJS.ErrnoException) => {

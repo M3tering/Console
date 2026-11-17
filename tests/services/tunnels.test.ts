@@ -5,6 +5,7 @@ import { Client, Server } from 'ssh2';
 import { generateKeyPairSync } from 'crypto';
 import WebSocket from 'ws';
 import { TunnelMux, gatewayTarget } from '../../src/central/tunnels';
+import * as destinations from '../../src/central/destinations';
 import { parseMessage } from '../../src/central/protocol';
 
 function pair(resolveTarget:ConstructorParameters<typeof TunnelMux>[1],idleMs=10000){
@@ -87,4 +88,13 @@ test('closing the agent link destroys active streams and refuses new sessions',a
     expect(stream.destroyed).toBe(true);
     await expect(link.central.open('browser','localhost',80)).rejects.toThrow('unavailable');
   }finally{link.close();upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));}
+});
+
+test('browser-purpose local names cannot hide public DNS answers or the custom SSH port',async()=>{
+  const request={v:1 as const,type:'tunnel-open' as const,id:'fixture',purpose:'browser' as const,host:'meter.lan',port:8080};
+  const lookup=jest.spyOn(destinations,'resolveTarget').mockResolvedValue({hostname:'meter.lan',address:'8.8.8.8',family:4,classification:'local'});
+  try{await expect(gatewayTarget(request,{AGENT_BROWSER_ALLOW_LAN:'true'})).rejects.toThrow('local destinations');
+    lookup.mockResolvedValue({hostname:'meter.lan',address:'127.0.0.1',family:4,classification:'local'});
+    await expect(gatewayTarget({...request,port:2222},{AGENT_SSH_PORT:'2222',AGENT_BROWSER_PORTS:'2222'})).rejects.toThrow('infrastructure port');
+  }finally{lookup.mockRestore();}
 });
