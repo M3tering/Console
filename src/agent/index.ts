@@ -15,6 +15,8 @@ import { mqttConnection } from '../lib/mqtt-config';
 import { applicationId } from '../lib/chirpstack-config';
 import { managedQueue } from '../services/grpc';
 import { createLogger } from '../utils/logger';
+import { RateLimit } from '../central/auth';
+import { UpdaterClient } from './updater-client';
 import { TunnelMux, gatewayTarget } from '../central/tunnels';
 
 const logger=createLogger('[agent]');
@@ -36,6 +38,8 @@ export async function runAgent():Promise<()=>Promise<void>> {
   const [gateway,credential]=identity.split(':');
   if(!/^[\w-]{36}$/.test(gateway)||!/^[\w-]{43}$/.test(credential||''))throw new Error('Invalid agent credential file.');
   let currentCredential=credential;
+  const updater=new UpdaterClient(process.env.UPDATER_SOCKET||path.join(path.dirname(config.credentialPath),'updater.sock'),process.env.UPDATER_SECRET_PATH||path.join(path.dirname(config.credentialPath),'updater-secret'));
+  let updatesEnabled=false;const updateStatuses=new Map<string,string>();
   const stateDirectory=path.dirname(config.credentialPath);
   const journal=new OperationJournal(path.join(stateDirectory,'operations.db'),config.queueLimit,event=>logger.info('Operation status',event));
   const local=new LocalDecider(Number(process.env.GATEWAY_FALLBACK_PORT||3001),readOwnerSecret(config.fallbackSecretPath),config.decisionTimeoutMs);
@@ -49,17 +53,24 @@ export async function runAgent():Promise<()=>Promise<void>> {
   const sendHealth=()=>{
     if(socket?.readyState!==WebSocket.OPEN)return;
     const counts=journal.counts(gateway);
-    const health:Health={version:'centralized-v1',uptime:Math.floor(process.uptime()),mqtt:mqttState,fallback:!healthy(),queueDepth:counts.pending,
-      uncertain:counts.uncertain,reconciled:counts.reconciled,superseded:counts.superseded,updatesEnabled:false,lastError};
+    const version=(require('../../package.json') as {version:string}).version;
+    const revision=process.env.CONSOLE_DEPLOY_IMAGE?.match(/@sha256:([a-f0-9]{12})/)?.[1];
+    const health:Health={version:version+(revision?`+sha.${revision}`:''),uptime:Math.floor(process.uptime()),mqtt:mqttState,fallback:!healthy(),queueDepth:counts.pending,
+      uncertain:counts.uncertain,reconciled:counts.reconciled,superseded:counts.superseded,updatesEnabled,lastError};
     socket.send(JSON.stringify({v:1,type:'health',health}));
+    if(socket.bufferedAmount<MAX_MESSAGE_BYTES*8)for(const result of journal.results())socket.send(JSON.stringify({v:1,type:'result',...result}));
   };
   const connectCentral=()=>{
     if(stopped)return;
     const ws=socket=new WebSocket(new URL('/agent',config.centralUrl),{headers:{Authorization:`Bearer ${currentCredential}`},maxPayload:MAX_MESSAGE_BYTES,
       perMessageDeflate:false,handshakeTimeout:8000,followRedirects:false});
+    const inputLimit=new RateLimit(512,1000,1);
     const tunnels=new TunnelMux(ws,request=>gatewayTarget(request));
-    ws.on('open',()=>{connectedAt=Date.now();attempt=0;lastError='none';sendHealth();});
+    ws.on('open',()=>{connectedAt=Date.now();attempt=0;lastError='none';
+      if(process.env.CONSOLE_DEPLOY_IMAGE)writeOwnerSecret(path.join(stateDirectory,'reconnected.json'),JSON.stringify({image:process.env.CONSOLE_DEPLOY_IMAGE,time:Date.now()}));
+      updateStatuses.clear();sendHealth();});
     ws.on('message',data=>{
+      if(!inputLimit.allow('frames')){ws.close(1008,'Central message rate exceeded');return;}
       try {
         const value:unknown=JSON.parse(data.toString());
         if(typeof value==='object'&&value!==null&&'type' in value&&value.type==='operation-result'){
@@ -68,7 +79,18 @@ export async function runAgent():Promise<()=>Promise<void>> {
         const message=parseMessage(data.toString(),'central');
         if(message.type==='tunnel-open'||message.type==='tunnel-data'||message.type==='tunnel-credit'||message.type==='tunnel-ready'||message.type==='tunnel-close'||message.type==='tunnel-end')tunnels.receive(message);
         else if(message.type==='ping')ws.send(JSON.stringify({v:1,type:'pong',id:message.id}));
-        else if(message.type==='rotate'){
+        else if(message.type==='result-ack')journal.acknowledgeResult(message.id,message.outcome);
+        else if(message.type==='update'||message.type==='update-cancel'){
+          const operation=message.type==='update'?updater.request('POST','/jobs',{id:message.id,image:message.image}):updater.request('DELETE',`/jobs/${message.id}`);
+          void operation.catch(async()=>{
+            lastError='update';
+            // A lost response or a cancellation race does not prove failure.
+            // Recover the updater's durable status before reporting an outcome.
+            try{const state=await updater.status();const job=state.jobs.find(job=>job.id===message.id);
+              if(ws.readyState===WebSocket.OPEN&&(job||message.type==='update'))ws.send(JSON.stringify({v:1,type:'update-progress',id:message.id,status:job?.status||'failed'}));
+            }catch{/* Keep the central job pending until its outcome is known. */}
+          });
+        }else if(message.type==='rotate'){
           writeOwnerSecret(config.credentialPath,`${gateway}:${message.credential}`);currentCredential=message.credential;
           ws.send(JSON.stringify({v:1,type:'rotated'}));
         } else if(message.type!=='pong')ws.close(1008,'Unsupported operation for this agent version');
@@ -94,8 +116,10 @@ export async function runAgent():Promise<()=>Promise<void>> {
     try {
       const match=packet.topic.match(/^application\/([^/]+)\/device\/([a-f0-9]{16})\/event\/up$/i);
       if(!match||match[1].toLowerCase()!==application||Buffer.byteLength(packet.payload)>MAX_MESSAGE_BYTES){done();return;}
-      const event:UplinkEvent=JSON.parse(packet.payload.toString());
-      if(event.fPort!==2||event.deviceInfo?.devEui?.toLowerCase()!==match[2].toLowerCase()||event.deviceInfo.applicationId?.toLowerCase()!==application){done();return;}
+      const parsed:unknown=JSON.parse(packet.payload.toString());
+      if(typeof parsed!=='object'||parsed===null||Array.isArray(parsed)){done();return;}
+      const event=parsed as UplinkEvent;
+      if(event.fPort!==2||typeof event.deviceInfo?.devEui!=='string'||typeof event.deviceInfo?.applicationId!=='string'||event.deviceInfo.devEui.toLowerCase()!==match[2].toLowerCase()||event.deviceInfo.applicationId.toLowerCase()!==application){done();return;}
       try{eventIdentity(event);}catch{logger.warn('Invalid billing event ignored.');done();return;}
       // receive persists synchronously before returning its processing promise.
       const processing=coordinator.receive(gateway,event);
@@ -110,7 +134,11 @@ export async function runAgent():Promise<()=>Promise<void>> {
   let draining:Promise<void>|undefined;
   const timer=setInterval(()=>{
     sendHealth();if(draining)return;
-    draining=(async()=>{try{await replication.flush('local');}catch{}try{await replication.flush('central');}catch{}await coordinator.drain();})()
+    draining=(async()=>{
+      try{const state=await updater.status();updatesEnabled=state.enabled;
+        if(socket?.readyState===WebSocket.OPEN)for(const job of state.jobs){if(updateStatuses.get(job.id)!==job.status){socket.send(JSON.stringify({v:1,type:'update-progress',id:job.id,status:job.status}));updateStatuses.set(job.id,job.status);}}
+      }catch{updatesEnabled=false;}
+      try{await replication.flush('local');}catch{}try{await replication.flush('central');}catch{}await coordinator.drain();})()
       .catch(()=>{lastError='storage';}).finally(()=>{draining=undefined;});
   },5000);timer.unref();connectCentral();
   return async()=>{stopped=true;clearTimeout(reconnect);clearInterval(timer);central.disconnect();socket?.terminate();await mqtt.endAsync(false);await coordinator.stop();await draining;journal.close();};

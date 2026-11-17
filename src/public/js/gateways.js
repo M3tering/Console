@@ -10,6 +10,7 @@
   function title(id){
     const win=document.getElementById(id),gateway=gateways.find(g=>g.id===selected);if(!win||!gateway)return;
     win.dataset.gatewayBaseTitle ||= win.dataset.windowTitle;
+    win.dataset.gatewayName=gateway.name;
     win.dataset.windowTitle=`${win.dataset.gatewayBaseTitle} · ${gateway.name}`;
     const label=win.querySelector('.window-title');if(label)label.textContent=win.dataset.windowTitle;
     document.title=`${win.dataset.windowTitle} · M3tering Console`;
@@ -32,7 +33,19 @@
         button.onclick=async()=>{try{const result=await api(`/api/gateways/${encodeURIComponent(g.id)}/${action}`,{});if(result.token)showToken(result.token);await refresh();}catch(e){error(e.message);}};
         actions.append(button);
       }
-      item.append(name,status,actions);list.append(item);
+      const updates=document.createElement('div'),note=document.createElement('p');
+      note.textContent=s?.updatesEnabled?'Remote updates enabled locally. Both Console and agent restart together.':'Updates disabled locally.';updates.append(note);
+      if(s?.updatesEnabled){
+        const form=document.createElement('form'),image=document.createElement('input'),confirm=document.createElement('input'),label=document.createElement('label'),button=document.createElement('button');
+        image.placeholder='ghcr.io/owner/console@sha256:…';image.required=true;image.setAttribute('aria-label',`Image digest for ${g.name}`);image.style.width='100%';
+        confirm.type='checkbox';confirm.required=true;label.append(confirm,document.createTextNode(' Restart this gateway’s Console and agent'));
+        button.className='nes-btn';button.textContent='Queue signed update';button.disabled=!g.online;
+        form.append(image,label,button);form.onsubmit=async event=>{event.preventDefault();try{await api(`/api/gateways/${g.id}/updates`,{image:image.value.trim()});await refresh();}catch(e){error(e.message);}};updates.append(form);
+      }
+      for(const job of g.updates||[]){const row=document.createElement('p');row.textContent=`${job.status} · ${job.image}`;row.style.overflowWrap='anywhere';
+        if(job.status==='queued'){const cancel=document.createElement('button');cancel.className='nes-btn';cancel.textContent='Cancel';cancel.onclick=async()=>{try{await api(`/api/gateways/${g.id}/updates/${job.id}/cancel`,{});await refresh();}catch(e){error(e.message);}};row.append(cancel);}updates.append(row);
+      }
+      item.append(name,status,actions,updates);list.append(item);
     }
   }
   async function refresh(){if(busy)return;busy=true;try{const result=await api('/api/gateways');gateways=result.gateways;selected=result.selected;render();}catch(e){error(e.message);}finally{busy=false;}}

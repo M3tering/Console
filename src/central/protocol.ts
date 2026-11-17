@@ -11,11 +11,13 @@ export type AgentMessage =
   | { v: 1; type: 'uplink'; id: string; event: UplinkEvent }
   | { v: 1; type: 'result'; id: string; outcome: 'enqueued' | 'locally-handled' | 'rejected' | 'uncertain' }
   | { v: 1; type: 'rotated' }
-  | { v: 1; type: 'update-progress'; id: string; status: 'queued' | 'downloading' | 'verifying' | 'restarting' | 'succeeded' | 'failed' | 'rolled-back' }
+  | { v: 1; type: 'update-progress'; id: string; status: 'queued' | 'downloading' | 'verifying' | 'restarting' | 'succeeded' | 'failed' | 'rolled-back' | 'cancelled' }
   | TunnelMessage | PingMessage;
 export type CentralMessage =
   | { v: 1; type: 'decision'; id: string; devEui: string; fPort: 2; confirmed: false; data: string }
   | { v: 1; type: 'rotate'; credential: string }
+  | { v: 1; type: 'result-ack'; id:string; outcome:'enqueued'|'locally-handled'|'rejected'|'uncertain' }
+  | { v: 1; type: 'update-cancel'; id:string }
   | { v: 1; type: 'update'; id: string; image: string }
   | { v: 1; type: 'tunnel-open'; id: string; purpose: TunnelPurpose; host: string; port: number }
   | TunnelMessage | PingMessage;
@@ -72,6 +74,7 @@ export function parseMessage(input: Buffer | string, direction: 'agent' | 'centr
   const keys = (...fields: string[]) => exact(value, ['v', 'type', ...fields]);
   let valid = false;
   switch (value.type) {
+    case 'update-cancel': valid=direction==='central'&&keys('id')&&id(value.id);break;
     case 'ping': case 'pong': case 'tunnel-end': valid = keys('id') && id(value.id); break;
     case 'tunnel-ready': {
       valid=id(value.id)&&keys('id');
@@ -93,7 +96,8 @@ export function parseMessage(input: Buffer | string, direction: 'agent' | 'centr
     case 'rotated': valid = direction === 'agent' && keys(); break;
     case 'update': valid = direction === 'central' && keys('id', 'image') && id(value.id) && validImageDigest(value.image); break;
     case 'update-progress': valid = direction === 'agent' && keys('id', 'status') && id(value.id) &&
-      isOneOf(value.status, ['queued', 'downloading', 'verifying', 'restarting', 'succeeded', 'failed', 'rolled-back']); break;
+      isOneOf(value.status, ['queued', 'downloading', 'verifying', 'restarting', 'succeeded', 'failed', 'rolled-back', 'cancelled']); break;
+    case 'result-ack': valid = direction === 'central' && keys('id', 'outcome') && id(value.id) && isOneOf(value.outcome, ['enqueued', 'locally-handled', 'rejected', 'uncertain']); break;
     case 'result': valid = direction === 'agent' && keys('id', 'outcome') && id(value.id) && isOneOf(value.outcome, ['enqueued', 'locally-handled', 'rejected', 'uncertain']); break;
     case 'uplink': valid = direction === 'agent' && keys('id', 'event') && id(value.id) && validUplink(value.event) && value.event.deduplicationId===value.id; break;
     case 'health': {

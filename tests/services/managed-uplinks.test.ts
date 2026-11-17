@@ -174,3 +174,16 @@ test('a committed slow Console cannot trigger fallback after the decision deadli
     expect(f.journal.counts(gateway)).toMatchObject({uncertain:1,reconciled:1});
   }finally{release();await jest.advanceTimersByTimeAsync(0);f.close();jest.useRealTimers();}
 });
+
+test('enqueue audit outcomes survive restart and require explicit acknowledgment',()=>{
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'agent-audit-')),file=path.join(directory,'journal.db');
+  const report={deduplicationId:'audit-report',fPort:2 as const,deviceInfo:{applicationId:'11111111-1111-4111-8111-111111111111',devEui:'0102030405060708'},data:Buffer.alloc(74).toString('base64')};
+  let journal=new OperationJournal(file);
+  try{
+    journal.receive('gateway',report);journal.own('audit-report','central');journal.saveDecision('audit-report',{devEui:report.deviceInfo.devEui,fPort:2,confirmed:false,bytes:[0,0,0,0,0,0,0,0,0]});journal.beginEnqueue('audit-report',[]);journal.uncertain('audit-report');
+    expect(journal.results()).toEqual([{id:'audit-report',outcome:'uncertain'}]);journal.close();journal=new OperationJournal(file);
+    expect(journal.results()).toEqual([{id:'audit-report',outcome:'uncertain'}]);journal.acknowledgeResult('audit-report','uncertain');expect(journal.results()).toEqual([]);
+    journal.finish('audit-report','enqueued','queue-id');expect(journal.results()).toEqual([{id:'audit-report',outcome:'enqueued'}]);
+    journal.acknowledgeResult('unknown','enqueued');expect(journal.db.prepare('SELECT COUNT(*) AS n FROM agent_result_acks').get()).toEqual({n:1});
+  }finally{journal.close();fs.rmSync(directory,{recursive:true,force:true});}
+});

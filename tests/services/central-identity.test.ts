@@ -89,3 +89,22 @@ test('rate limiting has bounded cardinality and recovers after expiry', () => {
   expect(limit.allow('b')).toBe(true);expect(limit.allow('c')).toBe(false);
   now+=1001;expect(limit.allow('c')).toBe(true);
 });
+
+test('device discovery preserves manual assignment until explicitly released',()=>{
+  const first=store.createGateway('First','admin'),second=store.createGateway('Second','admin');
+  store.observeDevice('0011223344556677',first.id);
+  store.assignDevice('0011223344556677',first.id,'admin');
+  now+=100;store.observeDevice('0011223344556677',second.id);
+  expect(store.devices()[0]).toEqual({devEui:'0011223344556677',gateway:first.id,observedGateway:second.id,overridden:true,lastSeen:now});
+  store.assignDevice('0011223344556677',null,'admin');expect(store.devices()[0].gateway).toBe(second.id);
+  expect(()=>store.assignDevice('invalid',second.id,'admin')).toThrow();
+});
+
+test('downlink outcome replay is idempotent and distinguishes uncertain attempts',()=>{
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'downlink-audit-')),file=path.join(directory,'audit.db');
+  const identity=new SqliteIdentityStore(file),gateway=identity.createGateway('Test','operator');
+  try{identity.recordDownlink(gateway.id,'report','uncertain');identity.recordDownlink(gateway.id,'report','enqueued');identity.recordDownlink(gateway.id,'report','enqueued');
+    const inspect=new Database(file,{readonly:true});
+    expect(inspect.prepare("SELECT action FROM central_audit WHERE subject='report' ORDER BY id").all()).toEqual([{action:'state-downlink-uncertain'},{action:'state-downlink'}]);inspect.close();
+  }finally{identity.close();fs.rmSync(directory,{recursive:true,force:true});}
+});

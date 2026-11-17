@@ -6,6 +6,9 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
+      # Verification credentials belong only to the separate updater.
+      UPDATER_GITHUB_TOKEN: ""
+      CONSOLE_DEPLOY_IMAGE: ${CONSOLE_DEPLOY_IMAGE:-}
       CONSOLE_ROLE: gateway
       AGENT_CREDENTIAL_PATH: /opt/app/.data/agent/credential
       FALLBACK_SECRET_PATH: /opt/app/.data/agent/fallback-secret
@@ -27,6 +30,7 @@ services:
     network_mode: host
     restart: unless-stopped
     environment:
+      CONSOLE_DEPLOY_IMAGE: ${CONSOLE_DEPLOY_IMAGE:-}
       CONSOLE_ROLE: gateway
       CENTRAL_URL: ${CENTRAL_URL:?Set the central wss origin for this opt-in deployment}
       CENTRAL_ALLOW_INSECURE_DEVELOPMENT: ${CENTRAL_ALLOW_INSECURE_DEVELOPMENT:-false}

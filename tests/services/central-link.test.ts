@@ -86,3 +86,34 @@ test('loopback fallback requires its own credential and returns persisted outcom
     expect(await client.commit('gateway',report.deduplicationId!)).toEqual(outcome);expect(compute).toHaveBeenCalledTimes(1);
   }finally{await close(server);processor.close();}
 });
+
+test('gateway update jobs are authenticated, owner-gated and retain actual progress',async()=>{
+  const f=await fixture();
+  try{
+    const ws=await f.connect(),image=`ghcr.io/fluxion9/console@sha256:${'a'.repeat(64)}`;
+    const request=()=>fetch(`${f.base}/api/gateways/${f.enrolled.gateway}/updates`,{method:'POST',headers:{cookie:f.cookie,origin:f.base,'Content-Type':'application/json'},body:JSON.stringify({image})});
+    expect((await request()).status).toBe(409);
+    f.store.heartbeat(f.enrolled.gateway,{version:'fixture',uptime:1,mqtt:'connected',fallback:false,queueDepth:0,uncertain:0,reconciled:0,superseded:0,updatesEnabled:true,lastError:'none'});
+    const received=once(ws,'message'),response=await request();expect(response.status).toBe(202);
+    const job=await response.json() as {id:string};const [frame]=await received;
+    expect(JSON.parse(frame.toString())).toEqual({v:1,type:'update',id:job.id,image});
+    expect((await request()).status).toBe(409);
+    f.store.updateStatus(f.enrolled.gateway,job.id,'restarting');f.store.updateStatus(f.enrolled.gateway,job.id,'rolled-back');
+    f.store.updateStatus(f.enrolled.gateway,job.id,'queued');
+    expect(f.store.updates(f.enrolled.gateway)[0].status).toBe('rolled-back');
+    expect((await fetch(`${f.base}/api/gateways/${f.enrolled.gateway}/updates/${job.id}/cancel`,{method:'POST',headers:{cookie:f.cookie,origin:f.base}})).status).toBe(409);
+  }finally{await f.close();}
+});
+
+test('credential rotation acknowledges on the existing link without interrupting sessions',async()=>{
+  const f=await fixture();
+  try{
+    const ws=await f.connect(),rotation=once(ws,'message');
+    const response=await fetch(`${f.base}/api/gateways/${f.enrolled.gateway}/rotate`,{method:'POST',headers:{cookie:f.cookie,origin:f.base}});
+    expect(response.status).toBe(200);const [frame]=await rotation;const credential=JSON.parse(frame.toString()).credential as string;
+    expect(f.store.authenticateAgent(f.enrolled.credential)).toBe(f.enrolled.gateway);expect(f.store.authenticateAgent(credential)).toBe(f.enrolled.gateway);
+    const barrier=once(ws,'message');ws.send(JSON.stringify({v:1,type:'rotated'}));ws.send(JSON.stringify({v:1,type:'ping',id:'rotation-barrier'}));
+    expect(JSON.parse((await barrier)[0].toString())).toEqual({v:1,type:'pong',id:'rotation-barrier'});
+    expect(ws.readyState).toBe(WebSocket.OPEN);expect(f.store.authenticateAgent(f.enrolled.credential)).toBeNull();expect(f.store.authenticateAgent(credential)).toBe(f.enrolled.gateway);
+  }finally{await f.close();}
+});

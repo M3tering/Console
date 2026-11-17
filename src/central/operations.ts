@@ -47,6 +47,7 @@ export class OperationJournal {
       CREATE INDEX IF NOT EXISTS agent_operations_device ON agent_operations(gateway,devEui,sequence);
       CREATE TABLE IF NOT EXISTS agent_counters (gateway TEXT PRIMARY KEY, uncertain INTEGER NOT NULL DEFAULT 0,
         reconciled INTEGER NOT NULL DEFAULT 0, superseded INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS agent_result_acks(id TEXT NOT NULL,outcome TEXT NOT NULL,PRIMARY KEY(id,outcome));
       CREATE TABLE IF NOT EXISTS agent_replays(id TEXT NOT NULL,target TEXT NOT NULL,outcome TEXT NOT NULL,
         PRIMARY KEY(id,target));`);
     // A process restart cannot turn a possibly delivered enqueue into a retry.
@@ -117,6 +118,13 @@ export class OperationJournal {
       this.db.prepare('UPDATE agent_operations SET state=?,queueId=? WHERE id=?').run(state,queueId ?? null,id);
     })(); this.emit(id);
   }
+  results():Array<{id:string;outcome:'enqueued'|'uncertain'}>{
+    return this.db.prepare(`SELECT o.id,CASE WHEN o.state='enqueued' THEN 'enqueued' ELSE 'uncertain' END AS outcome
+      FROM agent_operations o WHERE o.attempted=1 AND o.state IN ('enqueued','queue-observed','uncertain','superseded')
+      AND NOT EXISTS(SELECT 1 FROM agent_result_acks a WHERE a.id=o.id AND a.outcome=CASE WHEN o.state='enqueued' THEN 'enqueued' ELSE 'uncertain' END)
+      ORDER BY o.sequence LIMIT 32`).all() as Array<{id:string;outcome:'enqueued'|'uncertain'}>;
+  }
+  acknowledgeResult(id:string,outcome:string):void{if(!['enqueued','uncertain'].includes(outcome)||!this.get(id)?.attempted)return;this.db.prepare('INSERT OR IGNORE INTO agent_result_acks VALUES (?,?)').run(id,outcome);}
   pending(): Operation[] {
     return (this.db.prepare("SELECT id FROM agent_operations WHERE state IN ('received','owned','decided','enqueue-started','uncertain') ORDER BY sequence").all() as Array<{id:string}>).map(row=>this.get(row.id)!);
   }

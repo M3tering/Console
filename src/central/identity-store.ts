@@ -1,12 +1,16 @@
 import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import { hashSecret, newSecret } from './secrets';
+import type { UpdateStatus } from '../updater/controller';
+import { validImageDigest } from './protocol';
 import type { Health } from './protocol';
 
 export type AuditAction = 'login-success' | 'login-failure' | 'logout' | 'enrolment-created' | 'enrolled' |
   'credential-rotated' | 'credential-rotation-acknowledged' | 'credential-revoked' |
-  'terminal-start' | 'terminal-end' | 'browser-start' | 'browser-end' | 'state-downlink' | 'update-status';
+  'device-assignment' | 'state-downlink-uncertain' | 'terminal-start' | 'terminal-end' | 'browser-start' | 'browser-end' | 'state-downlink' | 'update-status';
 export interface GatewayIdentity { id: string; name: string; revoked: boolean; lastHeartbeat: number | null; version: string | null }
+export interface GatewayUpdate {id:string;gateway:string;image:string;status:UpdateStatus;history:Array<{status:UpdateStatus;time:number}>}
+export interface DeviceGateway { devEui:string; gateway:string; observedGateway:string; overridden:boolean; lastSeen:number }
 export interface UserIdentity { id: string; username: string; passwordHash: string }
 export interface SessionIdentity { id: string; username: string; expires: number }
 export interface IdentityStore {
@@ -27,6 +31,13 @@ export interface IdentityStore {
   heartbeat(gateway:string,health:Health):void;
   health(gateway:string):Health|null;
   verifyHostKey(gateway:string,hash:string):boolean;
+  queueUpdate(gateway:string,image:string,actor:string):GatewayUpdate;
+  updateStatus(gateway:string,id:string,status:UpdateStatus):void;
+  updates(gateway:string):GatewayUpdate[];
+  recordDownlink(gateway:string,id:string,outcome:string):void;
+  observeDevice(devEui:string,gateway:string):void;
+  assignDevice(devEui:string,gateway:string|null,actor:string):void;
+  devices():DeviceGateway[];
   close(): void;
 }
 
@@ -58,6 +69,9 @@ export class SqliteIdentityStore implements IdentityStore {
         id INTEGER PRIMARY KEY, timestamp INTEGER NOT NULL, actor TEXT NOT NULL,
         action TEXT NOT NULL, gateway TEXT, subject TEXT);
       CREATE TABLE IF NOT EXISTS central_health (gateway TEXT PRIMARY KEY REFERENCES central_gateways(id), health TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS central_updates(id TEXT PRIMARY KEY,gateway TEXT NOT NULL REFERENCES central_gateways(id),image TEXT NOT NULL,status TEXT NOT NULL,history TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS central_downlinks(gateway TEXT NOT NULL REFERENCES central_gateways(id),id TEXT NOT NULL,outcome TEXT NOT NULL,PRIMARY KEY(gateway,id,outcome));
+      CREATE TABLE IF NOT EXISTS central_devices(devEui TEXT PRIMARY KEY,observedGateway TEXT NOT NULL REFERENCES central_gateways(id),overrideGateway TEXT REFERENCES central_gateways(id),lastSeen INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS central_hostkeys(gateway TEXT PRIMARY KEY REFERENCES central_gateways(id),hash TEXT NOT NULL);
       INSERT OR IGNORE INTO central_schema VALUES (1);
     `))();
@@ -164,6 +178,36 @@ export class SqliteIdentityStore implements IdentityStore {
     })();
   }
   health(gateway:string):Health|null {const row=this.db.prepare('SELECT health FROM central_health WHERE gateway=?').get(gateway) as {health:string}|undefined;return row?JSON.parse(row.health) as Health:null;}
+  updates(gateway:string):GatewayUpdate[]{return (this.db.prepare('SELECT * FROM central_updates WHERE gateway=? ORDER BY rowid DESC LIMIT 100').all(gateway) as Array<Omit<GatewayUpdate,'history'>&{history:string}>).map(row=>({...row,history:JSON.parse(row.history) as GatewayUpdate['history']}));}
+  queueUpdate(gateway:string,image:string,actor:string):GatewayUpdate{
+    if(!validImageDigest(image)||!this.health(gateway)?.updatesEnabled)throw new Error('Updates disabled or invalid digest.');
+    if(this.updates(gateway).some(job=>['queued','verifying','downloading','restarting'].includes(job.status)))throw new Error('Gateway already has an update.');
+    const job:GatewayUpdate={id:randomUUID(),gateway,image,status:'queued',history:[{status:'queued',time:this.now()}]};
+    this.db.prepare('INSERT INTO central_updates VALUES (?,?,?,?,?)').run(job.id,gateway,image,job.status,JSON.stringify(job.history));this.audit(actor,'update-status',gateway,job.id);return job;
+  }
+  updateStatus(gateway:string,id:string,status:UpdateStatus):void{
+    const job=this.updates(gateway).find(job=>job.id===id);if(!job||job.status===status)return;
+    if(['succeeded','rolled-back','cancelled'].includes(job.status))return;
+    job.history.push({status,time:this.now()});this.db.prepare('UPDATE central_updates SET status=?,history=? WHERE id=? AND gateway=?').run(status,JSON.stringify(job.history),id,gateway);this.audit('agent','update-status',gateway,id);
+  }
+  recordDownlink(gateway:string,id:string,outcome:string):void{
+    this.db.transaction(()=>{const result=this.db.prepare('INSERT OR IGNORE INTO central_downlinks VALUES (?,?,?)').run(gateway,id,outcome);
+      if(result.changes)this.audit('agent',outcome==='enqueued'?'state-downlink':'state-downlink-uncertain',gateway,id);
+    })();
+  }
+  devices():DeviceGateway[]{
+    return (this.db.prepare('SELECT devEui,observedGateway,COALESCE(overrideGateway,observedGateway) AS gateway,overrideGateway IS NOT NULL AS overridden,lastSeen FROM central_devices ORDER BY lastSeen DESC').all() as Array<Omit<DeviceGateway,'overridden'>&{overridden:number}>).map(row=>({...row,overridden:!!row.overridden}));
+  }
+  observeDevice(devEui:string,gateway:string):void{
+    if(!/^[a-fA-F0-9]{16}$/.test(devEui))throw new Error('Invalid device identifier.');
+    this.db.prepare('INSERT INTO central_devices VALUES (?,?,NULL,?) ON CONFLICT(devEui) DO UPDATE SET observedGateway=excluded.observedGateway,lastSeen=excluded.lastSeen').run(devEui.toLowerCase(),gateway,this.now());
+  }
+  assignDevice(devEui:string,gateway:string|null,actor:string):void{
+    if(!/^[a-fA-F0-9]{16}$/.test(devEui)||gateway!==null&&!this.gateways().some(g=>g.id===gateway&&!g.revoked))throw new Error('Invalid device assignment.');
+    const result=this.db.prepare('UPDATE central_devices SET overrideGateway=? WHERE devEui=?').run(gateway,devEui.toLowerCase());
+    if(!result.changes)throw new Error('Device has not been observed.');
+    this.audit(actor,'device-assignment',gateway||undefined,devEui.toLowerCase());
+  }
   verifyHostKey(gateway:string,hash:string):boolean {
     if(!/^[a-fA-F0-9]{64}$/.test(hash))return false;
     this.db.prepare('INSERT OR IGNORE INTO central_hostkeys VALUES (?,?)').run(gateway,hash);
