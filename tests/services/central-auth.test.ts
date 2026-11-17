@@ -60,3 +60,23 @@ test('bad sign-ins use generic errors, never echo secrets, and are rate limited'
   }
   expect((await request(app,'/login',{method:'POST',headers:secure,body:'username=operator&password=sensitive-fixture'})).status).toBe(429);
 });
+
+test('the sign-in page is styled under a strict policy whose hash matches its stylesheet',async()=>{
+  const page=await request(app,'/login',{headers:secure});
+  const policy=String(page.headers['content-security-policy']);
+  expect(policy).toContain("default-src 'none'");expect(policy).not.toContain('unsafe-inline');expect(policy).not.toMatch(/script-src/);
+  const style=/<style>([\s\S]*?)<\/style>/.exec(page.body)![1];
+  const { createHash } = await import('crypto');
+  expect(policy).toContain(`style-src 'sha256-${createHash('sha256').update(style).digest('base64')}'`);
+  expect(page.body).not.toMatch(/<script/i);
+  expect(page.body).toContain('Welcome back');
+  expect((await request(app,'/login?signed-out',{headers:secure})).body).toContain('You have been signed out.');
+});
+test('a failed sign-in shows the page again with an error, keeping only a safe username',async()=>{
+  const failed=await request(app,'/login',{method:'POST',headers:secure,body:'username=operator&password=wrong-secret-value'});
+  expect(failed.status).toBe(401);expect(failed.body).toContain('role="alert"');
+  expect(failed.body).toContain('value="operator"');expect(failed.body).not.toContain('wrong-secret-value');
+  expect(String(failed.headers['content-security-policy'])).toContain("style-src 'sha256-");
+  const hostile=await request(app,'/login',{method:'POST',headers:secure,body:'username=%22%3E%3Cimg%20src%3Dx%3E&password=x'});
+  expect(hostile.status).toBe(401);expect(hostile.body).not.toContain('<img src=x>');expect(hostile.body).toContain('value=""');
+});

@@ -5,9 +5,10 @@ import { TLSSocket } from 'tls';
 import type { IdentityStore, SessionIdentity } from './identity-store';
 import { hashPassword, verifyPassword } from './secrets';
 import { isSameOrigin } from '../services/auth';
+import { loginPage, loginPolicy, LoginView } from './login-page';
 
 const cookieName = '__Host-console_session';
-const loginPage = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · M3tering Console</title><body><main><h1>M3tering Console</h1><p>Sign in to the central workspace.</p><form method="post" action="/login"><p><label>Username <input name="username" autocomplete="username" required maxlength="100"></label></p><p><label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="1024"></label></p><button>Sign in</button></form></main></body></html>`;
+const validUsername = /^[A-Za-z0-9_.@-]{1,100}$/;
 
 /** Bounded fixed-window limiter. Uses the socket peer, never untrusted XFF. */
 export class RateLimit {
@@ -55,12 +56,13 @@ export class CentralAuth {
       if (!isSameOrigin(req)) { res.status(403).send('Cross-site requests are not permitted.'); return; }
       next();
     });
-    app.get('/login', (_req, res) => {
-      res.setHeader('Content-Security-Policy', "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-      res.type('html').send(loginPage);
+    app.get('/login', (req, res) => {
+      CentralAuth.page(res, 200, 'signed-out' in req.query ? { notice: 'You have been signed out.' } : {});
     });
     app.post('/login', (req, res, next) => {
-      if (!this.globalLimiter.allow('login') || !this.limiter.allow(req.socket.remoteAddress || 'unknown')) { res.status(429).send('Too many attempts. Try again later.'); return; }
+      if (!this.globalLimiter.allow('login') || !this.limiter.allow(req.socket.remoteAddress || 'unknown')) {
+        CentralAuth.page(res, 429, { error: 'Too many sign-in attempts. Wait a minute and try again.' }); return;
+      }
       next();
     }, express.urlencoded({ extended: false, limit: '3kb', parameterLimit: 2 }), (req, res, next) => { void this.login(req, res).catch(next); });
     machineRoutes?.(app);
@@ -70,8 +72,12 @@ export class CentralAuth {
       this.store.endSession(this.token(req));
       this.store.audit(session?.id || 'unknown', 'logout');
       res.setHeader('Set-Cookie', this.cookie('', true));
-      res.redirect(303, '/login');
+      res.redirect(303, '/login?signed-out');
     });
+  }
+  private static page(res: Response, status: number, view: LoginView): void {
+    res.setHeader('Content-Security-Policy', loginPolicy);
+    res.status(status).type('html').send(loginPage(view));
   }
   requireLogin = (req: Request, res: Response, next: NextFunction): void => {
     const session = this.session(req);
@@ -85,12 +91,13 @@ export class CentralAuth {
   };
   private async login(req: Request, res: Response): Promise<void> {
     const username = typeof req.body?.username === 'string' ? req.body.username : '';
-    const user = /^[A-Za-z0-9_.@-]{1,100}$/.test(username) ? this.store.user(username) : null;
+    const user = validUsername.test(username) ? this.store.user(username) : null;
     const valid = await verifyPassword(req.body?.password, user?.passwordHash || await this.dummyHash);
     if (!user || !valid) {
       // Do not audit the attacker-supplied username/password or the request body.
       this.store.audit('anonymous', 'login-failure');
-      res.status(401).send('Invalid username or password.'); return;
+      // Only a well-formed username is shown again (escaped); the password never is.
+      CentralAuth.page(res, 401, { error: 'That username and password don’t match. Try again.', username: validUsername.test(username) ? username : '' }); return;
     }
     this.store.endSession(this.token(req));
     const session = this.store.createSession(user.id);
