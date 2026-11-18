@@ -353,6 +353,18 @@ docker compose -f compose.gateway.yaml logs -f console
 docker compose -f compose.gateway.yaml logs -f agent
 ```
 
+**Following a meter report.** Each step logs one line with the reading and the reply:
+
+| Where | Lines |
+|---|---|
+| Gateway `logs -f agent` | `Listening for meter reports on …`, `Report received from ChirpStack: devEui=… nonce=… energy=…kWh …`, `Report … is now …`, `Reply enqueued to ChirpStack for … (queue id …): state=ON …` |
+| Central `logs -f console` | `Report received: …`, `Reading recorded: …`, `Reply decided (the gateway agent enqueues it): state=…` or `Report rejected: <reason>` |
+| Gateway `logs -f console` | The same as central, but only while central is unreachable and the gateway decides locally |
+| Standalone `logs -f console` | `Report received: …`, `Reading recorded: …`, `Reply enqueued: state=…` |
+
+`Uplink skipped (fPort …)` means the meter sent on a port other than 2, which isn't billed.
+The full signature and meter key are shortened in the logs; keys and tokens never appear.
+
 | Symptom | Cause and fix |
 |---|---|
 | `Replace the placeholder values in .env: …` | Template values are still in `.env`. Fill in the named settings. |

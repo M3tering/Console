@@ -15,6 +15,7 @@ import { uplinkPayload } from '../lib/uplink-payload';
 import { runHook, notifyHook, verifyPayloadSignature } from '../lib/utils';
 import { getLatestTransactionNonce } from '../lib/sync';
 import { createMeterLogger, createLogger } from '../utils/logger';
+import { describeReport, describeReply, errorText } from '../utils/report-log';
 import { meterIdFromPublicKeyContractCall } from '../utils/contracts';
 
 const logger = createLogger('[mqtt]');
@@ -84,6 +85,7 @@ export async function handleMessage(blob: Buffer, downlink: DownlinkSink = chirp
     }
     devEui = message.deviceInfo.devEui;
     log = createMeterLogger({ devEui });
+    log.info(`Report received: ${describeReport(message)}`);
     if (deviceLocks.has(devEui!)) {
       void notifyHook('onMessageDropped', 'locked', devEui!);
       return;
@@ -145,9 +147,14 @@ export async function handleMessage(blob: Buffer, downlink: DownlinkSink = chirp
     }
     void notifyHook('onIsOnStateComputed', meter.tokenId, is_on);
     const state = decoded.nonce === 0 ? { nonce: meter.latestNonce, is_on } : { is_on };
+    log.info(newTransaction ? `Reading recorded: meter ${meter.tokenId} nonce ${decoded.nonce}`
+      : decoded.nonce === 0 ? `Meter ${meter.tokenId} asked for its nonce (latest ${meter.latestNonce})`
+      : `Repeat of meter ${meter.tokenId} nonce ${decoded.nonce}: acknowledged, not billed again`);
     try {
-      await downlink({ devEui: devEui!, fPort: 2, confirmed: false,
-        bytes: encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0) });
+      const bytes = encode(state as State, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0);
+      await downlink({ devEui: devEui!, fPort: 2, confirmed: false, bytes });
+      // Managed roles hand the reply to the gateway agent, which enqueues it; standalone enqueued it already.
+      log.info(`${managedBilling.getStore() ? 'Reply decided (the gateway agent enqueues it)' : 'Reply enqueued'}: ${describeReply(bytes)}`);
       void notifyHook('onStateEnqueued', state, decoded.extensions.latitude ?? 0, decoded.extensions.longitude ?? 0);
     } finally {
       // Delivery services run after the downlink attempt and cannot prevent it.
@@ -161,7 +168,7 @@ export async function handleMessage(blob: Buffer, downlink: DownlinkSink = chirp
       }
     }
   } catch (error) {
-    log.error('Error handling MQTT message:', error);
+    log.error(`Report rejected: ${errorText(error)}`);
     void notifyHook('onMessageError', error);
   } finally {
     if (lockedMeter) meterLocks.delete(lockedMeter);

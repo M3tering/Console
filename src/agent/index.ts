@@ -15,6 +15,8 @@ import { mqttConnection } from '../lib/mqtt-config';
 import { applicationId } from '../lib/chirpstack-config';
 import { managedQueue } from '../services/grpc';
 import { createLogger } from '../utils/logger';
+import { describeReport, describeReply, errorText } from '../utils/report-log';
+import type { ChirpstackQueue } from '../central/coordinator';
 import { RateLimit } from '../central/auth';
 import { UpdaterClient } from './updater-client';
 import { TunnelMux, gatewayTarget } from '../central/tunnels';
@@ -41,14 +43,19 @@ export async function runAgent():Promise<()=>Promise<void>> {
   const updater=new UpdaterClient(process.env.UPDATER_SOCKET||path.join(path.dirname(config.credentialPath),'updater.sock'),process.env.UPDATER_SECRET_PATH||path.join(path.dirname(config.credentialPath),'updater-secret'));
   let updatesEnabled=false;const updateStatuses=new Map<string,string>();
   const stateDirectory=path.dirname(config.credentialPath);
-  const journal=new OperationJournal(path.join(stateDirectory,'operations.db'),config.queueLimit,event=>logger.info('Operation status',event));
+  const journal=new OperationJournal(path.join(stateDirectory,'operations.db'),config.queueLimit,event=>logger.info(`Report ${event.id} is now ${event.state}`));
   const local=new LocalDecider(gatewayFallbackPort(),readOwnerSecret(config.fallbackSecretPath),config.decisionTimeoutMs);
   let socket:WebSocket|undefined,stopped=false,reconnect:ReturnType<typeof setTimeout>|undefined;
   let connectedAt=0,attempt=0,mqttState:Health['mqtt']='connecting',lastError:Health['lastError']='none';
   const central=new SocketDecider(()=>socket,config.decisionTimeoutMs);
   const replication=new Replication(journal,central,local);
   const healthy=()=>socket?.readyState===WebSocket.OPEN&&Date.now()-connectedAt>=config.recoveryHealthyMs;
-  const coordinator=new UplinkCoordinator(journal,replication.guarded('central'),replication.guarded('local'),managedQueue,
+  // Log every reply the agent puts in ChirpStack's queue, and every failed attempt.
+  const queue:ChirpstackQueue={list:devEui=>managedQueue.list(devEui),enqueue:async decision=>{
+    try{const id=await managedQueue.enqueue(decision);logger.info(`Reply enqueued to ChirpStack for ${decision.devEui} (queue id ${id}): ${describeReply(decision.bytes)}`);return id;}
+    catch(error){logger.warn(`Reply for ${decision.devEui} may not have been enqueued (${errorText(error)}); it is held, never resent: ${describeReply(decision.bytes)}`);throw error;}
+  }};
+  const coordinator=new UplinkCoordinator(journal,replication.guarded('central'),replication.guarded('local'),queue,
     {centralHealthy:healthy,timeoutMs:config.decisionTimeoutMs,reconcileSnapshot:(owner,outcome)=>replication.observe(owner,outcome)});
   const sendHealth=()=>{
     if(socket?.readyState!==WebSocket.OPEN)return;
@@ -108,7 +115,7 @@ export async function runAgent():Promise<()=>Promise<void>> {
   const application=applicationId(),topic=`application/${application}/device/+/event/up`;
   mqtt.on('connect',()=>{mqtt.subscribe(topic,{qos:1},(error,granted)=>{
     if(error||granted?.some(grant=>grant.qos===128)){mqttState='disconnected';lastError='mqtt';mqtt.stream.destroy();}
-    else mqttState='connected';sendHealth();
+    else {mqttState='connected';logger.info(`Listening for meter reports on ${topic}`);}sendHealth();
   });});
   mqtt.on('reconnect',()=>{mqttState='connecting';});mqtt.on('close',()=>{mqttState='disconnected';});
   mqtt.on('error',()=>{lastError='mqtt';logger.warn('MQTT connection unavailable; reconnecting.');});
@@ -119,8 +126,10 @@ export async function runAgent():Promise<()=>Promise<void>> {
       const parsed:unknown=JSON.parse(packet.payload.toString());
       if(typeof parsed!=='object'||parsed===null||Array.isArray(parsed)){done();return;}
       const event=parsed as UplinkEvent;
-      if(event.fPort!==2||typeof event.deviceInfo?.devEui!=='string'||typeof event.deviceInfo?.applicationId!=='string'||event.deviceInfo.devEui.toLowerCase()!==match[2].toLowerCase()||event.deviceInfo.applicationId.toLowerCase()!==application){done();return;}
-      try{eventIdentity(event);}catch{logger.warn('Invalid billing event ignored.');done();return;}
+      if(event.fPort!==2||typeof event.deviceInfo?.devEui!=='string'||typeof event.deviceInfo?.applicationId!=='string'||event.deviceInfo.devEui.toLowerCase()!==match[2].toLowerCase()||event.deviceInfo.applicationId.toLowerCase()!==application){
+        logger.info(`Uplink skipped (${event.fPort!==2?`fPort ${String(event.fPort)}; only fPort 2 is billed`:'device or application does not match its topic'}): ${describeReport(event)}`);done();return;}
+      try{eventIdentity(event);}catch{logger.warn(`Invalid billing event ignored: ${describeReport(event)}`);done();return;}
+      logger.info(`Report received from ChirpStack: ${describeReport(event)}`);
       // receive persists synchronously before returning its processing promise.
       const processing=coordinator.receive(gateway,event);
       done();void processing.then(sendHealth).catch(()=>{lastError='storage';logger.error('Managed operation unavailable; inspect gateway status.');});
