@@ -5,9 +5,10 @@ import { TLSSocket } from 'tls';
 import type { IdentityStore, SessionIdentity } from './identity-store';
 import { hashPassword, verifyPassword } from './secrets';
 import { isSameOrigin } from '../services/auth';
+import { loginPage, loginPolicy, LoginView } from './login-page';
 
 const cookieName = '__Host-console_session';
-const loginPage = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · M3tering Console</title><body><main><h1>M3tering Console</h1><p>Sign in to the central workspace.</p><form method="post" action="/login"><p><label>Username <input name="username" autocomplete="username" required maxlength="100"></label></p><p><label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="1024"></label></p><button>Sign in</button></form></main></body></html>`;
+const validUsername = /^[A-Za-z0-9_.@-]{1,100}$/;
 
 /** Bounded fixed-window limiter. Uses the socket peer, never untrusted XFF. */
 export class RateLimit {
@@ -28,6 +29,8 @@ export interface CentralAuthOptions { development: boolean; trustedProxies: stri
 export class CentralAuth {
   private limiter = new RateLimit(10, 60000);
   private globalLimiter = new RateLimit(100, 60000, 1);
+  // Per account: a stolen session must not become a way to guess the current password.
+  private passwordLimiter = new RateLimit(5, 15 * 60000);
   private dummyHash: Promise<string> = hashPassword('non-user authentication timing placeholder');
   constructor(private store: IdentityStore, private options: CentralAuthOptions) {}
   private name(): string { return this.options.development ? 'console_dev_session' : cookieName; }
@@ -55,23 +58,33 @@ export class CentralAuth {
       if (!isSameOrigin(req)) { res.status(403).send('Cross-site requests are not permitted.'); return; }
       next();
     });
-    app.get('/login', (_req, res) => {
-      res.setHeader('Content-Security-Policy', "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-      res.type('html').send(loginPage);
+    app.get('/login', (req, res) => {
+      CentralAuth.page(res, 200, 'signed-out' in req.query ? { notice: 'You have been signed out.' } : {});
     });
     app.post('/login', (req, res, next) => {
-      if (!this.globalLimiter.allow('login') || !this.limiter.allow(req.socket.remoteAddress || 'unknown')) { res.status(429).send('Too many attempts. Try again later.'); return; }
+      if (!this.globalLimiter.allow('login') || !this.limiter.allow(req.socket.remoteAddress || 'unknown')) {
+        CentralAuth.page(res, 429, { error: 'Too many sign-in attempts. Wait a minute and try again.' }); return;
+      }
       next();
     }, express.urlencoded({ extended: false, limit: '3kb', parameterLimit: 2 }), (req, res, next) => { void this.login(req, res).catch(next); });
     machineRoutes?.(app);
     app.use(this.requireLogin);
+    app.get('/api/account', (_req, res) => { res.json({ username: res.locals.centralUser.username }); });
+    app.post('/api/account/password', (req, res, next) => {
+      if (!this.passwordLimiter.allow(res.locals.centralUser.id)) { res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' }); return; }
+      next();
+    }, express.json({ limit: '3kb' }), (req, res, next) => { void this.changePassword(req, res).catch(next); });
     app.post('/logout', (req, res) => {
       const session = this.session(req);
       this.store.endSession(this.token(req));
       this.store.audit(session?.id || 'unknown', 'logout');
       res.setHeader('Set-Cookie', this.cookie('', true));
-      res.redirect(303, '/login');
+      res.redirect(303, '/login?signed-out');
     });
+  }
+  private static page(res: Response, status: number, view: LoginView): void {
+    res.setHeader('Content-Security-Policy', loginPolicy);
+    res.status(status).type('html').send(loginPage(view));
   }
   requireLogin = (req: Request, res: Response, next: NextFunction): void => {
     const session = this.session(req);
@@ -83,14 +96,32 @@ export class CentralAuth {
     res.locals.centralUser = session;
     next();
   };
+  private async changePassword(req: Request, res: Response): Promise<void> {
+    const session = res.locals.centralUser as SessionIdentity;
+    const current: unknown = req.body?.current, next: unknown = req.body?.next;
+    if (typeof current !== 'string' || typeof next !== 'string' || !current || !next) {
+      res.status(400).json({ error: 'Enter your current password and a new password.' }); return;
+    }
+    const user = this.store.user(session.username);
+    if (!user || !await verifyPassword(current, user.passwordHash)) {
+      this.store.audit(session.id, 'password-change-failure');
+      res.status(400).json({ error: 'Your current password is incorrect.' }); return;
+    }
+    if (next === current) { res.status(400).json({ error: 'Choose a new password that differs from the current one.' }); return; }
+    let hash: string;
+    try { hash = await hashPassword(next); } catch { res.status(400).json({ error: 'The new password needs at least 7 characters.' }); return; }
+    this.store.changePassword(user.id, hash, this.token(req));
+    res.json({ changed: true });
+  }
   private async login(req: Request, res: Response): Promise<void> {
     const username = typeof req.body?.username === 'string' ? req.body.username : '';
-    const user = /^[A-Za-z0-9_.@-]{1,100}$/.test(username) ? this.store.user(username) : null;
+    const user = validUsername.test(username) ? this.store.user(username) : null;
     const valid = await verifyPassword(req.body?.password, user?.passwordHash || await this.dummyHash);
     if (!user || !valid) {
       // Do not audit the attacker-supplied username/password or the request body.
       this.store.audit('anonymous', 'login-failure');
-      res.status(401).send('Invalid username or password.'); return;
+      // Only a well-formed username is shown again (escaped); the password never is.
+      CentralAuth.page(res, 401, { error: 'That username and password don’t match. Try again.', username: validUsername.test(username) ? username : '' }); return;
     }
     this.store.endSession(this.token(req));
     const session = this.store.createSession(user.id);

@@ -10,54 +10,20 @@ A modular, extensible service console for providers on the M3tering protocol. Fe
 
 ## Quick Setup
 
-1. **Clone/Update**
+One command installs and updates every setup: a standalone gateway, a central
+server, or a gateway managed by central. **Full instructions:
+[docs/deployment-guide.md](docs/deployment-guide.md).**
 
-   ```bash
-   git clone https://github.com/M3tering/Console.git
-   # or
-   cd Console/ && git pull
-   ```
+```bash
+git clone https://github.com/fluxion9/Console.git
+cd Console
+./auto-compose.sh      # first run creates .env from the template
+nano .env              # fill in API_TOKEN, APPLICATION_ID, ETHEREUM_PRIVATE_KEY
+./auto-compose.sh      # starts Console; open http://<this-machine>:3000
+```
 
-2. **Environment Variables**
-   Create `.env` file:
-
-   ```
-   # Server Configuration
-   PORT=3000
-   CONSOLE_HOST=127.0.0.1
-   CONSOLE_USERNAME=admin
-   CONSOLE_PASSWORD=<a-strong-unique-password>
-   
-   # Module Configuration
-   BACKEND_MODULES="core/arweave,core/is_on,core/prover,core/streamr"
-   UI_MODULES="streamr:core/streamr/ui"
-   
-   # ChirpStack Configuration
-   API_TOKEN=...
-   APPLICATION_ID=...
-   CHIRPSTACK_HOST=localhost
-   
-   # Contract & Network Configuration
-   CONTRACT_LABEL=M3ters
-   MAINNET_RPC=https://ethereum-sepolia-rpc.publicnode.com #alt https://eth-sepolia.g.alchemy.com/v2/<YOUR_API_KEY>
-   ETHEREUM_PRIVATE_KEY="..."
-   ROLLUP_CONTRACT_ADDRESS="0x9a9ED9b9A9BEC10d1B5E41b1873E78d19501D5Fa"
-   
-   # Streamr Configuration
-   STREAMR_STREAM_ID="0x567853282663b601bfdb9203819b1fbb3fe18926/m3tering/test"
-   STREAMR_CRONSCHEDULE="0 * * * *"  # Every hour
-   
-   # Optional: Prover Node (publishing is disabled when unset)
-   # PREFERRED_PROVER_NODE="https://prover.m3ter.ing"
-   # PROVER_CRONSCHEDULE="0 0 * * *" # Every 24 hours
-   ```
-
-3. **Docker Build and Run**
-
-   ```bash
-   sudo docker compose down
-   sudo docker compose up -d
-   ```
+Set `CONSOLE_ROLE=central` or `CONSOLE_ROLE=gateway` in `.env` for the other
+setups. Update any machine later with `git pull && ./auto-compose.sh`.
 
 ## Other Docker Commands
 
@@ -644,7 +610,8 @@ survive desktop theme changes and reloads. Native content, dialogs, and terminal
 colors follow the chosen palette. Embedded external websites retain their own
 appearance controls; the containing window follows the application setting.
 
-To update the existing Docker deployment from GitHub Actions images:
+To update the existing Docker deployment from GitHub Actions images (see
+[docs/deployment-guide.md](docs/deployment-guide.md) for central and managed gateways):
 
 ```sh
 ./auto-compose.sh
@@ -655,7 +622,8 @@ To update the existing Docker deployment from GitHub Actions images:
 
 Docker and its Compose plugin must already be installed. The script identifies
 this checkout's Compose project and running Console image, preserves its GHCR tag
-by default (otherwise `ghcr.io/m3tering/console:main`), and lets Docker select the
+when it comes from this checkout's GitHub repository (otherwise it uses
+`ghcr.io/<owner>/<repo>:main` from the `origin` remote), and lets Docker select the
 native architecture from the published manifest. It pulls before stopping Console,
 then stops/removes only that service, starts the updated image and waits for
 `/healthz`. Failed readiness prints logs and restores the previous image when
@@ -672,11 +640,7 @@ The old **M3ters** meter-list application has been removed from the desktop,
 along with its exclusive `/delete-meter` UI endpoint. The collector's database,
 MQTT service, and meter records are preserved. The removed M3ter Manager is no longer available.
 
-The Browser uses an optional isolated Chromium engine inside the Console window,
-including Google searches, back/forward navigation, copy/paste and touch scrolling.
-No site is embedded in an iframe. Without the optional browser image it shows an
-engine-unavailable message while the rest of Console remains usable. See the
-[Browser deployment instructions](docs/centralized/deployment.md#optional-browser-engine).
+The Browser app has been removed, along with its optional Chromium image.
 
 `compose.yaml` passes the existing `.env` into the single Console container,
 which hosts the collector. The update script leaves that file and persistent
@@ -721,7 +685,7 @@ integration tests are complete.
 The default `standalone` role preserves the local collector and LAN desktop.
 `central` adds authenticated multi-gateway access; `gateway` keeps a local fallback
 Console while an outbound agent owns MQTT. The same default multi-architecture
-image contains both entry points. Browser and updater are optional Docker targets.
+image contains both entry points. The signed updater is an optional Docker target.
 
 The central selector identifies each gateway and displays uncertain, reconciled
 and pending operation counts. Stored decisions are keyed by ChirpStack event ID.
@@ -730,8 +694,9 @@ reconciliation; uncertainty never generates an OFF reply or automatic second
 attempt. The next report supersedes an unresolved old reply. Existing revenue
 checks remain fail-closed for actual new decisions.
 
-Central Terminal and ChirpStack use purpose-limited gateway tunnels. Browser local
-traffic goes to the selected gateway, never central's internal network. The
+Central Terminal and ChirpStack use purpose-limited gateway tunnels.
+With **Central server** selected (no gateway), Terminal and ChirpStack work on
+the central machine itself; see the [deployment guide](docs/deployment-guide.md#working-on-the-central-server-itself). The
 separate, owner-enabled updater verifies provenance and replaces Console/agent by
 digest together, with rollback and persistent data preservation.
 

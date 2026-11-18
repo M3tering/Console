@@ -91,7 +91,6 @@ small { display:block; font-size:12px; line-height:1.6; color:var(--muted); }
 .app-art { width:var(--icon-size); height:var(--icon-size); display:inline-flex; align-items:center; justify-content:center; border-radius:var(--icon-radius); background:linear-gradient(140deg,#eeedd4,#bbcda2); color:#35513b; box-shadow:var(--icon-shadow); flex-shrink:0; overflow:hidden; }
 .app-art svg { width:56%; height:56%; stroke-width:1.6; }
 [data-app-id="terminal"] .app-art { background:linear-gradient(140deg,#384e48,#172d28); color:#d4eeb3; }
-[data-app-id="browser"] .app-art { background:linear-gradient(140deg,#a9e1e5,#497fba); color:#fff; }
 [data-app-id="paint"] .app-art { background:linear-gradient(140deg,#f9d79d,#d97e7c); color:#713d46; }
 [data-app-id="settings"] .app-art { background:linear-gradient(140deg,#e6e8e8,#9da9b1); color:#43535d; }
 .extension-art { background:linear-gradient(140deg,#efdc8e,#cbae43); color:#5d4c22; }
@@ -169,9 +168,9 @@ label { display:block; }
 #xterm-terminal { flex:1; min-height:100px; padding:10px; overflow:hidden; }
 #terminal-status { color:var(--muted); font-size:12px; padding-top:14px; }
 #terminal-status p { margin-bottom:0; }
-.browser-toolbar { padding:9px 16px; display:flex; align-items:center; gap:10px; background:var(--surface-alt); font-size:12px; }
-.browser-toolbar a { margin-left:auto; font-size:11px; }
-#browser iframe, #chirpstack iframe { border:0; width:100%; flex:1; min-height:0; background:white; }
+.app-toolbar { padding:9px 16px; display:flex; align-items:center; gap:10px; background:var(--surface-alt); font-size:12px; }
+.app-toolbar a { margin-left:auto; font-size:11px; }
+#chirpstack iframe { border:0; width:100%; flex:1; min-height:0; background:white; }
 .app-art[data-icon="radio"] { background:linear-gradient(145deg,#259aa0,#145275); color:#fff; }
 .chirpstack-toolbar { flex-wrap:wrap; gap:8px; }
 .chirpstack-toolbar small { display:block; font-size:10px; color:var(--muted); }
@@ -312,7 +311,7 @@ dialog::backdrop { background:#14232e88; backdrop-filter:blur(3px); }dialog h2 {
   .settings-layout { flex-direction:column; }.settings-nav { width:100%; padding:8px; flex-direction:row; gap:5px; border-right:0; border-bottom:1px solid var(--border); }.settings-identity,.settings-footnote { display:none; }.settings-nav button { flex:1; justify-content:center; gap:6px; padding:10px 6px; min-height:44px; font-size:11px; }.settings-nav button svg { width:16px; height:16px; }.settings-content { padding:22px 18px; }
   .theme-grid { gap:12px; }.theme-preview { height:90px; }.theme-card-title { font-size:11px; }.theme-card small { font-size:10px; }.theme-card-copy { padding:8px 4px; }.theme-check { flex-shrink:0; }
   .setting-row { gap:12px; }.setting-row select { max-width:110px; }.setting-row .nes-btn { padding:8px 10px; }.switch { width:44px; height:28px; }.switch::after { width:20px; height:20px; }
-  .browser-toolbar { flex-wrap:wrap; gap:6px; font-size:11px; }.input-row { flex-wrap:wrap; }.input-row button { flex:1; }.input-row input { flex-basis:160px; }
+  .app-toolbar { flex-wrap:wrap; gap:6px; font-size:11px; }.input-row { flex-wrap:wrap; }.input-row button { flex:1; }.input-row input { flex-basis:160px; }
   .nes-btn,.quiet-button { min-height:44px; }.extension-window .window-content { overflow-wrap:anywhere; }.extension-window .nes-container { padding:14px; }
   .publisher-stat { padding:16px; }.publisher-stat #streamr-last-publish { font-size:15px; }
 }
@@ -350,8 +349,6 @@ dialog::backdrop { background:#14232e88; backdrop-filter:blur(3px); }dialog h2 {
 .paint-surface { overflow:auto; flex:1; min-height:0; padding:12px; background:var(--surface-muted); }
 #paint-canvas { display:block; width:100%; max-width:1200px; height:auto; background:#fff; touch-action:none; cursor:crosshair; }
 
-#browser-search { display:flex; flex:1; gap:8px; min-width:0; }
-#browser-query { flex:1; width:100%; min-width:0; }
 
 /* Feedback is positioned and clipped by its owning app, never the desktop. */
 .app-notification-area { position:absolute; z-index:20; right:12px; bottom:12px; width:min(380px,calc(100% - 24px)); max-height:40%; overflow:auto; pointer-events:none; }
@@ -363,4 +360,12 @@ dialog::backdrop { background:#14232e88; backdrop-filter:blur(3px); }dialog h2 {
 .app-dialog-layer > #mm-dialog { width:min(540px,100%); max-height:100%; }
 @media(max-width:700px) { .app-dialog-layer { padding:8px; } .app-dialog-layer > dialog.app-dialog { padding:18px; } }
 @media(max-height:500px) and (min-width:701px) { .app-dialog-layer { top:40px; } }
-.browser-controls{flex-wrap:wrap;gap:6px}.browser-controls button,.browser-controls select{min-height:34px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--small-radius);padding:4px 8px}.browser-controls #browser-search{min-width:180px}#browser-status{font:12px var(--font);padding:7px 12px;background:var(--surface-alt);color:var(--muted)}#browser-view{position:relative;flex:1;min-height:0;overflow:hidden;background:var(--surface);touch-action:none}#browser-canvas{display:block;width:100%;height:100%;object-fit:fill}#browser-input{position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:.01;border:0;padding:0;resize:none}
+
+/* Custom select arrow: a thin chevron (matching each theme's muted text) inset 14px from the
+   edge, with the same breathing room before it. :not() outranks toolbar rules that reset backgrounds. */
+:root{--select-arrow:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2364736a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+:root[data-theme="macos"]{--select-arrow:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23797182' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+:root[data-theme="linux"]{--select-arrow:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23afb6c4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+:root[data-theme="windows"]{--select-arrow:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+select:not([multiple]):not([size]){appearance:none;-webkit-appearance:none;padding-right:36px;
+  background-image:var(--select-arrow);background-position:right 14px center;background-size:10px 6px;background-repeat:no-repeat}

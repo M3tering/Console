@@ -4,7 +4,7 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import { SqliteIdentityStore } from '../../src/central/identity-store';
 import { hashPassword, verifyPassword, writeOwnerSecret, readOwnerSecret } from '../../src/central/secrets';
-import { roleConfig, requireAgentConfig } from '../../src/central/config';
+import { roleConfig, requireAgentConfig, centralSsh, centralChirpstackUrl } from '../../src/central/config';
 import { RateLimit } from '../../src/central/auth';
 
 let store: SqliteIdentityStore, now: number;
@@ -107,4 +107,67 @@ test('downlink outcome replay is idempotent and distinguishes uncertain attempts
     const inspect=new Database(file,{readonly:true});
     expect(inspect.prepare("SELECT action FROM central_audit WHERE subject='report' ORDER BY id").all()).toEqual([{action:'state-downlink-uncertain'},{action:'state-downlink'}]);inspect.close();
   }finally{identity.close();fs.rmSync(directory,{recursive:true,force:true});}
+});
+
+test('gateways can be renamed with the same name rules and the change is audited', () => {
+  const g = store.createGateway('Old name', 'admin');
+  expect(store.renameGateway(g.id, '  Rooftop A  ', 'admin')).toMatchObject({ id: g.id, name: 'Rooftop A', enrolled: false });
+  expect(store.gateways().map(x => x.name)).toEqual(['Rooftop A']);
+  for (const bad of ['', '   ', 'x'.repeat(101), 'bad\nname']) expect(() => store.renameGateway(g.id, bad, 'admin')).toThrow();
+  expect(() => store.renameGateway('missing', 'Name', 'admin')).toThrow('Gateway not found.');
+});
+
+test('deleting a gateway fences its credential and hides it while keeping history', () => {
+  const g = store.createGateway('Doomed', 'admin'), keep = store.createGateway('Keeper', 'admin');
+  const { credential } = store.exchange(store.enrollment(g.id, 'admin'))!;
+  expect(store.gateways().find(x => x.id === g.id)?.enrolled).toBe(true);
+  store.observeDevice('0011223344556677', g.id);store.assignDevice('0011223344556677', g.id, 'admin');
+  store.deleteGateway(g.id, 'admin');
+  expect(store.gateways().map(x => x.id)).toEqual([keep.id]);
+  expect(store.authenticateAgent(credential)).toBeNull();
+  expect(() => store.enrollment(g.id, 'admin')).toThrow();
+  expect(() => store.renameGateway(g.id, 'Back', 'admin')).toThrow();
+  expect(() => store.deleteGateway(g.id, 'admin')).toThrow('Gateway not found.');
+  expect(store.devices()[0]).toMatchObject({ devEui: '0011223344556677', overridden: false });
+});
+
+test('existing central databases gain the deleted column without losing gateways', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'central-migrate-')), file = path.join(dir, 'central.db');
+  try {
+    const legacy = new Database(file);
+    legacy.exec(`CREATE TABLE central_gateways (id TEXT PRIMARY KEY, name TEXT NOT NULL, credentialHash TEXT UNIQUE,
+      previousHash TEXT UNIQUE, previousUntil INTEGER, revoked INTEGER NOT NULL DEFAULT 0, lastHeartbeat INTEGER, version TEXT);
+      INSERT INTO central_gateways (id,name) VALUES ('legacy-id','Legacy');`);
+    legacy.close();
+    const migrated = new SqliteIdentityStore(file);
+    expect(migrated.gateways()).toMatchObject([{ id: 'legacy-id', name: 'Legacy', revoked: false, enrolled: false }]);
+    migrated.close();
+    new SqliteIdentityStore(file).close(); // Re-opening is idempotent.
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('central passwords need at least 7 characters', async () => {
+  await expect(hashPassword('6chars')).rejects.toThrow('at least 7 characters');
+  expect(await verifyPassword('7chars!', await hashPassword('7chars!'))).toBe(true);
+});
+
+test('changePassword swaps the hash, ends other sessions and is audited', async () => {
+  store.addUser('operator', await hashPassword('first-password'));
+  const user = store.user('operator')!, keep = store.createSession(user.id), other = store.createSession(user.id);
+  store.changePassword(user.id, await hashPassword('second-pass'), keep);
+  expect(await verifyPassword('second-pass', store.user('operator')!.passwordHash)).toBe(true);
+  expect(store.session(keep)?.username).toBe('operator');expect(store.session(other)).toBeNull();
+  expect(() => store.changePassword(user.id, 'plain-text', keep)).toThrow();
+  expect(() => store.changePassword('missing', store.user('operator')!.passwordHash, keep)).toThrow('User not found.');
+});
+
+test('central SSH port and ChirpStack dashboard settings are validated', () => {
+  expect(centralSsh({})).toEqual({ host: '127.0.0.1', port: 22 });
+  expect(centralSsh({ CENTRAL_SSH_PORT: '2222' }).port).toBe(2222);
+  for (const port of ['0', '70000', 'ssh']) expect(() => centralSsh({ CENTRAL_SSH_PORT: port })).toThrow('CENTRAL_SSH_PORT');
+  expect(centralChirpstackUrl({})).toBeUndefined();
+  expect(centralChirpstackUrl({ CENTRAL_CHIRPSTACK_URL: ' ' })).toBeUndefined();
+  expect(centralChirpstackUrl({ CENTRAL_CHIRPSTACK_URL: 'https://chirpstack.example.com' })?.href).toBe('https://chirpstack.example.com/');
+  for (const value of ['ftp://host', 'https://user:pw@host', 'https://host/ui', 'https://host/?a=1', 'not a url'])
+    expect(() => centralChirpstackUrl({ CENTRAL_CHIRPSTACK_URL: value })).toThrow('CENTRAL_CHIRPSTACK_URL');
 });

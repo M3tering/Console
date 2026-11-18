@@ -62,13 +62,3 @@ export async function resolveTarget(input: string, resolve: Resolver = host => l
   if (hostname === 'localhost' || hostname.endsWith('.localhost') || /\.(local|lan)$/.test(hostname)) target.classification = 'local';
   return { ...target, family: target.family as 4 | 6 };
 }
-
-export type BrowsingContext = { pageClass: 'public' | 'local' | 'none'; userNavigation: boolean; topLevel: boolean };
-export function destinationRoute(role: 'standalone' | 'gateway' | 'central', target: Pick<ResolvedTarget,'classification'>, context: BrowsingContext, gateway?: string): 'internet' | 'local' | 'agent' {
-  if (target.classification === 'blocked') throw new Error('Destination is not permitted.');
-  if (target.classification === 'public') return 'internet';
-  if (!(context.userNavigation && context.topLevel) && context.pageClass !== 'local') throw new Error('Public pages cannot access private destinations.');
-  if (role !== 'central') return 'local';
-  if (!gateway) throw new Error('Select an online gateway before opening a local destination.');
-  return 'agent';
-}

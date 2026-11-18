@@ -11,7 +11,6 @@
     radio: '<circle cx="12" cy="12" r="2"/><path d="m12 14-4 8h8l-4-8M7.8 7.8a6 6 0 0 0 0 8.4m8.4-8.4a6 6 0 0 1 0 8.4M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14"/>',
     meter: '<path d="M13 2 5 14h6l-1 8 9-13h-6z"/>',
     terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/>',
-    browser: '<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M5 6h14M5 18h14"/>',
     paint: '<path d="M12 3a9 9 0 1 0 0 18h2a2 2 0 0 0 1-3.7 1.5 1.5 0 0 1 .8-2.8H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3Z"/><circle cx="8" cy="8" r="1"/><circle cx="13" cy="6" r="1"/><circle cx="17" cy="10" r="1"/><circle cx="6" cy="13" r="1"/>',
     settings: '<path d="m10 3-1 3-3-1-2 3 2 2-2 2 2 4 3-1 1 4h4l1-4 3 1 2-4-2-2 2-2-2-3-3 1-1-3z"/><circle cx="12" cy="11" r="3"/>',
     appearance: '<path d="M4 4h16v12H4zM8 20h8m-4-4v4"/><path d="m8 10 2 2 5-5"/>',

@@ -1,7 +1,7 @@
 # Opt-in test topology. Default compose.yaml is unchanged.
 services:
   console:
-    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:feat-centralized-console}
+    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:main}
     network_mode: host
     restart: unless-stopped
     env_file: [.env]
@@ -23,7 +23,7 @@ services:
       start_period: 30s
       retries: 24
   agent:
-    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:feat-centralized-console}
+    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:main}
     # Agent does not initialize extensions, contracts or a blockchain wallet.
     entrypoint: [node]
     command: [dist/agent/index.js]
@@ -40,7 +40,7 @@ services:
       CENTRAL_DECISION_TIMEOUT_MS: ${CENTRAL_DECISION_TIMEOUT_MS:-8000}
       CENTRAL_RECOVERY_HEALTHY_MS: ${CENTRAL_RECOVERY_HEALTHY_MS:-15000}
       AGENT_QUEUE_LIMIT: ${AGENT_QUEUE_LIMIT:-10000}
-      GATEWAY_FALLBACK_PORT: ${GATEWAY_FALLBACK_PORT:-3001}
+      GATEWAY_FALLBACK_PORT: ${GATEWAY_FALLBACK_PORT:-3011}
       CHIRPSTACK_HOST: ${CHIRPSTACK_HOST:-localhost}
       APPLICATION_ID: ${APPLICATION_ID:?Set the existing ChirpStack application ID}
       API_TOKEN: ${API_TOKEN:?Set the existing ChirpStack API token}
@@ -48,8 +48,6 @@ services:
       CHEFSTACK_URL: ${CHEFSTACK_URL:-}
       CHIRPSTACK_WEB_URL: ${CHIRPSTACK_WEB_URL:-}
       AGENT_SSH_PORT: ${AGENT_SSH_PORT:-22}
-      AGENT_BROWSER_ALLOW_LAN: ${AGENT_BROWSER_ALLOW_LAN:-false}
-      AGENT_BROWSER_PORTS: ${AGENT_BROWSER_PORTS:-80,443,3000,8080,8090}
     volumes:
       - ./.data/agent:/opt/app/.data/agent
     read_only: true

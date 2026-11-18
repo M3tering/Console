@@ -2,6 +2,12 @@ import path from 'path';
 import { isIP } from 'net';
 
 export type ConsoleRole = 'standalone' | 'central' | 'gateway';
+/** Loopback port shared by the gateway Console's fallback and its agent. Not 3001:
+ * ChirpStack's Docker setup publishes 3001 for the Basic Station gateway bridge. */
+export const DEFAULT_GATEWAY_FALLBACK_PORT = 3011;
+export function gatewayFallbackPort(env: NodeJS.ProcessEnv = process.env): number {
+  return Number(env.GATEWAY_FALLBACK_PORT || DEFAULT_GATEWAY_FALLBACK_PORT);
+}
 export interface RoleConfig {
   role: ConsoleRole;
   development: boolean;
@@ -64,4 +70,22 @@ export function requireAgentConfig(env: NodeJS.ProcessEnv = process.env): RoleCo
     throw new Error('The agent requires gateway role, CENTRAL_URL, AGENT_CREDENTIAL_PATH and FALLBACK_SECRET_PATH.');
   }
   return { ...config, centralUrl: config.centralUrl, credentialPath: config.credentialPath, fallbackSecretPath: config.fallbackSecretPath };
+}
+
+/** SSH endpoint for central's own Terminal (no gateway selected). The central
+ * container shares the host network, so loopback reaches the server's sshd. */
+export function centralSsh(env: NodeJS.ProcessEnv = process.env): { host: string; port: number } {
+  return { host: '127.0.0.1', port: integer(env, 'CENTRAL_SSH_PORT', 22, 1, 65535) };
+}
+
+/** ChirpStack dashboard that central's ChirpStack window shows when no gateway is selected. */
+export function centralChirpstackUrl(env: NodeJS.ProcessEnv = process.env): URL | undefined {
+  const raw = env.CENTRAL_CHIRPSTACK_URL?.trim();
+  if (!raw) return undefined;
+  let url: URL;
+  try { url = new URL(raw); } catch { throw new Error('CENTRAL_CHIRPSTACK_URL must be an http(s) address such as https://chirpstack.example.com.'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    throw new Error('CENTRAL_CHIRPSTACK_URL must be an http(s) origin without credentials or a path, such as https://chirpstack.example.com.');
+  }
+  return url;
 }

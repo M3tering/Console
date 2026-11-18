@@ -3,20 +3,23 @@ import { handleUplinks } from './services/mqtt';
 import { server, startServer } from './services/server';
 import { attachTerminal } from './services/ssh';
 import { central, config, initializeManagedRole } from './central/runtime';
+import { centralSsh } from './central/config';
 if(!central)attachTerminal(server);
 else {
  const runtime=central;
- const sessions=new Map<string,{user:string;gateway:string}>();
+ const sessions=new Map<string,{user:string;gateway?:string}>();
  attachTerminal(server,undefined,{
   connection:async request=>{
-    const gateway=runtime.hub.selected(request);if(!gateway)throw new Error('Select a gateway.');
+    const gateway=runtime.hub.selected(request);
+    // No gateway selected: a shell on the central server itself (the container shares the host network).
+    if(!gateway)return centralSsh();
     const sock=await runtime.hub.open(gateway,'ssh','ssh',22);
     return {sock,hostHash:'sha256',hostVerifier:(hash:string)=>runtime.identities.verifyHostKey(gateway,hash)};
   },
   audit:(request,event,session)=>{
     if(event==='start'){
-      const user=runtime.auth.session(request),gateway=runtime.hub.selected(request);
-      if(user&&gateway)sessions.set(session,{user:user.id,gateway});
+      const user=runtime.auth.session(request),gateway=runtime.hub.selected(request)||undefined;
+      if(user)sessions.set(session,{user:user.id,gateway});
     }
     const actor=sessions.get(session);
     if(actor)runtime.identities.audit(actor.user,event==='start'?'terminal-start':'terminal-end',actor.gateway,session);

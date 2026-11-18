@@ -3,18 +3,49 @@
   <header class="topbar">
     <button class="brand" data-launcher-toggle aria-label="Open application launcher" aria-expanded="false" aria-controls="app-launcher"><span class="brand-mark" aria-hidden="true">m³</span><span>M3tering<span class="brand-secondary"> Console</span></span></button>
     <div class="topbar-location"><span class="status-dot"></span><span id="active-app-name">Desktop</span></div>
-    {{#if central}}<div class="gateway-control"><label for="gateway-select" class="sr-only">Selected gateway</label><select id="gateway-select"><option value="">Select a gateway</option></select><button class="quiet-button" id="manage-gateways">Gateways</button><form action="/logout" method="post"><button class="quiet-button">Sign out</button></form></div>{{/if}}
-    <div class="topbar-trailing"><button class="quiet-button" data-open-settings title="Personalize desktop" aria-label="Open Settings"><span data-icon="settings"></span></button><time id="desktop-clock"></time></div>
+    {{#if central}}<div class="gateway-control"><button id="gateway-switcher" class="gw-switcher" data-state="central" aria-haspopup="dialog" aria-expanded="false" aria-controls="gateway-menu"><span class="gw-switcher-dot" aria-hidden="true"></span><span class="gw-switcher-text"><span class="gw-switcher-label">No gateway</span><span id="gateway-switcher-name">Central server</span></span><svg class="gw-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>{{/if}}
+    <div class="topbar-trailing">{{#if central}}<button id="account-menu-button" class="account-button" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Account menu"><span class="account-avatar" id="account-initial" aria-hidden="true">·</span></button>{{/if}}<button class="quiet-button" data-open-settings title="Personalize desktop" aria-label="Open Settings"><span data-icon="settings"></span></button><time id="desktop-clock"></time></div>
   </header>
   {{#if central}}
-  <p id="gateway-status" role="status">Choose a gateway to access its applications.</p>
-  <dialog id="gateway-dialog" aria-labelledby="gateway-dialog-title"><header><h2 id="gateway-dialog-title">Gateways</h2><button id="gateway-dialog-close" aria-label="Close gateway management">×</button></header><p>Uncertain replies are held for reconciliation. A newer report supersedes an older unresolved reply; uncertainty never sends a relay command.</p><div id="gateway-list"></div><form id="gateway-create"><label>Gateway name<input name="name" required maxlength="100" autocomplete="off"></label><button class="nes-btn">Create enrollment</button></form><div id="gateway-enrollment" hidden><p>One-time enrollment token. It expires in ten minutes. Store it only in the gateway's private configuration.</p><code id="gateway-enrollment-token"></code><button id="gateway-copy-token" class="nes-btn">Copy token</button></div><p id="gateway-error" role="alert"></p></dialog>
+  <section id="gateway-menu" class="gw-menu" role="dialog" aria-labelledby="gateway-menu-title" hidden>
+    <header class="gw-menu-head"><div><h2 id="gateway-menu-title">Gateways</h2><p id="gateway-menu-summary">Loading…</p></div><button id="gateway-menu-close" class="quiet-button" aria-label="Close gateway menu">×</button></header>
+    <div id="gateway-current" class="gw-current" role="status"></div>
+    <p class="gw-menu-label" id="gateway-options-label">Work on</p>
+    <div id="gateway-options" class="gw-options" role="listbox" aria-labelledby="gateway-options-label"></div>
+    <footer class="gw-menu-foot"><button id="manage-gateways" class="nes-btn">Manage gateways</button></footer>
+  </section>
+  <div id="account-menu" class="account-menu" role="menu" aria-labelledby="account-menu-button" hidden>
+    <div class="account-menu-head"><span class="account-avatar is-large" id="account-menu-initial" aria-hidden="true">·</span><div><strong id="account-menu-name">Account</strong><small>Central workspace</small></div></div>
+    <button role="menuitem" id="open-account" class="account-menu-item">Change password</button>
+    <form action="/logout" method="post"><button role="menuitem" class="account-menu-item is-danger">Sign out</button></form>
+  </div>
+  <dialog id="gateway-dialog" aria-labelledby="gateway-dialog-title">
+    <header class="gw-header"><div><span class="eyebrow">CENTRAL WORKSPACE</span><h2 id="gateway-dialog-title">Gateways</h2><p id="gateway-summary" class="gw-summary">Loading gateways…</p></div><button id="gateway-dialog-close" class="quiet-button" aria-label="Close gateway management">×</button></header>
+    <section class="gw-add" aria-labelledby="gateway-add-title"><div><h3 id="gateway-add-title">Add a gateway</h3><p>Name it after its site so it's easy to find. You'll get a one-time token to install on the gateway.</p></div><form id="gateway-create"><label class="sr-only" for="gateway-name">Gateway name</label><input id="gateway-name" name="name" class="nes-input" required maxlength="100" autocomplete="off" placeholder="e.g. Rooftop, Block A"><button class="nes-btn is-primary">Add gateway</button></form></section>
+    <section id="gateway-enrollment" class="gw-enrollment" hidden aria-labelledby="gateway-enrollment-title"><div class="gw-enrollment-head"><h3 id="gateway-enrollment-title">Connect <span id="gateway-enrollment-name">your gateway</span></h3><span id="gateway-enrollment-expiry" class="gw-pill"></span></div><ol class="gw-steps"><li><span>Add these lines to the gateway's <code>.env</code></span><div class="gw-token"><code><span class="gw-token-line"><span class="gw-token-key">CONSOLE_ROLE=</span>gateway</span><span class="gw-token-line"><span class="gw-token-key">CENTRAL_URL=</span><span id="gateway-enrollment-url"></span></span><span class="gw-token-line"><span class="gw-token-key">AGENT_ENROLLMENT_TOKEN=</span><span id="gateway-enrollment-token"></span></span></code><button id="gateway-copy-token" class="nes-btn" type="button">Copy</button></div></li><li><span>In the gateway's Console folder, run</span><code class="gw-command">./auto-compose.sh</code></li><li><span>When it shows <strong>Online</strong> below, delete the token line. It works once and expires in ten minutes.</span></li></ol><button id="gateway-enrollment-dismiss" class="nes-btn" type="button">Done</button></section>
+    <p id="gateway-error" role="alert"></p>
+    <h3 class="gw-list-title">Your gateways</h3>
+    <div id="gateway-list"></div>
+    <p class="gw-note">Uncertain replies are held for reconciliation. A newer report supersedes an older unresolved reply; uncertainty never sends a relay command.</p>
+  </dialog>
+  <dialog id="account-dialog" aria-labelledby="account-dialog-title">
+    <form id="password-form" class="account-form">
+      <header class="account-head"><div><span class="eyebrow">ACCOUNT</span><h2 id="account-dialog-title">Change password</h2><p id="account-user">Signed in to the central workspace</p></div><button type="button" class="quiet-button" id="account-close" aria-label="Close account settings">×</button></header>
+      <input type="text" name="username" id="account-username" autocomplete="username" hidden>
+      <label>Current password<input class="nes-input" type="password" name="current" autocomplete="current-password" required maxlength="1024"></label>
+      <label>New password<input class="nes-input" type="password" name="next" autocomplete="new-password" required minlength="7" maxlength="1024" aria-describedby="password-hint"></label>
+      <label>Confirm new password<input class="nes-input" type="password" name="confirm" autocomplete="new-password" required minlength="7" maxlength="1024"></label>
+      <p id="password-hint" class="account-hint">At least 7 characters. Any other device signed in to this account will be signed out.</p>
+      <p id="password-message" class="account-message" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="nes-btn" id="account-cancel">Close</button><button class="nes-btn is-primary" id="password-submit">Change password</button></div>
+    </form>
+  </dialog>
+  <dialog id="gateway-confirm" aria-labelledby="gateway-confirm-title"><form method="dialog"><h2 id="gateway-confirm-title"></h2><p id="gateway-confirm-body"></p><div class="dialog-actions"><button class="nes-btn" value="cancel" autofocus>Cancel</button><button class="nes-btn is-error" value="confirm" id="gateway-confirm-action"></button></div></form></dialog>
   {{/if}}
   <main id="desktop" aria-label="Desktop">
     <div class="desktop-heading" aria-hidden="true"><span class="eyebrow">YOUR ENERGY. YOUR ENVIRONMENT.</span><h1>A little more<br>connected.</h1><p>M3tering Console <span> / </span> Provider workspace</p></div>
     <div id="desktop-scroll"><div id="desktop-icons" tabindex="-1" aria-label="Applications">
       <button class="desktop-icon" id="terminal-icon" data-app-id="terminal" data-app-label="Terminal" data-app-description="Connect to your console" data-icon-name="terminal"><span class="app-art" data-icon="terminal"></span><span class="icon-label">Terminal</span></button>
-      <button class="desktop-icon" id="browser-icon" data-app-id="browser" data-app-label="Browser" data-app-description="Explore the web" data-icon-name="browser"><span class="app-art" data-icon="browser"></span><span class="icon-label">Browser</span></button>
       <button class="desktop-icon" id="paint-icon" data-app-id="paint" data-app-label="Paint" data-app-description="Draw and save a picture" data-icon-name="paint"><span class="app-art" data-icon="paint"></span><span class="icon-label">Paint</span></button>
       <button class="desktop-icon" id="chirpstack-icon" data-app-id="chirpstack" data-app-label="ChirpStack" data-app-description="Manage your LoRaWAN network" data-icon-name="radio"><span class="app-art" data-icon="radio"></span><span class="icon-label">ChirpStack</span></button>
       {{#each icons}}
@@ -34,13 +65,8 @@
           <div id="terminal-status" role="status"><p id="status-message">Enter your credentials to start a terminal session.</p></div>
         </div>
       </section>
-      <section class="app-window" id="browser" data-window-title="Browser" aria-label="Browser" hidden>
-        <div class="browser-toolbar browser-controls"><button id="browser-back" aria-label="Back">←</button><button id="browser-forward" aria-label="Forward">→</button><button id="browser-reload" aria-label="Reload">↻</button><button id="browser-stop" aria-label="Stop loading">×</button><button id="browser-home" aria-label="Home">⌂</button><form id="browser-search"><label class="sr-only" for="browser-query">Search Google or enter a URL</label><input id="browser-query" class="nes-input" type="text" placeholder="Search Google or enter a URL" /><button type="submit">Go</button></form><button id="browser-copy" aria-label="Copy selected text">Copy</button><label class="sr-only" for="browser-zoom">Page zoom</label><select id="browser-zoom" aria-label="Page zoom"><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></div>
-        <div id="browser-status" role="status">Open Browser to start an isolated session. Downloads and file uploads are disabled.</div>
-        <div id="browser-view" tabindex="0" role="application" aria-label="Remote browser page"><canvas id="browser-canvas"></canvas><textarea id="browser-input" aria-label="Browser text input" autocomplete="off" spellcheck="false"></textarea></div>
-      </section>
       <section class="app-window" id="chirpstack" data-window-title="ChirpStack" aria-label="ChirpStack" hidden>
-        <div class="browser-toolbar chirpstack-toolbar"><span data-icon="radio"></span><span>ChirpStack <small>LoRaWAN network server</small></span><button class="nes-btn" id="chirpstack-reload" aria-label="Reload ChirpStack">Reload</button><a href="/chirpstack/" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a></div>
+        <div class="app-toolbar chirpstack-toolbar"><span data-icon="radio"></span><span>ChirpStack <small>LoRaWAN network server</small></span><button class="nes-btn" id="chirpstack-reload" aria-label="Reload ChirpStack">Reload</button><a href="/chirpstack/" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a></div>
         <iframe id="chirpstack-frame" title="ChirpStack network server" data-src="/chirpstack/" referrerpolicy="same-origin"></iframe>
       </section>
       <section class="app-window" id="paint" data-window-title="Paint" aria-label="Paint" data-window-width="900" data-window-height="650" hidden>

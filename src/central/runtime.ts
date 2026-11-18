@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import type http from 'http';
-import { roleConfig } from './config';
+import { roleConfig, gatewayFallbackPort } from './config';
+import { createLogger } from '../utils/logger';
 import { SqliteIdentityStore } from './identity-store';
 import { CentralAuth } from './auth';
 import { GatewayHub } from './hub';
@@ -52,9 +53,17 @@ export async function initializeManagedRole():Promise<http.Server|undefined> {
       if(!/^[\w-]{36}$/.test(identity))throw new Error('Agent enrollment is not ready.');return identity;
     };
     const server=fallbackServer(processor,secret,getGateway);
-    const port=Number(process.env.GATEWAY_FALLBACK_PORT||3001);
+    const port=gatewayFallbackPort();
     if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('GATEWAY_FALLBACK_PORT must be 1024–65535.');
-    await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',()=>{server.off('error',reject);resolve();});});
+    await new Promise<void>((resolve,reject)=>{
+      server.once('error',error=>{
+        // Managed logs withhold error details, so name the problem explicitly; it is not secret.
+        if((error as NodeJS.ErrnoException).code==='EADDRINUSE')createLogger('[gateway]').error(
+          `Port ${port} on 127.0.0.1 is already used by another program. Set GATEWAY_FALLBACK_PORT in .env to a free port and redeploy.`);
+        reject(error);
+      });
+      server.listen(port,'127.0.0.1',()=>{server.removeAllListeners('error');resolve();});
+    });
     return server;
   }
 }

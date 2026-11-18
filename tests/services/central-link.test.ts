@@ -8,7 +8,7 @@ import { GatewayHub } from '../../src/central/hub';
 import { SocketDecider, parseOperation } from '../../src/central/rpc';
 import { DurableProcessor } from '../../src/central/processor';
 import { LocalDecider, fallbackServer } from '../../src/central/local-channel';
-import { protectBrowserSockets, registerSocket } from '../../src/services/socket-router';
+import { protectSessionSockets, registerSocket } from '../../src/services/socket-router';
 import { hashPassword } from '../../src/central/secrets';
 import type { UplinkEvent } from '../../src/central/protocol';
 
@@ -23,7 +23,7 @@ async function fixture(){
   const compute=jest.fn(async(event,sink)=>sink({devEui:event.deviceInfo.devEui,fPort:2,confirmed:false,bytes:[1,0,0,0,0,0,0,0,0]}));
   const processor=new DurableProcessor(':memory:',compute);
   const hub=new GatewayHub(store,auth,()=>processor,true),app=express(),server=http.createServer(app);
-  auth.mount(app,hub.machineRoutes);app.use(express.json());protectBrowserSockets(server,auth.authorize);hub.mount(app,server);
+  auth.mount(app,hub.machineRoutes);app.use(express.json());protectSessionSockets(server,auth.authorize);hub.mount(app,server);
   const terminal=new WebSocket.Server({noServer:true});registerSocket(server,'/terminal',terminal);
   const base=await start(server);
   const g=store.createGateway('Fixture gateway','test'),token=store.enrollment(g.id,'test');
@@ -56,6 +56,40 @@ test('authenticated outbound link returns the same stored decision by ChirpStack
     expect(revoked.status).toBe(200);await closed;
     expect(f.store.authenticateAgent(f.enrolled.credential)).toBeNull();
   }finally{client?.disconnect();await f.close();}
+});
+
+test('rename updates the list; delete disconnects the agent and removes the gateway',async()=>{
+  const f=await fixture();
+  try{
+    const ws=await f.connect();
+    const post=(path:string,body?:unknown)=>fetch(f.base+path,{method:'POST',headers:{cookie:f.cookie,origin:f.base,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+    const renamed=await post(`/api/gateways/${f.enrolled.gateway}/rename`,{name:'Renamed gateway'});
+    expect(renamed.status).toBe(200);expect(await renamed.json()).toMatchObject({name:'Renamed gateway'});
+    expect((await post(`/api/gateways/${f.enrolled.gateway}/rename`,{name:''})).status).toBe(400);
+    const closed=once(ws,'close');
+    expect((await post(`/api/gateways/${f.enrolled.gateway}/delete`)).status).toBe(200);await closed;
+    const list=await (await fetch(f.base+'/api/gateways',{headers:{cookie:f.cookie}})).json() as {gateways:unknown[]};
+    expect(list.gateways).toEqual([]);
+    expect(f.store.authenticateAgent(f.enrolled.credential)).toBeNull();
+    expect((await post(`/api/gateways/${f.enrolled.gateway}/delete`)).status).toBe(404);
+    expect((await fetch(`${f.base}/api/gateways/${f.enrolled.gateway}/delete`,{method:'POST',headers:{cookie:f.cookie,origin:'https://foreign.invalid'}})).status).toBe(403);
+  }finally{await f.close();}
+});
+
+test('selecting null clears the gateway so apps target the central server',async()=>{
+  const f=await fixture();
+  try{
+    const post=(body:unknown)=>fetch(f.base+'/api/gateways/select',{method:'POST',headers:{cookie:f.cookie,origin:f.base,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const chosen=await post({id:f.enrolled.gateway});
+    expect(chosen.status).toBe(200);expect(chosen.headers.get('set-cookie')).toContain(`console_gateway=${f.enrolled.gateway}`);
+    const cleared=await post({id:null});
+    expect(cleared.status).toBe(200);expect(await cleared.json()).toEqual({selected:null});
+    expect(cleared.headers.get('set-cookie')).toMatch(/^console_gateway=; Path=\/; Max-Age=0; HttpOnly; SameSite=Strict/);
+    const list=await (await fetch(f.base+'/api/gateways',{headers:{cookie:f.cookie}})).json() as {selected:unknown};
+    expect(list.selected).toBeNull();
+    expect((await post({id:'not-a-gateway'})).status).toBe(400);
+    expect((await post({})).status).toBe(400);
+  }finally{await f.close();}
 });
 
 test('central routes and socket upgrades refuse missing credentials and cross-site sessions',async()=>{

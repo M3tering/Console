@@ -39,3 +39,18 @@ test('HTML bootstraps the compatibility bridge before app assets and preserves e
   expect(rewriteChirpstackText('import("/assets/chunk.js");url(/static/font.woff)', false)).toBe('import("/chirpstack/assets/chunk.js");url(/chirpstack/static/font.woff)');
   expect(rewriteChirpstackText('src:"/logo.png",path:"/tenants"', false)).toBe('src:"/chirpstack/logo.png",path:"/tenants"');
 });
+
+test('a direct dashboard origin is proxied without a tunnel agent', async () => {
+  const http = await import('http'), express = (await import('express')).default;
+  const { proxyChirpstackThrough } = await import('../../src/services/chirpstack');
+  const upstream = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/plain'); res.end(`dashboard ${req.url} cookie=${req.headers.cookie ?? 'none'}`); });
+  await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve));
+  const target = new URL(`http://127.0.0.1:${(upstream.address() as import('net').AddressInfo).port}`);
+  const app = express(); app.use('/chirpstack', (req, res) => proxyChirpstackThrough(req, res, target));
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${(server.address() as import('net').AddressInfo).port}/chirpstack/tenants`, { headers: { cookie: 'console_session=secret' } });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('dashboard /tenants cookie=none');
+  } finally { server.close(); upstream.close(); }
+});

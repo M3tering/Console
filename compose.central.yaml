@@ -1,7 +1,7 @@
 # Opt-in central test topology; supply CENTRAL_DOMAIN and central credentials.
 services:
   console:
-    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:feat-centralized-console}
+    image: ${CONSOLE_IMAGE:-ghcr.io/fluxion9/console:main}
     network_mode: host
     restart: unless-stopped
     env_file: [.env]

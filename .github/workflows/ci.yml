@@ -46,7 +46,7 @@ jobs:
       fail-fast: false
       matrix:
         platform: [linux/amd64, linux/arm64]
-        variant: [console, browser, updater]
+        variant: [console, updater]
         include:
           - platform: linux/amd64
             runner: ubuntu-latest
@@ -128,7 +128,7 @@ jobs:
   create-manifests:
     strategy:
       matrix:
-        variant: [console, browser, updater]
+        variant: [console, updater]
     needs: build-platform
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest

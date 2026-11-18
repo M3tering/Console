@@ -108,81 +108,9 @@ state and contiguous signed records. A decider cannot accept a new report until
 its replay backlog has been applied. An older committed handler remains a fence
 even if several intervening, unowned reports have already been superseded.
 
-## Browser implementation and isolation
-
-A remote Chromium engine is required for ordinary sites: an iframe rewriting
-proxy cannot generally preserve CSP, service workers, cookies and modern scripts.
-Chromium is optional so the default image remains usable on small gateways.
-A missing engine must be visible in the app, not cause Console startup failure.
-
-Traffic must use a per-session controlled proxy and isolated browser profile.
-DNS must be classified and pinned at the connection boundary. In central mode,
-private destinations route only through the selected agent, never through the
-central network. Gateway-local `.local`/`.lan` names are resolved and pinned by the gateway
-tunnel endpoint, which refuses public answers and applies its owner allowlist;
-central DNS is not used for those names. Cloud metadata is always refused. Gateway allowlists remain
-owner-controlled and separate by tunnel purpose.
-
-A blind CONNECT proxy cannot inspect the requesting origin inside TLS. Therefore
-public-to-private protection cannot be claimed from destination filtering alone.
-The implementation terminates CONNECT with a per-session certificate trusted
-only by that Chromium process's SPKI allowlist. Upstream TLS is independently
-validated. CDP pauses each request; the proxy resolves and classifies its target,
-then issues a short-lived, single-use permit bound to URL, method and pinned IP.
-The browser cannot choose routing headers; the proxy strips its permit upstream.
-Public-page requests to private targets are refused, including redirects. An
-explicit address-bar navigation or user-clicked top-level navigation may open a
-local target. WebSocket handshakes use the browser-controlled Origin, previously
-classified by the proxy; unknown or ambiguously classified origins are refused.
-QUIC and unproxied WebRTC UDP are disabled. Service workers are bypassed.
-
-A rewriting iframe proxy was rejected for internet sites because framing, cookie
-and script restrictions would remain. A hybrid adds two inconsistent security
-and navigation models without removing Chromium's cost. The selected optional
-engine provides a single CDP screencast page; target-blank links stay in it.
-Profiles/cookies are temporary and deleted at close. Chromium receives a minimal
-environment, excluding the Console wallet, API tokens and agent credentials. Uploads and downloads are
-explicitly disabled. Copy uses the selected text and the viewer's clipboard;
-paste/IME text is sent as input, never audited. Pixel streaming has no remote DOM
-screen-reader semantics; this is an accessibility limitation requiring follow-up.
-
-The default image has no Chromium and displays an unavailable message without
-breaking startup. The optional `browser` target uses Alpine Chromium and a
-non-root runtime; production never adds `--no-sandbox`. Three global sessions,
-one per central user, 10-minute idle and 60-minute lifetime caps, bounded CDP
-queues/sockets/frame buffering, and Compose memory/CPU limits bound resource use.
-An AMD64 static-page fixture measured 422 MiB summed RSS across six Chromium
-processes and 0% of one CPU core over a three-second idle sample (100 Hz process
-clock, Node 24.16.0 host, test-only sandbox bypass). RSS double-counts shared
-pages; this is neither peak memory nor an ARM64 measurement. No i.MX8 hardware is
-available, so ARM64 size/RAM/CPU and production sandbox checks remain release
-gates. This cost is why Chromium is an optional image, not installed on all
-gateways. The image build's offline about:blank smoke test uses a build-only sandbox bypass;
-that is not evidence of production sandbox support on an i.MX8 host.
-
-## Deployment and verification constraints
-
-No production services are contacted. Contract, MQTT, ChirpStack and SSH tests use
-doubles or local fixture services. No rollout is performed by this task.
-The local host is AMD64; ARM64 runtime resource measurements require an ARM64
-test environment. Measurements must not be estimated and presented as observed.
-Existing workflow publishing conventions are preserved; attestations will be
-additive and run only when images are actually published.
-
-## Integrated transport and authentication
-
-The agent connects to `/agent` using an Authorization header. Browser sessions
-are not accepted as agent credentials. The versioned operation RPC separates
-`offer`, `commit`, `outcome` and `reconcile`; every envelope carries the original
-ChirpStack ID and a transport request ID. The authenticated connection supplies
-the gateway identity, never the message body. Duplicate commits return durable
-outcomes. The loopback fallback uses the same RPC and a separate owner-only file
-secret. Invalid messages are rejected before billing. Agent MQTT acknowledges
-QoS 1 delivery only after the local journal has persisted the event.
-
 Central session authentication mounts before static assets and application
 routes. Agent enrollment is the narrowly scoped token-authenticated exception.
-Browser WebSockets require both the same origin and an unexpired human session;
+Desktop WebSockets (such as Terminal) require both the same origin and an unexpired human session;
 active sessions are rechecked periodically. Revocation closes the agent link
 immediately. Credential rotation persists the replacement locally before acknowledging it on the existing link,
 without interrupting tunnels. A two-minute overlap covers interrupted handshakes;
@@ -191,7 +119,10 @@ reconnection with the new credential also confirms rotation.
 The gateway selector shows cumulative uncertain/reconciled/superseded counts and
 current pending count. Switching gateway closes open network application windows
 to prevent a window from silently changing its target. Each app title identifies
-the selected gateway. Managed logs omit credentials and raw signed envelopes.
+the selected gateway. Choosing **Central server** clears the selection: Terminal then
+uses the central host's own sshd (`CENTRAL_SSH_PORT`) and ChirpStack proxies
+`CENTRAL_CHIRPSTACK_URL`.
+Managed logs omit credentials and raw signed envelopes.
 
 ## SSH and ChirpStack tunnels
 
@@ -200,7 +131,7 @@ Streams have 64 KiB credit windows, 16 KiB frames, an eight-session default cap,
 one MiB/s per-stream limit, and a two-minute idle timeout. Closing the link closes
 all streams. The SSH purpose resolves only the owner-configured loopback SSH
 port; ChirpStack resolves only the gateway's existing configured web endpoint.
-Browser-purpose targets cannot access SSH, Docker or fallback/updater ports.
+Any other tunnel purpose is refused.
 
 Central SSH2 uses the stream as its `sock`, so passwords and shell traffic are
 inside SSH encryption through the relay. Host keys use trust on first use and

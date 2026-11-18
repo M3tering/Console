@@ -11,7 +11,7 @@ function request(app: ReturnType<typeof express>, url: string, options: { method
   Object.defineProperty(socket, 'remoteAddress', { value:'127.0.0.1' });
   const req=new IncomingMessage(socket);
   req.url=url;req.method=options.method || 'GET';req.headers={host:'console.example',...options.headers};
-  if(options.body) {req.headers['content-type']='application/x-www-form-urlencoded';req.headers['content-length']=String(Buffer.byteLength(options.body));}
+  if(options.body) {req.headers['content-type']??='application/x-www-form-urlencoded';req.headers['content-length']=String(Buffer.byteLength(options.body));}
   req.push(options.body || null);if(options.body)req.push(null);
   const res=new ServerResponse(req);
   return new Promise<{status:number;headers:ReturnType<ServerResponse['getHeaders']>;body:string}>(resolve=>{
@@ -29,7 +29,7 @@ beforeEach(async()=>{
 afterEach(()=>store.close());
 const secure={'x-forwarded-proto':'https'};
 test('every central app route is protected, including static assets, proxies and health',async()=>{
-  for(const url of ['/','/healthz','/api/actions/streamr/publish-now','/chirpstack/','/js/desktop.js','/api/gateways','/api/browser']) {
+  for(const url of ['/','/healthz','/api/actions/streamr/publish-now','/chirpstack/','/js/desktop.js','/api/gateways']) {
     const result=await request(app,url,{headers:secure});expect(result.status).toBe(url==='/'?303:401);
   }
   expect((await request(app,'/login',{headers:secure})).status).toBe(200);
@@ -59,4 +59,51 @@ test('bad sign-ins use generic errors, never echo secrets, and are rate limited'
     expect(reply.status).toBe(401);expect(reply.body).not.toContain('sensitive-fixture');
   }
   expect((await request(app,'/login',{method:'POST',headers:secure,body:'username=operator&password=sensitive-fixture'})).status).toBe(429);
+});
+
+test('the sign-in page is styled under a strict policy whose hash matches its stylesheet',async()=>{
+  const page=await request(app,'/login',{headers:secure});
+  const policy=String(page.headers['content-security-policy']);
+  expect(policy).toContain("default-src 'none'");expect(policy).not.toContain('unsafe-inline');expect(policy).not.toMatch(/script-src/);
+  const style=/<style>([\s\S]*?)<\/style>/.exec(page.body)![1];
+  const { createHash } = await import('crypto');
+  expect(policy).toContain(`style-src 'sha256-${createHash('sha256').update(style).digest('base64')}'`);
+  expect(page.body).not.toMatch(/<script/i);
+  expect(page.body).toContain('Welcome back');
+  expect((await request(app,'/login?signed-out',{headers:secure})).body).toContain('You have been signed out.');
+});
+test('a failed sign-in shows the page again with an error, keeping only a safe username',async()=>{
+  const failed=await request(app,'/login',{method:'POST',headers:secure,body:'username=operator&password=wrong-secret-value'});
+  expect(failed.status).toBe(401);expect(failed.body).toContain('role="alert"');
+  expect(failed.body).toContain('value="operator"');expect(failed.body).not.toContain('wrong-secret-value');
+  expect(String(failed.headers['content-security-policy'])).toContain("style-src 'sha256-");
+  const hostile=await request(app,'/login',{method:'POST',headers:secure,body:'username=%22%3E%3Cimg%20src%3Dx%3E&password=x'});
+  expect(hostile.status).toBe(401);expect(hostile.body).not.toContain('<img src=x>');expect(hostile.body).toContain('value=""');
+});
+
+test('changing the password needs the current one, signs out other sessions and keeps this one',async()=>{
+  const login=async(password:string)=>{const r=await request(app,'/login',{method:'POST',headers:secure,body:`username=operator&password=${password}`});
+    return r.status===303?String(r.headers['set-cookie']).split(';')[0]:null;};
+  const here=(await login('test-only-long-password'))!,elsewhere=(await login('test-only-long-password'))!;
+  const change=(cookie:string,body:object)=>request(app,'/api/account/password',{method:'POST',
+    headers:{...secure,cookie,origin:'https://console.example','content-type':'application/json'},body:JSON.stringify(body)});
+  expect(JSON.parse((await request(app,'/api/account',{headers:{...secure,cookie:here}})).body)).toEqual({username:'operator'});
+  const wrong=await change(here,{current:'not-the-password',next:'newpass1'});
+  expect(wrong.status).toBe(400);expect(wrong.body).toContain('current password is incorrect');
+  expect((await change(here,{current:'test-only-long-password',next:'short'})).body).toContain('at least 7 characters');
+  expect((await change(here,{current:'test-only-long-password',next:'test-only-long-password'})).body).toContain('differs');
+  expect((await change(here,{current:'test-only-long-password',next:'newpass1'})).status).toBe(200);
+  expect((await request(app,'/api/gateways',{headers:{...secure,cookie:here}})).status).toBe(200);
+  expect((await request(app,'/api/gateways',{headers:{...secure,cookie:elsewhere}})).status).toBe(401);
+  expect(await login('test-only-long-password')).toBeNull();
+  expect(await login('newpass1')).not.toBeNull();
+  // Five attempts per account in 15 minutes, counting the four above.
+  expect((await change(here,{current:'x',next:'newpass2'})).status).toBe(400);
+  expect((await change(here,{current:'newpass1',next:'newpass2'})).status).toBe(429);
+});
+test('password changes refuse anonymous and cross-site requests',async()=>{
+  expect((await request(app,'/api/account/password',{method:'POST',headers:{...secure,'content-type':'application/json'},body:'{}'})).status).toBe(401);
+  const cookie=String((await request(app,'/login',{method:'POST',headers:secure,body:'username=operator&password=test-only-long-password'})).headers['set-cookie']).split(';')[0];
+  expect((await request(app,'/api/account/password',{method:'POST',headers:{...secure,cookie,origin:'https://foreign.example','content-type':'application/json'},
+    body:JSON.stringify({current:'test-only-long-password',next:'newpass1'})})).status).toBe(403);
 });

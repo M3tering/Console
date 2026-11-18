@@ -15,8 +15,11 @@ export async function runUpdater():Promise<void>{
   if(process.env.REMOTE_UPDATES_ENABLED&&!['true','false'].includes(process.env.REMOTE_UPDATES_ENABLED))throw new Error('REMOTE_UPDATES_ENABLED must be boolean.');
   const reconnectMs=Number(process.env.UPDATER_RECONNECT_TIMEOUT_MS||180000);
   if(!Number.isInteger(reconnectMs)||reconnectMs<1000||reconnectMs>900000)throw new Error('Invalid updater reconnect deadline.');
-  const policy:UpdatePolicy={enabled:process.env.REMOTE_UPDATES_ENABLED==='true',imageRepository:process.env.UPDATER_IMAGE_REPOSITORY||'ghcr.io/fluxion9/console',
-    sourceRepository:process.env.UPDATER_SOURCE_REPOSITORY||'fluxion9/Console',allowedRefs:(process.env.UPDATER_ALLOWED_REFS||'refs/heads/main').split(','),project:process.env.UPDATER_PROJECT||'console',directory,reconnectMs};
+  // No built-in owner: the trusted repository always comes from the deployment (auto-compose.sh derives it).
+  const imageRepository=process.env.UPDATER_IMAGE_REPOSITORY,sourceRepository=process.env.UPDATER_SOURCE_REPOSITORY;
+  if(!imageRepository||!sourceRepository)throw new Error('UPDATER_IMAGE_REPOSITORY and UPDATER_SOURCE_REPOSITORY are required.');
+  const policy:UpdatePolicy={enabled:process.env.REMOTE_UPDATES_ENABLED==='true',imageRepository,
+    sourceRepository,allowedRefs:(process.env.UPDATER_ALLOWED_REFS||'refs/heads/main').split(','),project:process.env.UPDATER_PROJECT||'console',directory,reconnectMs};
   const secret=hashSecret(readOwnerSecret(secretFile));fs.mkdirSync(state,{recursive:true,mode:0o700});
   const updater=new Updater(path.join(state,'updates.db'),policy,new DockerDriver(policy,'/agent/reconnected.json'));
   await updater.recover();
