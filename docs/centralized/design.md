@@ -191,7 +191,10 @@ reconnection with the new credential also confirms rotation.
 The gateway selector shows cumulative uncertain/reconciled/superseded counts and
 current pending count. Switching gateway closes open network application windows
 to prevent a window from silently changing its target. Each app title identifies
-the selected gateway. Managed logs omit credentials and raw signed envelopes.
+the selected gateway. Choosing **Central server** clears the selection: Terminal then
+uses the central host's own sshd (`CENTRAL_SSH_PORT`), Browser reaches the internet and
+the central host's local network directly, and ChirpStack proxies `CENTRAL_CHIRPSTACK_URL`.
+Managed logs omit credentials and raw signed envelopes.
 
 ## SSH and ChirpStack tunnels
 

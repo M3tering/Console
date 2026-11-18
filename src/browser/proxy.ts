@@ -62,7 +62,7 @@ export class BrowserProxy {
     // Local service names belong to the selected gateway's DNS namespace. Its
     // tunnel endpoint resolves, classifies and pins the address before connect;
     // it refuses public results and still applies the owner's LAN/port policy.
-    const gatewayName=this.options.role==='central'&&(/\.(local|lan)$/.test(hostname)||hostname==='localhost'||hostname.endsWith('.localhost'));
+    const gatewayName=this.options.role==='central'&&!!this.options.gateway&&(/\.(local|lan)$/.test(hostname)||hostname==='localhost'||hostname.endsWith('.localhost'));
     const target:ProxyTarget=gatewayName?{hostname,address:hostname==='localhost'||hostname.endsWith('.localhost')?'127.0.0.1':hostname,family:null,classification:'local'}:await (this.options.resolve||resolveTarget)(hostname);
     const route=destinationRoute(this.options.role,target,context,this.options.gateway);
     for(const [token,p] of this.permits)if(p.expires<Date.now())this.permits.delete(token);
@@ -99,8 +99,8 @@ export class BrowserProxy {
       if(!this.options.tunnel)throw new Error('Selected gateway is unavailable.');
       return this.options.tunnel(permit.target.address,port);
     }
-    // Central private addresses can never fall through to net.connect.
-    if(this.options.role==='central'&&permit.target.classification!=='public')throw new Error('Central private network is inaccessible.');
+    // With a gateway selected, private addresses belong to that gateway and never fall through to the central host.
+    if(this.options.role==='central'&&this.options.gateway&&permit.target.classification!=='public')throw new Error('Private destinations go through the selected gateway.');
     return new Promise((resolve,reject)=>{
       const socket=net.connect({host:permit.target.address,port});
       socket.setTimeout(10000,()=>socket.destroy(new Error('Connection timed out.')));

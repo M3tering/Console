@@ -22,7 +22,6 @@ export function attachBrowser(server:http.Server,options:BrowserServiceOptions):
     const send=(message:Record<string,unknown>)=>{if(ws.readyState===WebSocket.OPEN&&ws.bufferedAmount<2*1024*1024)ws.send(JSON.stringify(message));};
     const gateway=options.gateway?.(request)||undefined,owner=options.owner?.(request);
     if(!starts.allow(owner||request.socket.remoteAddress||'local')||engines.size>=3||(owner&&owners.has(owner))){send({type:'error',message:'Browser session limit reached. Close another Browser window and retry.'});ws.close();return;}
-    if(options.role==='central'&&!gateway){send({type:'error',message:'Select a gateway before opening Browser.'});ws.close();return;}
     const engine=new BrowserEngine({role:options.role,gateway,executable:options.executable||process.env.BROWSER_EXECUTABLE||'/usr/bin/chromium',
       tunnel:options.tunnel&&gateway?(host,port)=>options.tunnel!(gateway,host,port):undefined,testUnsandboxed:options.testUnsandboxed,emit:message=>{send(message);if(message.type==='closed')ws.close();}});
     engines.add(engine);if(owner)owners.add(owner);let audited=false;

@@ -50,6 +50,22 @@ test('central private requests go only through the selected agent tunnel',async(
   }finally{proxy.close();upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));}
 });
 
+test('central with no gateway selected browses the central host directly',async()=>{
+  const upstream=http.createServer((_req,res)=>res.end('central fixture'));
+  await new Promise<void>(resolve=>upstream.listen(0,'127.0.0.1',resolve));const localPort=(upstream.address() as net.AddressInfo).port;
+  const tunnel=jest.fn();
+  const proxy=new BrowserProxy({role:'central',key,cert,tunnel});const port=await proxy.listen();
+  try{
+    for(const url of [`http://127.0.0.1:${localPort}/`,`http://localhost:${localPort}/`]){
+      const permit=await proxy.permit(url,'GET',typed);
+      expect((await get(port,url,permit.token)).body).toBe('central fixture');
+    }
+    expect(tunnel).not.toHaveBeenCalled();
+    await expect(proxy.permit('http://169.254.169.254/','GET',typed)).rejects.toThrow();
+    await expect(proxy.permit(`http://127.0.0.1:${localPort}/`,'GET',{pageClass:'public',topLevel:false,userNavigation:false})).rejects.toThrow('Public pages');
+  }finally{proxy.close();upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));}
+});
+
 test('CONNECT is inspected TLS, not a blind tunnel to central private services',async()=>{
   const tunnel=jest.fn();const proxy=new BrowserProxy({role:'central',gateway:'g1',key,cert,tunnel});const port=await proxy.listen();
   let socket:net.Socket|undefined,secured:tls.TLSSocket|undefined;

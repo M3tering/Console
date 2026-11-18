@@ -3,14 +3,14 @@
   <header class="topbar">
     <button class="brand" data-launcher-toggle aria-label="Open application launcher" aria-expanded="false" aria-controls="app-launcher"><span class="brand-mark" aria-hidden="true">m³</span><span>M3tering<span class="brand-secondary"> Console</span></span></button>
     <div class="topbar-location"><span class="status-dot"></span><span id="active-app-name">Desktop</span></div>
-    {{#if central}}<div class="gateway-control"><button id="gateway-switcher" class="gw-switcher" data-state="none" aria-haspopup="dialog" aria-expanded="false" aria-controls="gateway-menu"><span class="gw-switcher-dot" aria-hidden="true"></span><span class="gw-switcher-text"><span class="gw-switcher-label">Gateway</span><span id="gateway-switcher-name">Select a gateway</span></span><svg class="gw-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>{{/if}}
+    {{#if central}}<div class="gateway-control"><button id="gateway-switcher" class="gw-switcher" data-state="central" aria-haspopup="dialog" aria-expanded="false" aria-controls="gateway-menu"><span class="gw-switcher-dot" aria-hidden="true"></span><span class="gw-switcher-text"><span class="gw-switcher-label">No gateway</span><span id="gateway-switcher-name">Central server</span></span><svg class="gw-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>{{/if}}
     <div class="topbar-trailing">{{#if central}}<button id="account-menu-button" class="account-button" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Account menu"><span class="account-avatar" id="account-initial" aria-hidden="true">·</span></button>{{/if}}<button class="quiet-button" data-open-settings title="Personalize desktop" aria-label="Open Settings"><span data-icon="settings"></span></button><time id="desktop-clock"></time></div>
   </header>
   {{#if central}}
   <section id="gateway-menu" class="gw-menu" role="dialog" aria-labelledby="gateway-menu-title" hidden>
     <header class="gw-menu-head"><div><h2 id="gateway-menu-title">Gateways</h2><p id="gateway-menu-summary">Loading…</p></div><button id="gateway-menu-close" class="quiet-button" aria-label="Close gateway menu">×</button></header>
     <div id="gateway-current" class="gw-current" role="status"></div>
-    <p class="gw-menu-label" id="gateway-options-label">Switch gateway</p>
+    <p class="gw-menu-label" id="gateway-options-label">Work on</p>
     <div id="gateway-options" class="gw-options" role="listbox" aria-labelledby="gateway-options-label"></div>
     <footer class="gw-menu-foot"><button id="manage-gateways" class="nes-btn">Manage gateways</button></footer>
   </section>

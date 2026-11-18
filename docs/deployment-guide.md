@@ -111,7 +111,8 @@ About the admin account:
 - It's created **only on the first start**. Changing `CENTRAL_ADMIN_PASSWORD`
   in `.env` later does nothing.
 - A password shorter than 7 characters stops the first start with a clear error.
-- **To change the password**, sign in and click **Account** in the top bar. Enter
+- **To change the password**, sign in, click your initial at the top right and choose
+  **Change password**. Enter
   your current password and the new one (at least 7 characters). Any other device
   signed in to that account is signed out; you stay signed in. After five attempts
   in 15 minutes, further attempts are blocked for a while.
@@ -268,6 +269,52 @@ docker compose -f compose.gateway.yaml stop agent
 Keep `.data/agent/`. It holds the operations journal, which is needed if anything
 has to be reconciled later.
 
+## Working on the central server itself
+
+The gateway menu at the top starts with **Central server**. Choose it (or never pick
+a gateway) and the network apps work on the central machine instead of a gateway:
+
+| App | With **Central server** selected |
+|---|---|
+| **Terminal** | SSH into the central server itself. Sign in with a Linux user and password on that server. |
+| **Browser** | Browses the internet, plus anything on the central server or its private network (`http://localhost:8080`, a container's address, and so on). |
+| **ChirpStack** | Opens the dashboard set in `CENTRAL_CHIRPSTACK_URL`. |
+
+Choosing a gateway switches all three back to that gateway. Open windows close when
+you switch, so you never type into the wrong machine.
+
+Settings in central's `.env` (run `./auto-compose.sh` after changing them):
+
+```dotenv
+CENTRAL_CHIRPSTACK_URL=https://chirpstack.example.com   # address only, no path
+CENTRAL_SSH_PORT=22                                      # only if sshd uses another port
+```
+
+**Terminal needs password login.** The Terminal signs in with a username and password,
+and many cloud servers allow SSH keys only. To use it, the user needs a password
+(`sudo passwd <user>`) and sshd must accept passwords for it. For example, add this
+to `/etc/ssh/sshd_config` and run `sudo systemctl reload ssh`:
+
+```text
+Match User <user> Address 127.0.0.1
+    PasswordAuthentication yes
+```
+
+The `Address 127.0.0.1` line allows passwords only from the Console on the same
+machine, so the internet still needs a key.
+
+Useful commands in the central Terminal (from the Console folder):
+
+```sh
+docker compose -f compose.central.yaml logs -f console     # central's log
+docker compose -f compose.central.yaml logs -f tls-proxy   # HTTPS / Caddy
+docker compose -f compose.central.yaml ps
+```
+
+Each gateway's agent logs its enqueue results. To follow them, select that gateway,
+open Terminal and run `docker compose -f compose.gateway.yaml logs -f agent` in its
+Console folder.
+
 ## `.env` reference
 
 Settings are needed (✓), optional (opt) or not used (–) per setup.
@@ -286,6 +333,8 @@ Settings are needed (✓), optional (opt) or not used (–) per setup.
 | `CENTRAL_DOMAIN` | – | ✓ | – | DNS name for HTTPS |
 | `CENTRAL_ADMIN_USERNAME` | – | opt | – | Default `admin` |
 | `CENTRAL_ADMIN_PASSWORD` | – | ✓ first start | – | At least 7 characters |
+| `CENTRAL_CHIRPSTACK_URL` | – | opt | – | Dashboard the ChirpStack app opens with no gateway selected |
+| `CENTRAL_SSH_PORT` | – | opt | – | Central's own SSH port for Terminal; default `22` |
 | `CENTRAL_URL` | – | – | ✓ | `wss://` + central domain, no path |
 | `AGENT_ENROLLMENT_TOKEN` | – | – | first start | From central; remove after enrolling |
 | `REMOTE_UPDATES_ENABLED` | – | – | opt | `true` makes the script run the signed updater |
@@ -314,6 +363,8 @@ docker compose -f compose.gateway.yaml logs -f agent
 | `unauthorized` / `denied` while pulling | The image package is private, or CI hasn't published it yet. Make the package public or `docker login ghcr.io`, and check the Actions run on `main` passed. |
 | Central: Console keeps restarting on first start | Usually a short `CENTRAL_ADMIN_PASSWORD`. Check `logs console`. |
 | Central: HTTPS doesn't work | DNS doesn't point at the server yet, or ports 80/443 are taken. |
+| Central Terminal: `SSH connection failed` | With **Central server** selected, the server's sshd refused the password. Allow password login for that user from `127.0.0.1` (see [Working on the central server itself](#working-on-the-central-server-itself)). |
+| Central ChirpStack: `No ChirpStack dashboard set` | Set `CENTRAL_CHIRPSTACK_URL` in `.env` and rerun `./auto-compose.sh`, or select a gateway. |
 | Gateway: `Port 3011 is already used by …` | Another program uses the gateway Console's local fallback port. Add `GATEWAY_FALLBACK_PORT=3101` (any free port) to `.env` and rerun. Older setups used 3001, which clashes with ChirpStack's Basic Station bridge. |
 | Gateway: agent online once, then **Offline** for good | Usually the gateway Console couldn't start, often because of a port clash. Check `logs console` and rerun `./auto-compose.sh`; it now says what's wrong. |
 | Gateway: `This gateway is not enrolled yet` | Add the `AGENT_ENROLLMENT_TOKEN` line from central. |

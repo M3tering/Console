@@ -6,6 +6,9 @@
 :is(.gw-switcher,.gw-current-head,.gw-option)[data-state="revoked"]{--gw-state:var(--gw-revoked)}
 :is(.gw-switcher,.gw-current-head,.gw-option)[data-state="pending"]{--gw-state:var(--accent)}
 .gw-switcher[data-state="none"]{--gw-state:var(--border)}
+:is(.gw-switcher,.gw-current-head,.gw-option)[data-state="central"]{--gw-state:var(--accent)}
+/* Central is a place, not a link state: a ring, so it never reads as "online". */
+:is(.gw-current-head,.gw-option)[data-state="central"] .gw-dot,.gw-switcher[data-state="central"] .gw-switcher-dot{background:transparent;box-shadow:inset 0 0 0 2px var(--gw-state)}
 
 /* Top bar: gateway switcher (centred on wide screens) and account button. */
 .gateway-control{position:absolute;left:50%;transform:translateX(-50%);display:flex;min-width:0}

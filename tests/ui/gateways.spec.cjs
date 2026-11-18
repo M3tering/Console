@@ -38,6 +38,30 @@ test('central selector identifies the gateway and exposes uncertainty without se
   expect(bounds.x).toBeGreaterThanOrEqual(0);expect(bounds.x+bounds.width).toBeLessThanOrEqual(390);
 });
 
+test('the gateway can be deselected so apps open on the central server',async({page})=>{
+  let selected='gateway-one';const posted=[];
+  const gateways=[{id:'gateway-one',name:'North gateway',online:true,revoked:false,enrolled:true,health:{mqtt:'connected'},updates:[]}];
+  await page.route('**/api/gateways',route=>route.fulfill({json:{selected,gateways}}));
+  await page.route('**/api/gateways/select',route=>{selected=route.request().postDataJSON().id;posted.push(selected);return route.fulfill({json:{selected}});});
+  await page.goto('/?central=1');
+  await expect(page.locator('#gateway-switcher-name')).toHaveText('North gateway');
+  await page.evaluate(()=>Desktop.launch('chirpstack'));
+  await page.locator('#gateway-switcher').click();
+  await page.getByRole('option',{name:/Central server/}).click();
+  expect(posted).toEqual([null]);
+  await expect(page.locator('#gateway-switcher-name')).toHaveText('Central server');
+  await expect(page.locator('#gateway-switcher')).toHaveAttribute('data-state','central');
+  await expect(page.locator('#chirpstack')).toBeHidden();
+  await page.evaluate(()=>Desktop.launch('chirpstack'));
+  await expect(page.locator('#chirpstack .window-title')).toContainText('Central server');
+  await page.locator('#gateway-switcher').click();
+  await expect(page.locator('#gateway-current')).toContainText('open on the central server');
+  await expect(page.getByRole('option',{name:/Central server/})).toHaveAttribute('aria-selected','true');
+  await page.getByRole('option',{name:/North gateway/}).click();
+  expect(posted).toEqual([null,'gateway-one']);
+  await expect(page.locator('#gateway-switcher-name')).toHaveText('North gateway');
+});
+
 test('on a phone the top bar fits and the gateway menu is a full-width sheet',async({page})=>{
   await page.setViewportSize({width:390,height:844});
   await page.route('**/api/gateways',route=>route.fulfill({json:{selected:'g',gateways:[{id:'g',name:'A gateway with a rather long site name',online:true,revoked:false,enrolled:true,health:{mqtt:'connected'},updates:[]}]}}));

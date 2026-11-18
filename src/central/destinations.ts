@@ -68,7 +68,7 @@ export function destinationRoute(role: 'standalone' | 'gateway' | 'central', tar
   if (target.classification === 'blocked') throw new Error('Destination is not permitted.');
   if (target.classification === 'public') return 'internet';
   if (!(context.userNavigation && context.topLevel) && context.pageClass !== 'local') throw new Error('Public pages cannot access private destinations.');
-  if (role !== 'central') return 'local';
-  if (!gateway) throw new Error('Select an online gateway before opening a local destination.');
+  // Central with no gateway selected browses the central server's own network.
+  if (role !== 'central' || !gateway) return 'local';
   return 'agent';
 }

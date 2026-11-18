@@ -4,7 +4,7 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import { SqliteIdentityStore } from '../../src/central/identity-store';
 import { hashPassword, verifyPassword, writeOwnerSecret, readOwnerSecret } from '../../src/central/secrets';
-import { roleConfig, requireAgentConfig } from '../../src/central/config';
+import { roleConfig, requireAgentConfig, centralSsh, centralChirpstackUrl } from '../../src/central/config';
 import { RateLimit } from '../../src/central/auth';
 
 let store: SqliteIdentityStore, now: number;
@@ -159,4 +159,15 @@ test('changePassword swaps the hash, ends other sessions and is audited', async 
   expect(store.session(keep)?.username).toBe('operator');expect(store.session(other)).toBeNull();
   expect(() => store.changePassword(user.id, 'plain-text', keep)).toThrow();
   expect(() => store.changePassword('missing', store.user('operator')!.passwordHash, keep)).toThrow('User not found.');
+});
+
+test('central SSH port and ChirpStack dashboard settings are validated', () => {
+  expect(centralSsh({})).toEqual({ host: '127.0.0.1', port: 22 });
+  expect(centralSsh({ CENTRAL_SSH_PORT: '2222' }).port).toBe(2222);
+  for (const port of ['0', '70000', 'ssh']) expect(() => centralSsh({ CENTRAL_SSH_PORT: port })).toThrow('CENTRAL_SSH_PORT');
+  expect(centralChirpstackUrl({})).toBeUndefined();
+  expect(centralChirpstackUrl({ CENTRAL_CHIRPSTACK_URL: ' ' })).toBeUndefined();
+  expect(centralChirpstackUrl({ CENTRAL_CHIRPSTACK_URL: 'https://chirpstack.example.com' })?.href).toBe('https://chirpstack.example.com/');
+  for (const value of ['ftp://host', 'https://user:pw@host', 'https://host/ui', 'https://host/?a=1', 'not a url'])
+    expect(() => centralChirpstackUrl({ CENTRAL_CHIRPSTACK_URL: value })).toThrow('CENTRAL_CHIRPSTACK_URL');
 });

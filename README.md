@@ -698,8 +698,10 @@ reconciliation; uncertainty never generates an OFF reply or automatic second
 attempt. The next report supersedes an unresolved old reply. Existing revenue
 checks remain fail-closed for actual new decisions.
 
-Central Terminal and ChirpStack use purpose-limited gateway tunnels. Browser local
-traffic goes to the selected gateway, never central's internal network. The
+Central Terminal and ChirpStack use purpose-limited gateway tunnels. With a gateway
+selected, Browser local traffic goes to that gateway, never central's internal network.
+With **Central server** selected (no gateway), Terminal, Browser and ChirpStack work on
+the central machine itself; see the [deployment guide](docs/deployment-guide.md#working-on-the-central-server-itself). The
 separate, owner-enabled updater verifies provenance and replaces Console/agent by
 digest together, with rollback and persistent data preservation.
 

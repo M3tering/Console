@@ -76,6 +76,22 @@ test('rename updates the list; delete disconnects the agent and removes the gate
   }finally{await f.close();}
 });
 
+test('selecting null clears the gateway so apps target the central server',async()=>{
+  const f=await fixture();
+  try{
+    const post=(body:unknown)=>fetch(f.base+'/api/gateways/select',{method:'POST',headers:{cookie:f.cookie,origin:f.base,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const chosen=await post({id:f.enrolled.gateway});
+    expect(chosen.status).toBe(200);expect(chosen.headers.get('set-cookie')).toContain(`console_gateway=${f.enrolled.gateway}`);
+    const cleared=await post({id:null});
+    expect(cleared.status).toBe(200);expect(await cleared.json()).toEqual({selected:null});
+    expect(cleared.headers.get('set-cookie')).toMatch(/^console_gateway=; Path=\/; Max-Age=0; HttpOnly; SameSite=Strict/);
+    const list=await (await fetch(f.base+'/api/gateways',{headers:{cookie:f.cookie}})).json() as {selected:unknown};
+    expect(list.selected).toBeNull();
+    expect((await post({id:'not-a-gateway'})).status).toBe(400);
+    expect((await post({})).status).toBe(400);
+  }finally{await f.close();}
+});
+
 test('central routes and socket upgrades refuse missing credentials and cross-site sessions',async()=>{
   const f=await fixture();
   try{
