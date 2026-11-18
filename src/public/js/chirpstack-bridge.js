@@ -2,10 +2,14 @@
 (function () {
   'use strict';
   if (!location.pathname.startsWith('/chirpstack/')) return;
+  // Central serves each target under its own path (/chirpstack/~GATEWAY_ID/), so two
+  // tabs can show two ChirpStacks; standalone uses /chirpstack/.
+  const scope = /^\/chirpstack\/~([\w-]{1,64})\//.exec(location.pathname);
+  const base = scope ? `/chirpstack/~${scope[1]}` : '/chirpstack';
   function proxied(value) {
     const url = new URL(String(value), location.href);
-    if (url.origin === location.origin && !url.pathname.startsWith('/chirpstack/')) {
-      url.pathname = '/chirpstack' + url.pathname;
+    if (url.origin === location.origin && !url.pathname.startsWith(base + '/')) {
+      url.pathname = base + (url.pathname.startsWith('/chirpstack/') ? url.pathname.slice('/chirpstack'.length) : url.pathname);
     }
     return url.href;
   }
@@ -35,7 +39,8 @@
   for (const name of ['localStorage', 'sessionStorage']) {
     try {
       const storage = window[name];
-      const prefix = 'm3tering.chirpstack.';
+      // Each target keeps its own ChirpStack login: one gateway's token never reaches another.
+      const prefix = scope ? `m3tering.chirpstack.${scope[1]}.` : 'm3tering.chirpstack.';
       const keys = () => Object.keys(storage).filter(key => key.startsWith(prefix));
       const scoped = {
         get length() { return keys().length; },

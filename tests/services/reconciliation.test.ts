@@ -67,3 +67,23 @@ test('reconciliation cannot attach another device decision or meter snapshot to 
     expect(await processor.outcome('gateway',report.deduplicationId!)).toBeNull();
   }finally{processor.close();}
 });
+
+test('when central cannot take a report the agent logs why, including a failed replay of earlier decisions',async()=>{
+  const journal=new OperationJournal(':memory:');
+  const central=new DurableProcessor(':memory:',async()=>{},()=>snapshot,async()=>{});
+  const local=new DurableProcessor(':memory:',async(_event,sink)=>sink(decision),()=>snapshot);
+  jest.spyOn(central,'reconcile').mockRejectedValue(new Error('meter token does not match the contract'));
+  let healthy=false;const messages:string[]=[];
+  const replication=new Replication(journal,central,local);
+  const queue={list:jest.fn(async()=>[]),enqueue:jest.fn(async()=>'queue-1')};
+  const coordinator=new UplinkCoordinator(journal,replication.guarded('central'),replication.guarded('local'),queue,
+    {centralHealthy:()=>healthy,timeoutMs:50,reconcileSnapshot:(owner,outcome)=>replication.observe(owner,outcome),log:message=>messages.push(message)});
+  try{
+    await coordinator.receive('gateway',report);
+    expect(messages).toEqual([`Report ${report.deduplicationId}: central link is not ready (offline or connected under 15 s); this gateway decides`]);
+    healthy=true;messages.length=0;
+    await coordinator.receive('gateway',{...report,deduplicationId:'replay-2'});
+    expect(messages).toEqual(['Report replay-2: central did not take it (Decider unavailable: replaying 1 report(s) decided elsewhere failed: meter token does not match the contract); this gateway decides']);
+    expect(journal.get('replay-2')?.owner).toBe('local');
+  }finally{await coordinator.stop();journal.close();central.close();local.close();}
+});

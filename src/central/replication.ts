@@ -21,7 +21,11 @@ export class Replication {
   }
   guarded(owner:Owner):Decider {
     const target=owner==='central'?this.central:this.local;
-    return {offer:async(gateway,event)=>{await this.flush(owner);await target.offer(gateway,event);},
+    return {offer:async(gateway,event)=>{
+      // A decider must first learn the reports the other side decided; until then it cannot take new ones.
+      try{await this.flush(owner);}
+      catch(error){throw new Error(`replaying ${this.journal.replays(owner).length} report(s) decided elsewhere failed: ${error instanceof Error?error.message:String(error)}`);}
+      await target.offer(gateway,event);},
       commit:(gateway,id)=>target.commit(gateway,id),outcome:(gateway,id)=>target.outcome(gateway,id),reconcile:target.reconcile?.bind(target)};
   }
 }

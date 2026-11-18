@@ -3,6 +3,10 @@ import WebSocket from 'ws';
 import type { Decider, Outcome, BillingSnapshot } from './processor';
 import { parseMessage, UplinkEvent, MAX_MESSAGE_BYTES } from './protocol';
 import { eventIdentity } from './operations';
+import { createLogger } from '../utils/logger';
+import { errorText } from '../utils/report-log';
+
+const logger=createLogger('[central]');
 
 export type OperationRequest = {v:1;type:'operation';requestId:string;action:'offer'|'commit'|'outcome'|'reconcile';id:string;event?:UplinkEvent;outcome?:Outcome};
 export type OperationResponse = {v:1;type:'operation-result';requestId:string;id:string;outcome:Outcome|null;error:boolean};
@@ -51,7 +55,10 @@ export async function serveOperation(processor:Decider,gateway:string,request:Op
     else if(request.action==='outcome')outcome=await processor.outcome(gateway,request.id);
     else if(processor.reconcile)await processor.reconcile(gateway,request.event!,request.outcome!);
     else throw new Error('Reconciliation is unavailable.');
-  } catch {error=true;}
+  } catch(failure) {
+    error=true;
+    logger.warn(`Refused ${request.action} of report ${request.id} from gateway ${gateway}: ${errorText(failure)}`);
+  }
   return {v:1,type:'operation-result',requestId:request.requestId,id:request.id,outcome,error};
 }
 

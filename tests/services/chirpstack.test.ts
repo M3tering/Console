@@ -54,3 +54,11 @@ test('a direct dashboard origin is proxied without a tunnel agent', async () => 
     expect(await response.text()).toBe('dashboard /tenants cookie=none');
   } finally { server.close(); upstream.close(); }
 });
+
+test('a per-target base keeps asset and link rewrites under that target on central', () => {
+  const base = '/chirpstack/~gateway-1';
+  const html = rewriteChirpstackText('<head><script src="/assets/app.js"></script><a href="/tenants">t</a></head>', true, base);
+  expect(html).toContain('src="/chirpstack/~gateway-1/assets/app.js"');
+  expect(html).toContain('href="/chirpstack/~gateway-1/tenants"');
+  expect(rewriteChirpstackText('import("/assets/chunk.js")', false, base)).toBe('import("/chirpstack/~gateway-1/assets/chunk.js")');
+});

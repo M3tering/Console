@@ -14,7 +14,8 @@ export function registerSocket(server: http.Server, path: string, wss: WebSocket
   if (!routes) {
     routes = new Map(); servers.set(server, routes);
     server.on('upgrade', (request, socket, head) => {
-      const target = routes!.get(request.url || '');
+      // Match on the path: a socket may carry its target in the query (/terminal?gateway=ID).
+      const target = routes!.get((request.url || '').split('?')[0]);
       const guard=sessionGuards.get(server);
       if (!target || (!target.machine && (!isSameOrigin(request, true) || (guard && !guard(request)))) || (target.authorize && !target.authorize(request))) {
         socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;

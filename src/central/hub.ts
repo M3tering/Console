@@ -75,16 +75,9 @@ export class GatewayHub {
       socket.on('error',()=>socket.terminate());
     });
     server.once('close',()=>{for(const gateway of this.rotations.keys())this.clearRotation(gateway);for(const socket of this.sockets.values())socket.terminate();wss.close();});
-    app.get('/api/gateways',(req,res)=>res.json({selected:this.selected(req),gateways:this.identities.gateways().map(g=>({...g,online:this.sockets.get(g.id)?.readyState===WebSocket.OPEN,health:this.identities.health(g.id),updates:this.identities.updates(g.id)}))}));
+    app.get('/api/gateways',(_req,res)=>res.json({gateways:this.identities.gateways().map(g=>({...g,online:this.sockets.get(g.id)?.readyState===WebSocket.OPEN,health:this.identities.health(g.id),updates:this.identities.updates(g.id)}))}));
     app.get('/api/devices/gateways',(_req,res)=>res.json({devices:this.identities.devices()}));
     app.post('/api/devices/:devEui/gateway',(req,res)=>{try{if(req.body?.gateway!==null&&typeof req.body?.gateway!=='string')throw new Error();this.identities.assignDevice(req.params.devEui,req.body.gateway,res.locals.centralUser.id);res.json({devices:this.identities.devices()});}catch{res.status(400).json({error:'Choose an observed device and available gateway, or null to restore discovery.'});}});
-    app.post('/api/gateways/select',(req,res)=>{
-      const secure=this.development?'':'; Secure';
-      // null deselects: Terminal and ChirpStack then work on the central server itself.
-      if(req.body?.id===null){res.setHeader('Set-Cookie',`console_gateway=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${secure}`);res.json({selected:null});return;}
-      if(typeof req.body?.id!=='string'||!this.identities.gateways().some(g=>g.id===req.body.id&&!g.revoked)){res.status(400).json({error:'Choose an available gateway.'});return;}
-      res.setHeader('Set-Cookie',`console_gateway=${req.body.id}; Path=/; HttpOnly; SameSite=Strict${secure}`);res.json({selected:req.body.id});
-    });
     app.post('/api/gateways',(req,res)=>{
       try{const g=this.identities.createGateway(String(req.body?.name||''),res.locals.centralUser.id);res.status(201).json({...g,token:this.identities.enrollment(g.id,res.locals.centralUser.id)});}
       catch{res.status(400).json({error:'Provide a valid gateway name.'});}
@@ -118,9 +111,16 @@ export class GatewayHub {
       catch{res.status(409).json({error:'Credential rotation is already pending or unavailable.'});}
     });
   }
-  selected(req:http.IncomingMessage):string|null {
-    const id=(req.headers.cookie||'').split(';').map(v=>v.trim()).find(v=>v.startsWith('console_gateway='))?.slice(16);
-    return id&&this.identities.gateways().some(g=>g.id===id&&!g.revoked)?id:null;
+  /** Each browser tab names its own target, so tabs never change each other's.
+   * Empty or "central" means the central server; otherwise an available gateway.
+   * Returns null for a gateway that is unknown, deleted or revoked. */
+  target(raw:string|null|undefined):{gateway:string|null}|null {
+    if(!raw||raw==='central')return {gateway:null};
+    return this.identities.gateways().some(g=>g.id===raw&&!g.revoked)?{gateway:raw}:null;
+  }
+  /** The target a WebSocket (such as Terminal) asked for in its address: /terminal?gateway=ID. */
+  socketTarget(req:http.IncomingMessage):{gateway:string|null}|null {
+    return this.target(new URL(req.url||'/','http://console.invalid').searchParams.get('gateway'));
   }
   open(gateway:string,purpose:TunnelPurpose,host:string,port:number):Promise<GatewayStream>{
     const tunnels=this.tunnels.get(gateway);if(!tunnels)return Promise.reject(new Error('Gateway is offline.'));return tunnels.open(purpose,host,port);

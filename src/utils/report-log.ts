@@ -16,6 +16,11 @@ export function describeReport(event: Uplink): string {
   if (typeof event.deduplicationId === 'string') parts.push(`id=${event.deduplicationId}`);
   try {
     const bytes = uplinkPayload(event).bytes;
+    // Only fPort 2 carries signed readings; other ports use their own formats.
+    if (event.fPort !== undefined && event.fPort !== 2) {
+      parts.push(`data=${short(bytes.toString('hex').toUpperCase())}`, `bytes=${bytes.length}`);
+      return parts.join(' ');
+    }
     try {
       const reading = decodePayload(bytes), ext = reading.extensions;
       parts.push(`nonce=${reading.nonce}`, `energy=${reading.energy}kWh`);

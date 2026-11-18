@@ -21,14 +21,14 @@ function cleanHeaders(headers: IncomingHttpHeaders): IncomingHttpHeaders {
   return result;
 }
 
-export function rewriteChirpstackText(body: string, html: boolean): string {
+export function rewriteChirpstackText(body: string, html: boolean, base = prefix): string {
   if (!html) {
     // Vite / CRA asset references in bundles and stylesheets (including lazy chunks).
-    return body.replace(/(["'`(])\/(assets|static)\//g, `$1${prefix}/$2/`)
-      .replace(/(["'`(])\/(?!chirpstack\/)([^"'`()\s]+\.(?:png|svg|ico|jpe?g|webp|gif|woff2?)(?:\?[^"'`()\s]*)?)(?=["'`)])/g, `$1${prefix}/$2`);
+    return body.replace(/(["'`(])\/(assets|static)\//g, `$1${base}/$2/`)
+      .replace(/(["'`(])\/(?!chirpstack\/)([^"'`()\s]+\.(?:png|svg|ico|jpe?g|webp|gif|woff2?)(?:\?[^"'`()\s]*)?)(?=["'`)])/g, `$1${base}/$2`);
   }
   const rewritten = body.replace(/\b(src|href|action)=(['"])\/(?!\/|chirpstack(?:\/|['"]))([^'"]*)\2/gi,
-    (_, attr, quote, path) => `${attr}=${quote}${prefix}/${path}${quote}`);
+    (_, attr, quote, path) => `${attr}=${quote}${base}/${path}${quote}`);
   // Runs before the upstream application: remaps gRPC-Web and isolates storage.
   return rewritten.replace(/<head(?:\s[^>]*)?>/i, '$&<script src="/js/chirpstack-bridge.js"></script>');
 }
@@ -44,17 +44,19 @@ function unavailable(res: Response, configuration = false): void {
 export function proxyChirpstack(req: Request, res: Response): void {
   proxy(req,res);
 }
-export function proxyChirpstackThrough(req:Request,res:Response,target:URL,agent?:http.Agent):void {
-  proxy(req,res,{target,agent});
+export function proxyChirpstackThrough(req:Request,res:Response,target:URL,agent?:http.Agent,base?:string):void {
+  proxy(req,res,{target,agent,base});
 }
-function proxy(req:Request,res:Response,transport?:{target:URL;agent?:http.Agent}):void {
+/** `base` is the public path ChirpStack is served under: /chirpstack, or /chirpstack/~TARGET on central. */
+function proxy(req:Request,res:Response,transport?:{target:URL;agent?:http.Agent;base?:string}):void {
+  const base = transport?.base || prefix;
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
   if (!isSameOrigin(req)) { res.status(403).send('Cross-origin requests are not permitted'); return; }
-  if (req.originalUrl.split('?')[0] === prefix) {
-    res.redirect(307, `${prefix}/${req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : ''}`);
+  if (req.originalUrl.split('?')[0] === base) {
+    res.redirect(307, `${base}/${req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : ''}`);
     return;
   }
   let target: URL;
@@ -79,7 +81,7 @@ function proxy(req:Request,res:Response,transport?:{target:URL;agent?:http.Agent
     if (responseHeaders.location) {
       try {
         const location = new URL(responseHeaders.location, new URL(target.origin + req.url));
-        if (location.origin === target.origin) responseHeaders.location = prefix + location.pathname + location.search + location.hash;
+        if (location.origin === target.origin) responseHeaders.location = base + location.pathname + location.search + location.hash;
       } catch { delete responseHeaders.location; }
     }
     const type = String(responseHeaders['content-type'] || '');
@@ -106,7 +108,7 @@ function proxy(req:Request,res:Response,transport?:{target:URL;agent?:http.Agent
       chunks.push(chunk);
     });
     response.on('end', () => {
-      if (!res.destroyed && !res.writableEnded) res.end(rewriteChirpstackText(Buffer.concat(chunks).toString('utf8'), html));
+      if (!res.destroyed && !res.writableEnded) res.end(rewriteChirpstackText(Buffer.concat(chunks).toString('utf8'), html, base));
     });
   });
   upstream.setTimeout(60_000, () => upstream.destroy(new Error('ChirpStack upstream timeout')));

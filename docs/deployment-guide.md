@@ -279,7 +279,7 @@ a gateway) and Terminal and ChirpStack work on the central machine instead of a 
 | **Terminal** | SSH into the central server itself. Sign in with a Linux user and password on that server. |
 | **ChirpStack** | Opens the dashboard set in `CENTRAL_CHIRPSTACK_URL`. |
 
-Choosing a gateway switches both back to that gateway. Open windows close when
+Choosing a gateway switches both back to that gateway. Each browser tab keeps its own choice, so you can work on one gateway in one tab and another gateway (or central) in a second tab; a new tab starts on **Central server**. Open windows close when
 you switch, so you never type into the wrong machine.
 
 Settings in central's `.env` (run `./auto-compose.sh` after changing them):

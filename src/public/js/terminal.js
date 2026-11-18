@@ -55,7 +55,9 @@ function connectTerminal(event) {
   const password = document.getElementById('password').value;
   status.textContent = 'Connecting to terminal…';
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  const connection = new WebSocket(`${protocol}://${location.host}/terminal`);
+  // On central, this tab's own target (a gateway ID or "central"); other tabs keep theirs.
+  const target = typeof window.ConsoleTarget === 'function' ? `?gateway=${encodeURIComponent(window.ConsoleTarget())}` : '';
+  const connection = new WebSocket(`${protocol}://${location.host}/terminal${target}`);
   socket = connection;
   let failure = '';
   const timeout = setTimeout(() => { failure = 'Terminal connection timed out. Check that SSH is running on the Console host.'; connection.close(); }, 35000);

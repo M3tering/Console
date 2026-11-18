@@ -1,13 +1,15 @@
 const { test,expect }=require('@playwright/test');
 
+// Start a tab on a gateway (main page only, and only before the tab has chosen anything itself).
+const pick=(page,id)=>page.addInitScript(target=>{if(window.top!==window||sessionStorage.getItem('picked'))return;sessionStorage.setItem('picked','1');sessionStorage.setItem('m3tering.console.target',target);},id);
+
 test('central selector identifies the gateway and exposes uncertainty without sending relay commands',async({page})=>{
-  let selected='gateway-one';
   const gateways=[
     {id:'gateway-one',name:'North gateway',online:true,revoked:false,enrolled:true,health:{mqtt:'connected',queueDepth:1,uncertain:3,reconciled:2,superseded:1}},
     {id:'gateway-two',name:'South gateway',online:false,revoked:false,enrolled:true,health:{mqtt:'disconnected',queueDepth:0,uncertain:0,reconciled:0,superseded:0}},
   ];
-  await page.route('**/api/gateways',route=>route.fulfill({json:{selected,gateways}}));
-  await page.route('**/api/gateways/select',route=>{selected=route.request().postDataJSON().id;return route.fulfill({json:{selected}});});
+  await page.route('**/api/gateways',route=>route.fulfill({json:{gateways}}));
+  await pick(page,'gateway-one');
   await page.goto('/?central=1');
   // Status lives only in the gateway menu: nothing floats over the desktop.
   await expect(page.locator('#gateway-status')).toHaveCount(0);
@@ -28,6 +30,7 @@ test('central selector identifies the gateway and exposes uncertainty without se
   await expect(page.locator('#chirpstack')).toBeHidden();
   await page.evaluate(()=>Desktop.launch('chirpstack'));
   await expect(page.locator('#chirpstack .window-title')).toContainText('South gateway');
+  await expect(page.locator('#chirpstack-frame')).toHaveAttribute('src','/chirpstack/~gateway-two/');
   await page.locator('#gateway-switcher').click();
   await page.getByRole('button',{name:'Manage gateways'}).click();
   await expect(page.locator('#gateway-dialog')).toBeVisible();
@@ -39,32 +42,60 @@ test('central selector identifies the gateway and exposes uncertainty without se
 });
 
 test('the gateway can be deselected so apps open on the central server',async({page})=>{
-  let selected='gateway-one';const posted=[];
   const gateways=[{id:'gateway-one',name:'North gateway',online:true,revoked:false,enrolled:true,health:{mqtt:'connected'},updates:[]}];
-  await page.route('**/api/gateways',route=>route.fulfill({json:{selected,gateways}}));
-  await page.route('**/api/gateways/select',route=>{selected=route.request().postDataJSON().id;posted.push(selected);return route.fulfill({json:{selected}});});
+  await page.route('**/api/gateways',route=>route.fulfill({json:{gateways}}));
+  await pick(page,'gateway-one');
   await page.goto('/?central=1');
+  const target=()=>page.evaluate(()=>sessionStorage.getItem('m3tering.console.target'));
   await expect(page.locator('#gateway-switcher-name')).toHaveText('North gateway');
   await page.evaluate(()=>Desktop.launch('chirpstack'));
   await page.locator('#gateway-switcher').click();
   await page.getByRole('option',{name:/Central server/}).click();
-  expect(posted).toEqual([null]);
+  expect(await target()).toBeNull();
   await expect(page.locator('#gateway-switcher-name')).toHaveText('Central server');
   await expect(page.locator('#gateway-switcher')).toHaveAttribute('data-state','central');
   await expect(page.locator('#chirpstack')).toBeHidden();
   await page.evaluate(()=>Desktop.launch('chirpstack'));
   await expect(page.locator('#chirpstack .window-title')).toContainText('Central server');
+  await expect(page.locator('#chirpstack-frame')).toHaveAttribute('src','/chirpstack/~central/');
   await page.locator('#gateway-switcher').click();
   await expect(page.locator('#gateway-current')).toContainText('open on the central server');
   await expect(page.getByRole('option',{name:/Central server/})).toHaveAttribute('aria-selected','true');
   await page.getByRole('option',{name:/North gateway/}).click();
-  expect(posted).toEqual([null,'gateway-one']);
+  expect(await target()).toBe('gateway-one');
   await expect(page.locator('#gateway-switcher-name')).toHaveText('North gateway');
+  // A reload keeps this tab's choice.
+  await page.reload();await expect(page.locator('#gateway-switcher-name')).toHaveText('North gateway');
+});
+
+test('two tabs keep their own targets: switching in one never changes the other',async({context})=>{
+  const gateways=[
+    {id:'gateway-one',name:'North gateway',online:true,revoked:false,enrolled:true,health:{mqtt:'connected'},updates:[]},
+    {id:'gateway-two',name:'South gateway',online:true,revoked:false,enrolled:true,health:{mqtt:'connected'},updates:[]},
+  ];
+  await context.route('**/api/gateways',route=>route.fulfill({json:{gateways}}));
+  const first=await context.newPage(),second=await context.newPage();
+  await first.goto('/?central=1');await second.goto('/?central=1');
+  await first.locator('#gateway-switcher').click();await first.getByRole('option',{name:/North gateway/}).click();
+  await second.locator('#gateway-switcher').click();await second.getByRole('option',{name:/South gateway/}).click();
+  // Let the first tab refresh its gateway list: its choice must survive.
+  await first.waitForTimeout(5500);
+  await expect(first.locator('#gateway-switcher-name')).toHaveText('North gateway');
+  await expect(second.locator('#gateway-switcher-name')).toHaveText('South gateway');
+  for(const [page,id] of [[first,'gateway-one'],[second,'gateway-two']]){
+    await page.evaluate(()=>Desktop.launch('chirpstack'));
+    await expect(page.locator('#chirpstack-frame')).toHaveAttribute('src',`/chirpstack/~${id}/`);
+    expect(await page.evaluate(()=>window.ConsoleTarget())).toBe(id);
+  }
+  // A third, new tab starts on the central server rather than inheriting either choice.
+  const third=await context.newPage();await third.goto('/?central=1');
+  await expect(third.locator('#gateway-switcher-name')).toHaveText('Central server');
 });
 
 test('on a phone the top bar fits and the gateway menu is a full-width sheet',async({page})=>{
   await page.setViewportSize({width:390,height:844});
-  await page.route('**/api/gateways',route=>route.fulfill({json:{selected:'g',gateways:[{id:'g',name:'A gateway with a rather long site name',online:true,revoked:false,enrolled:true,health:{mqtt:'connected'},updates:[]}]}}));
+  await page.route('**/api/gateways',route=>route.fulfill({json:{gateways:[{id:'g',name:'A gateway with a rather long site name',online:true,revoked:false,enrolled:true,health:{mqtt:'connected'},updates:[]}]}}));
+  await pick(page,'g');
   await page.route('**/api/account',route=>route.fulfill({json:{username:'operator'}}));
   await page.goto('/?central=1');
   const topbar=await page.locator('.topbar').boundingBox();
@@ -101,7 +132,7 @@ test('gateways can be added, renamed and deleted from the management dialog',asy
       gateways=[...gateways,{id:'gateway-new',name,online:false,revoked:false,enrolled:false,lastHeartbeat:null,version:null,health:null,updates:[]}];
       return route.fulfill({status:201,json:{id:'gateway-new',name,token:'T'.repeat(43)}});
     }
-    return route.fulfill({json:{selected:null,gateways}});
+    return route.fulfill({json:{gateways}});
   });
   await page.route('**/api/gateways/*/rename',route=>{
     const id=route.request().url().split('/').at(-2),{name}=route.request().postDataJSON();calls.push(['rename',id,name]);
@@ -147,7 +178,7 @@ test('gateways can be added, renamed and deleted from the management dialog',asy
 
 test('the account dialog changes the password and reports mistakes',async({page})=>{
   const posts=[];
-  await page.route('**/api/gateways',route=>route.fulfill({json:{selected:null,gateways:[]}}));
+  await page.route('**/api/gateways',route=>route.fulfill({json:{gateways:[]}}));
   await page.route('**/api/account',route=>route.fulfill({json:{username:'admin'}}));
   await page.route('**/api/account/password',route=>{const body=route.request().postDataJSON();posts.push(body);
     return body.current==='right-pass'?route.fulfill({json:{changed:true}}):route.fulfill({status:400,json:{error:'Your current password is incorrect.'}});});

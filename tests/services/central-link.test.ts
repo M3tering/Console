@@ -76,19 +76,20 @@ test('rename updates the list; delete disconnects the agent and removes the gate
   }finally{await f.close();}
 });
 
-test('selecting null clears the gateway so apps target the central server',async()=>{
+test('each tab names its own target: central, an available gateway, or nothing that has gone',async()=>{
   const f=await fixture();
   try{
-    const post=(body:unknown)=>fetch(f.base+'/api/gateways/select',{method:'POST',headers:{cookie:f.cookie,origin:f.base,'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const chosen=await post({id:f.enrolled.gateway});
-    expect(chosen.status).toBe(200);expect(chosen.headers.get('set-cookie')).toContain(`console_gateway=${f.enrolled.gateway}`);
-    const cleared=await post({id:null});
-    expect(cleared.status).toBe(200);expect(await cleared.json()).toEqual({selected:null});
-    expect(cleared.headers.get('set-cookie')).toMatch(/^console_gateway=; Path=\/; Max-Age=0; HttpOnly; SameSite=Strict/);
-    const list=await (await fetch(f.base+'/api/gateways',{headers:{cookie:f.cookie}})).json() as {selected:unknown};
-    expect(list.selected).toBeNull();
-    expect((await post({id:'not-a-gateway'})).status).toBe(400);
-    expect((await post({})).status).toBe(400);
+    expect(f.hub.target(null)).toEqual({gateway:null});
+    expect(f.hub.target('central')).toEqual({gateway:null});
+    expect(f.hub.target(f.enrolled.gateway)).toEqual({gateway:f.enrolled.gateway});
+    expect(f.hub.target('not-a-gateway')).toBeNull();
+    expect(f.hub.socketTarget({url:`/terminal?gateway=${f.enrolled.gateway}`} as never)).toEqual({gateway:f.enrolled.gateway});
+    expect(f.hub.socketTarget({url:'/terminal'} as never)).toEqual({gateway:null});
+    // There is no shared, cookie-based selection any more.
+    const list=await (await fetch(f.base+'/api/gateways',{headers:{cookie:f.cookie}})).json() as Record<string,unknown>;
+    expect(list).not.toHaveProperty('selected');
+    expect((await fetch(f.base+'/api/gateways/select',{method:'POST',headers:{cookie:f.cookie,origin:f.base,'Content-Type':'application/json'},body:'{"id":null}'})).status).toBe(404);
+    f.store.revoke(f.enrolled.gateway,'test');expect(f.hub.target(f.enrolled.gateway)).toBeNull();
   }finally{await f.close();}
 });
 

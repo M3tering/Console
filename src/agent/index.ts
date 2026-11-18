@@ -43,7 +43,14 @@ export async function runAgent():Promise<()=>Promise<void>> {
   const updater=new UpdaterClient(process.env.UPDATER_SOCKET||path.join(path.dirname(config.credentialPath),'updater.sock'),process.env.UPDATER_SECRET_PATH||path.join(path.dirname(config.credentialPath),'updater-secret'));
   let updatesEnabled=false;const updateStatuses=new Map<string,string>();
   const stateDirectory=path.dirname(config.credentialPath);
-  const journal=new OperationJournal(path.join(stateDirectory,'operations.db'),config.queueLimit,event=>logger.info(`Report ${event.id} is now ${event.state}`));
+  const lastStates=new Map<string,string>();
+  const journal=new OperationJournal(path.join(stateDirectory,'operations.db'),config.queueLimit,event=>{
+    // The journal can record the same state twice (for example the decision); log each change once.
+    if(lastStates.get(event.id)===event.state)return;
+    lastStates.set(event.id,event.state);if(lastStates.size>1000)lastStates.delete(lastStates.keys().next().value!);
+    const by=event.owner==='central'?' (decided by central)':event.owner==='local'?' (decided by this gateway: central unreachable)':'';
+    logger.info(`Report ${event.id} is now ${event.state}${by}`);
+  });
   const local=new LocalDecider(gatewayFallbackPort(),readOwnerSecret(config.fallbackSecretPath),config.decisionTimeoutMs);
   let socket:WebSocket|undefined,stopped=false,reconnect:ReturnType<typeof setTimeout>|undefined;
   let connectedAt=0,attempt=0,mqttState:Health['mqtt']='connecting',lastError:Health['lastError']='none';
@@ -56,7 +63,7 @@ export async function runAgent():Promise<()=>Promise<void>> {
     catch(error){logger.warn(`Reply for ${decision.devEui} may not have been enqueued (${errorText(error)}); it is held, never resent: ${describeReply(decision.bytes)}`);throw error;}
   }};
   const coordinator=new UplinkCoordinator(journal,replication.guarded('central'),replication.guarded('local'),queue,
-    {centralHealthy:healthy,timeoutMs:config.decisionTimeoutMs,reconcileSnapshot:(owner,outcome)=>replication.observe(owner,outcome)});
+    {centralHealthy:healthy,timeoutMs:config.decisionTimeoutMs,reconcileSnapshot:(owner,outcome)=>replication.observe(owner,outcome),log:message=>logger.warn(message)});
   const sendHealth=()=>{
     if(socket?.readyState!==WebSocket.OPEN)return;
     const counts=journal.counts(gateway);

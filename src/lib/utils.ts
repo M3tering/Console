@@ -55,7 +55,7 @@ export async function runHook<K extends keyof Hooks>(hook: K, ...args: Parameter
       if (fn) functionReturn = await (fn as any).call(ext, ...args);
     } catch (error) {
       errors.push(error);
-      logger.error(`Extension hook ${hook} failed:`, error);
+      logger.error(`Extension hook ${hook} failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     if (typeof functionReturn === "boolean" && hook === "isOnStateCompute") {

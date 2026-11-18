@@ -142,7 +142,7 @@ export async function handleMessage(blob: Buffer, downlink: DownlinkSink = chirp
     let is_on = false;
     try { is_on = await runHook('isOnStateCompute', meter.tokenId); }
     catch (error) {
-      log.error('Could not determine meter power state:', error);
+      log.error(`Could not determine meter power state, so the reply is OFF: ${errorText(error)}`);
       void notifyHook('onIsOnStateComputeError', meter.tokenId, error);
     }
     void notifyHook('onIsOnStateComputed', meter.tokenId, is_on);

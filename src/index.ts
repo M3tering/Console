@@ -10,7 +10,9 @@ else {
  const sessions=new Map<string,{user:string;gateway?:string}>();
  attachTerminal(server,undefined,{
   connection:async request=>{
-    const gateway=runtime.hub.selected(request);
+    const target=runtime.hub.socketTarget(request);
+    if(!target)throw new Error('That gateway is no longer available.');
+    const gateway=target.gateway;
     // No gateway selected: a shell on the central server itself (the container shares the host network).
     if(!gateway)return centralSsh();
     const sock=await runtime.hub.open(gateway,'ssh','ssh',22);
@@ -18,7 +20,7 @@ else {
   },
   audit:(request,event,session)=>{
     if(event==='start'){
-      const user=runtime.auth.session(request),gateway=runtime.hub.selected(request)||undefined;
+      const user=runtime.auth.session(request),gateway=runtime.hub.socketTarget(request)?.gateway||undefined;
       if(user)sessions.set(session,{user:user.id,gateway});
     }
     const actor=sessions.get(session);

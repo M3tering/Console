@@ -30,11 +30,19 @@ app.set('views', './src/views');
 central?.auth.mount(app,central.hub.machineRoutes);
 const gatewayHub=central?.hub;
 app.use('/chirpstack', gatewayHub ? (req,res) => {
-  const gateway=gatewayHub.selected(req);
+  // Each tab names its target in the path, /chirpstack/~GATEWAY_ID/ or /chirpstack/~central/,
+  // so two tabs can show two different ChirpStacks at once.
+  const match=/^\/~([\w-]{1,64})(?=\/|\?|$)/.exec(req.url);
+  const name=match?.[1]||'central',base=`/chirpstack/~${name}`;
+  if(match)req.url=req.url.slice(match[0].length)||'/';
+  if(match&&!req.url.startsWith('/'))req.url='/'+req.url;
+  const target=gatewayHub.target(name);
+  if(!target){res.status(404).type('text').send('That gateway is no longer available. Choose another in the gateway menu.');return;}
+  const gateway=target.gateway;
   if(!gateway){
     // No gateway selected: show the ChirpStack dashboard configured for central.
     let dashboard:URL|undefined,invalid=false;try{dashboard=centralChirpstackUrl();}catch{invalid=true;}
-    if(dashboard){proxyChirpstackThrough(req,res,dashboard);return;}
+    if(dashboard){proxyChirpstackThrough(req,res,dashboard,undefined,base);return;}
     const heading=invalid?'CENTRAL_CHIRPSTACK_URL is not a valid address':'No ChirpStack dashboard set';
     res.status(409).type('html').send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ChirpStack</title></head><body style="font:16px system-ui;max-width:36rem;margin:8vh auto;padding:24px;color:#243044;background:#f4f7fb"><h1>${heading}</h1><p>Select a gateway to open its ChirpStack, or set <code>CENTRAL_CHIRPSTACK_URL</code> in central's <code>.env</code> to your online ChirpStack dashboard's address (such as <code>https://chirpstack.example.com</code>, with no path) and run <code>./auto-compose.sh</code>.</p></body></html>`);
     return;
@@ -43,7 +51,7 @@ app.use('/chirpstack', gatewayHub ? (req,res) => {
     if(req.destroyed||res.destroyed){stream.destroy();return;}
     const agent=new http.Agent({keepAlive:false});agent.createConnection=()=>stream;
     res.once('close',()=>{agent.destroy();stream.destroy();});
-    proxyChirpstackThrough(req,res,new URL(stream.upstreamOrigin||'http://chirpstack:8080'),agent);
+    proxyChirpstackThrough(req,res,new URL(stream.upstreamOrigin||'http://chirpstack:8080'),agent,base);
   }).catch(()=>{if(!res.headersSent)res.status(502).send('Gateway ChirpStack is unavailable.');else res.destroy();});
 } : proxyChirpstack);
 app.use(requireSameOrigin);

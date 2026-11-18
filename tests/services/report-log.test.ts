@@ -19,6 +19,10 @@ test('a report is described by its reading, with the signature and meter key sho
   expect(text).not.toContain('ab'.repeat(20));
   expect(describeReport({ ...event, data: 'AAAA' })).toContain('reading=undecodable');
   expect(describeReport({ deviceInfo: { devEui: 'x' } })).toContain('payload=missing or invalid');
+  // Other ports have their own formats: shown as raw bytes, never as fake readings.
+  const other = describeReport({ ...event, fPort: 4 });
+  expect(other).toContain('fPort=4');expect(other).toContain('bytes=112');expect(other).toMatch(/data=[0-9A-F]{8}…[0-9A-F]{8}/);
+  expect(other).not.toContain('nonce=');expect(other).not.toContain('energy=');
 });
 
 test('replies are described by state, nonce and location', () => {
@@ -34,4 +38,22 @@ test('managed logs keep these lines readable instead of redacting them', () => {
     const line = String(spy.mock.calls[0][0]);
     expect(line).toContain('nonce=42');expect(line).toContain('energy=1.5kWh');expect(line).not.toContain('[redacted');
   } finally { spy.mockRestore(); if (role === undefined) delete process.env.CONSOLE_ROLE; else process.env.CONSOLE_ROLE = role; }
+});
+
+test('a template placeholder such as API_TOKEN=... does not redact ordinary text, real secrets still are', () => {
+  const saved = { ...process.env }, spy = jest.spyOn(console, 'log').mockImplementation(() => {});
+  try {
+    Object.assign(process.env, { CONSOLE_ROLE: 'central', API_TOKEN: '...', CENTRAL_ADMIN_PASSWORD: 'a-real-password-1' });
+    createLogger('[index]').info('Starting application initialization... with a-real-password-1');
+    expect(String(spy.mock.calls[0][0])).toBe('[info] [index] Starting application initialization... with [redacted]');
+  } finally { spy.mockRestore(); process.env = saved; }
+});
+
+test('RPC addresses with a key in the path are hidden; plain public endpoints stay readable', () => {
+  const saved = { ...process.env }, spy = jest.spyOn(console, 'log').mockImplementation(() => {});
+  try {
+    Object.assign(process.env, { CONSOLE_ROLE: 'gateway', MAINNET_RPC: 'https://mainnet.example.io/v3/abc123key', ARBITRUM_RPC: 'https://arb.example.org' });
+    createLogger('[x]').info('failed https://mainnet.example.io/v3/abc123key and https://arb.example.org');
+    expect(String(spy.mock.calls[0][0])).toBe('[info] [x] failed [rpc url redacted] and https://arb.example.org');
+  } finally { spy.mockRestore(); process.env = saved; }
 });
