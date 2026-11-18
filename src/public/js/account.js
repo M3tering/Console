@@ -4,14 +4,39 @@
   if(!dialog||!form)return;
   const show=(text,kind)=>{message.textContent=text||'';message.className=`account-message${kind?` is-${kind}`:''}`;};
 
-  $('open-account').onclick=async()=>{
-    form.reset();show('');submit.disabled=false;dialog.showModal();form.elements.current.focus();
-    try{
-      const response=await fetch('/api/account');
-      if(response.status===401){location.assign('/login');return;}
-      const {username}=await response.json();
-      $('account-user').textContent=`Signed in as ${username}`;$('account-username').value=username;
-    }catch{/* The form still works without the name. */}
+  // Account menu in the top bar: who is signed in, change password, sign out.
+  const button=$('account-menu-button'),menu=$('account-menu');
+  const items=()=>[...menu.querySelectorAll('[role="menuitem"]')];
+  function setMenu(open){
+    if(open===!menu.hidden)return;
+    menu.hidden=!open;button.setAttribute('aria-expanded',String(open));
+    if(open){document.dispatchEvent(new CustomEvent('topbar:menu',{detail:'account'}));requestAnimationFrame(()=>items()[0]?.focus());}
+  }
+  button.onclick=()=>setMenu(menu.hidden);
+  menu.addEventListener('keydown',event=>{
+    if(event.key==='Escape'){event.stopPropagation();setMenu(false);button.focus();return;}
+    if(!['ArrowDown','ArrowUp'].includes(event.key))return;
+    const list=items(),index=list.indexOf(document.activeElement);
+    event.preventDefault();list[(index+(event.key==='ArrowDown'?1:-1)+list.length)%list.length].focus();
+  });
+  document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!menu.contains(event.target)&&!button.contains(event.target))setMenu(false);});
+  document.addEventListener('topbar:menu',event=>{if(event.detail!=='account')setMenu(false);});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!menu.hidden&&!document.querySelector('dialog[open]')){setMenu(false);button.focus();}});
+
+  let username='';
+  void fetch('/api/account').then(response=>{
+    if(response.status===401){location.assign('/login');return null;}return response.json();
+  }).then(result=>{
+    if(!result?.username)return;username=result.username;
+    const initial=username.charAt(0).toUpperCase();
+    $('account-initial').textContent=initial;$('account-menu-initial').textContent=initial;
+    $('account-menu-name').textContent=username;button.setAttribute('aria-label',`Account menu for ${username}`);
+  }).catch(()=>{/* The menu still works without the name. */});
+
+  $('open-account').onclick=()=>{
+    setMenu(false);form.reset();show('');submit.disabled=false;
+    $('account-user').textContent=username?`Signed in as ${username}`:'Signed in to the central workspace';$('account-username').value=username;
+    dialog.showModal();form.elements.current.focus();
   };
   for(const id of ['account-close','account-cancel'])$(id).onclick=()=>dialog.close();
   // Passwords never linger in a closed dialog.

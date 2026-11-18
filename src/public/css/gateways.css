@@ -1,8 +1,79 @@
 /* Central gateway selector and management. Colours come from the active desktop theme. */
-.gateway-control{display:flex;align-items:center;gap:.5rem;min-width:0}
-.gateway-control form{margin:0}
-.gateway-control select{max-width:13rem;min-width:0;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:.4rem}
-#gateway-status{position:absolute;bottom:78px;left:1rem;right:1rem;z-index:5;pointer-events:none;font:12px var(--font);color:var(--text);background:var(--surface);padding:.5rem .75rem;border:1px solid var(--border);border-radius:var(--small-radius);width:fit-content;max-width:calc(100% - 2rem)}
+/* Status colours shared by the switcher, its menu and the management cards. */
+:root{--gw-online:#2f8a57;--gw-offline:#b7832f;--gw-revoked:#b5434c}
+:is(.gw-switcher,.gw-current-head,.gw-option){--gw-state:var(--gw-offline)}
+:is(.gw-switcher,.gw-current-head,.gw-option)[data-state="online"]{--gw-state:var(--gw-online)}
+:is(.gw-switcher,.gw-current-head,.gw-option)[data-state="revoked"]{--gw-state:var(--gw-revoked)}
+:is(.gw-switcher,.gw-current-head,.gw-option)[data-state="pending"]{--gw-state:var(--accent)}
+.gw-switcher[data-state="none"]{--gw-state:var(--border)}
+
+/* Top bar: gateway switcher (centred on wide screens) and account button. */
+.gateway-control{position:absolute;left:50%;transform:translateX(-50%);display:flex;min-width:0}
+.gw-switcher{display:inline-flex;align-items:center;gap:10px;min-width:0;max-width:min(320px,34vw);height:38px;padding:0 12px;
+  border:1px solid var(--border);border-radius:calc(var(--small-radius) * 3);background:var(--surface);color:var(--text);
+  box-shadow:0 1px 2px #0000000f;font:500 13px var(--font);cursor:pointer;transition:background var(--duration),border-color var(--duration),box-shadow var(--duration)}
+.gw-switcher:hover{background:var(--surface-alt)}
+.gw-switcher[aria-expanded="true"]{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.gw-switcher-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--gw-state)}
+.gw-switcher[data-state="online"] .gw-switcher-dot{box-shadow:0 0 0 3px color-mix(in srgb,var(--gw-online) 22%,transparent)}
+.gw-switcher-text{display:flex;flex-direction:column;align-items:flex-start;min-width:0;line-height:1.15}
+.gw-switcher-label{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+#gateway-switcher-name{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.gw-chevron{flex:none;width:12px;height:12px;margin-left:2px;color:var(--muted);transition:transform var(--duration)}
+.gw-switcher[aria-expanded="true"] .gw-chevron{transform:rotate(180deg)}
+.account-button{display:grid;place-items:center;width:40px;height:40px;padding:0;border:0;border-radius:50%;background:none;cursor:pointer}
+.account-avatar{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--accent-ink);
+  font:700 13px/1 var(--font);text-transform:uppercase;transition:box-shadow var(--duration)}
+.account-button:hover .account-avatar,.account-button[aria-expanded="true"] .account-avatar{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+.account-avatar.is-large{width:40px;height:40px;font-size:16px}
+
+/* Drop-down panels under the top bar. */
+.gw-menu,.account-menu{position:fixed;z-index:600;top:calc(var(--panel-height) + env(safe-area-inset-top) + 8px);
+  background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:max(var(--radius),4px);
+  box-shadow:0 20px 50px #0b151c38,0 2px 8px #0b151c14;font:14px/1.45 var(--font);animation:gw-pop var(--duration) ease-out}
+.gw-menu[hidden],.account-menu[hidden]{display:none}
+@keyframes gw-pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.gw-menu{width:380px;max-height:calc(100dvh - var(--panel-height) - env(safe-area-inset-top) - 24px);overflow:auto;padding:16px;display:grid;gap:12px}
+.gw-menu-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.gw-menu-head h2{margin:0;font:650 16px var(--display-font)}
+.gw-menu-head p{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
+.gw-menu-head .quiet-button{min-height:32px;min-width:32px;padding:4px;font-size:20px;line-height:1}
+.gw-current{padding:12px;border-radius:var(--small-radius);background:var(--surface-alt)}
+.gw-current-head{display:flex;align-items:center;gap:10px;min-width:0}
+.gw-current-head .gw-dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--gw-state)}
+.gw-current-head .gw-title{display:grid;flex:1;min-width:0}
+.gw-current-head .gw-name{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gw-current-head small{font-size:12px;color:var(--muted)}
+.gw-current-head .gw-state{color:var(--gw-state);border-color:color-mix(in srgb,var(--gw-state) 40%,transparent);background:color-mix(in srgb,var(--gw-state) 9%,var(--surface))}
+.gw-menu .gw-stats{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:12px 0 0}
+.gw-menu .gw-stat{padding:7px 8px;background:var(--surface)}
+.gw-menu .gw-stat dt{font-size:9.5px}
+.gw-menu .gw-stat dd{font-size:14px}
+.gw-current .gw-muted,.gw-current-empty{margin:0;font-size:13px;color:var(--muted)}
+.gw-current .gw-muted{margin-top:8px}
+.gw-menu-label{margin:2px 0 -6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.gw-options{display:grid;gap:2px}
+.gw-option{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:8px 10px;border:0;border-radius:var(--small-radius);
+  background:none;color:var(--text);text-align:left;font:inherit;cursor:pointer}
+.gw-option:hover,.gw-option:focus-visible{background:var(--surface-alt)}
+.gw-option[aria-selected="true"]{background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+.gw-option .gw-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--gw-state)}
+.gw-option-text{display:grid;flex:1;min-width:0}
+.gw-option-text strong{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gw-option-text small{font-size:12px;color:var(--muted)}
+.gw-check{flex:none;color:var(--accent);font-weight:700}
+.gw-menu-foot{padding-top:12px;border-top:1px solid var(--border)}
+.gw-menu-foot .nes-btn{width:100%}
+.account-menu{right:16px;width:250px;padding:6px}
+.account-menu-head{display:flex;align-items:center;gap:12px;padding:10px 10px 12px;margin-bottom:4px;border-bottom:1px solid var(--border)}
+.account-menu-head div{display:grid;min-width:0}
+.account-menu-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-menu-head small{font-size:12px;color:var(--muted)}
+.account-menu form{margin:0}
+.account-menu-item{display:flex;align-items:center;width:100%;min-height:42px;padding:8px 12px;border:0;border-radius:var(--small-radius);
+  background:none;color:var(--text);text-align:left;font:500 14px var(--font);cursor:pointer}
+.account-menu-item:hover,.account-menu-item:focus-visible{background:var(--surface-alt)}
+.account-menu-item.is-danger{color:var(--gw-revoked)}
 
 #gateway-dialog{--gw-online:#2f8a57;--gw-offline:#b7832f;--gw-revoked:#b5434c;--gw-pending:var(--accent);
   width:min(820px,calc(100% - 2rem));max-width:none;max-height:88dvh;overflow:auto;padding:0;
@@ -105,10 +176,16 @@
 #gateway-confirm p{line-height:1.55}
 
 @media(max-width:640px){
-  .gateway-control{gap:.15rem}.gateway-control select{max-width:9rem}.gateway-control button{font-size:11px}
-  .topbar-location{display:none}
-  #gateway-status{font-size:10px;bottom:70px}
-  #gateway-dialog{width:calc(100% - 1rem);max-height:94dvh}
+  /* Phones: the brand mark, a switcher that takes the free space, account and settings. */
+  .topbar-location,.brand > span:not(.brand-mark){display:none}
+  .gateway-control{position:static;transform:none;flex:1;min-width:0}
+  .gw-switcher{max-width:none;width:100%;height:40px}
+  .gw-menu{left:8px!important;right:8px;width:auto;max-height:calc(100dvh - var(--panel-height) - env(safe-area-inset-top) - 16px)}
+  .gw-switcher-text{flex:1}
+  .gw-stat dd{font-size:14px}
+  .account-menu{right:8px}
+  /* The management dialog becomes a full-screen sheet. */
+  #gateway-dialog{width:100%;max-width:100%;height:100dvh;max-height:100dvh;margin:0;inset:0;border:0;border-radius:0}
   #gateway-dialog > :not(.gw-header){margin-left:16px;margin-right:16px}
   .gw-header{padding:18px 16px 14px}
   .gw-add{grid-template-columns:1fr;gap:12px;padding:16px}

@@ -3,11 +3,22 @@
   <header class="topbar">
     <button class="brand" data-launcher-toggle aria-label="Open application launcher" aria-expanded="false" aria-controls="app-launcher"><span class="brand-mark" aria-hidden="true">m³</span><span>M3tering<span class="brand-secondary"> Console</span></span></button>
     <div class="topbar-location"><span class="status-dot"></span><span id="active-app-name">Desktop</span></div>
-    {{#if central}}<div class="gateway-control"><label for="gateway-select" class="sr-only">Selected gateway</label><select id="gateway-select"><option value="">Select a gateway</option></select><button class="quiet-button" id="manage-gateways">Gateways</button><button class="quiet-button" id="open-account">Account</button><form action="/logout" method="post"><button class="quiet-button">Sign out</button></form></div>{{/if}}
-    <div class="topbar-trailing"><button class="quiet-button" data-open-settings title="Personalize desktop" aria-label="Open Settings"><span data-icon="settings"></span></button><time id="desktop-clock"></time></div>
+    {{#if central}}<div class="gateway-control"><button id="gateway-switcher" class="gw-switcher" data-state="none" aria-haspopup="dialog" aria-expanded="false" aria-controls="gateway-menu"><span class="gw-switcher-dot" aria-hidden="true"></span><span class="gw-switcher-text"><span class="gw-switcher-label">Gateway</span><span id="gateway-switcher-name">Select a gateway</span></span><svg class="gw-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>{{/if}}
+    <div class="topbar-trailing">{{#if central}}<button id="account-menu-button" class="account-button" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="Account menu"><span class="account-avatar" id="account-initial" aria-hidden="true">·</span></button>{{/if}}<button class="quiet-button" data-open-settings title="Personalize desktop" aria-label="Open Settings"><span data-icon="settings"></span></button><time id="desktop-clock"></time></div>
   </header>
   {{#if central}}
-  <p id="gateway-status" role="status">Choose a gateway to access its applications.</p>
+  <section id="gateway-menu" class="gw-menu" role="dialog" aria-labelledby="gateway-menu-title" hidden>
+    <header class="gw-menu-head"><div><h2 id="gateway-menu-title">Gateways</h2><p id="gateway-menu-summary">Loading…</p></div><button id="gateway-menu-close" class="quiet-button" aria-label="Close gateway menu">×</button></header>
+    <div id="gateway-current" class="gw-current" role="status"></div>
+    <p class="gw-menu-label" id="gateway-options-label">Switch gateway</p>
+    <div id="gateway-options" class="gw-options" role="listbox" aria-labelledby="gateway-options-label"></div>
+    <footer class="gw-menu-foot"><button id="manage-gateways" class="nes-btn">Manage gateways</button></footer>
+  </section>
+  <div id="account-menu" class="account-menu" role="menu" aria-labelledby="account-menu-button" hidden>
+    <div class="account-menu-head"><span class="account-avatar is-large" id="account-menu-initial" aria-hidden="true">·</span><div><strong id="account-menu-name">Account</strong><small>Central workspace</small></div></div>
+    <button role="menuitem" id="open-account" class="account-menu-item">Change password</button>
+    <form action="/logout" method="post"><button role="menuitem" class="account-menu-item is-danger">Sign out</button></form>
+  </div>
   <dialog id="gateway-dialog" aria-labelledby="gateway-dialog-title">
     <header class="gw-header"><div><span class="eyebrow">CENTRAL WORKSPACE</span><h2 id="gateway-dialog-title">Gateways</h2><p id="gateway-summary" class="gw-summary">Loading gateways…</p></div><button id="gateway-dialog-close" class="quiet-button" aria-label="Close gateway management">×</button></header>
     <section class="gw-add" aria-labelledby="gateway-add-title"><div><h3 id="gateway-add-title">Add a gateway</h3><p>Name it after its site so it's easy to find. You'll get a one-time token to install on the gateway.</p></div><form id="gateway-create"><label class="sr-only" for="gateway-name">Gateway name</label><input id="gateway-name" name="name" class="nes-input" required maxlength="100" autocomplete="off" placeholder="e.g. Rooftop, Block A"><button class="nes-btn is-primary">Add gateway</button></form></section>

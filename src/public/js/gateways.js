@@ -1,6 +1,6 @@
 (() => {
   const $=id=>document.getElementById(id);
-  const select=$('gateway-select'),dialog=$('gateway-dialog'),list=$('gateway-list'),confirmDialog=$('gateway-confirm');
+  const switcher=$('gateway-switcher'),menu=$('gateway-menu'),options=$('gateway-options'),dialog=$('gateway-dialog'),list=$('gateway-list'),confirmDialog=$('gateway-confirm');
   const NETWORK_APPS=['terminal','chirpstack','browser'],TOKEN_LIFETIME=10*60000;
   let gateways=[],selected=null,busy=false,again=false,editing=null,focusRename=false,tokenTimer=null;
   const openUpdates=new Set();
@@ -53,16 +53,64 @@
     $('active-app-name').textContent=win.dataset.windowTitle;
   }
 
+  const statTiles=(g)=>{
+    const s=g.health||{},stat=(name,value,hint)=>el('div',{class:'gw-stat',title:hint},el('dt',{text:name}),el('dd',{text:String(value)}));
+    return el('dl',{class:'gw-stats','aria-label':`${g.name} activity`},
+      stat('MQTT',s.mqtt||'—','Broker connection reported by the agent'),
+      stat('Pending',s.queueDepth||0,'Reports waiting for a decision'),
+      stat('Uncertain',s.uncertain||0,'Replies held for reconciliation (uncertain seen)'),
+      stat('Reconciled',s.reconciled||0,'Uncertain replies later resolved'),
+      stat('Superseded',s.superseded||0,'Replies replaced by a newer report'));
+  };
+  // Top bar switcher and its menu: the only place the selected gateway's status is shown.
   function renderSelector(){
-    select.replaceChildren(new Option('Select a gateway',''));
-    for(const gateway of gateways)if(!gateway.revoked)select.add(new Option(`${gateway.name}${gateway.online?'':' · offline'}`,gateway.id));
-    select.value=selected||'';
-    const current=gateways.find(g=>g.id===selected),h=current?.health;
-    $('gateway-status').textContent=current?`${current.name} · ${current.online?'Agent connected':'Agent offline'} · ${h?.uncertain||0} uncertain seen · ${h?.reconciled||0} reconciled · ${h?.superseded||0} superseded · ${h?.queueDepth||0} pending`:'Choose a gateway to access its applications.';
-    const online=gateways.filter(g=>g.online).length;
-    $('gateway-summary').textContent=gateways.length?`${gateways.length} gateway${gateways.length===1?'':'s'} · ${online} online`:'No gateways yet';
+    const current=gateways.find(g=>g.id===selected),online=gateways.filter(g=>g.online).length;
+    const summary=gateways.length?`${gateways.length} gateway${gateways.length===1?'':'s'} · ${online} online`:'No gateways yet';
+    $('gateway-summary').textContent=summary;$('gateway-menu-summary').textContent=summary;
+    $('gateway-switcher-name').textContent=current?current.name:'Select a gateway';
+    switcher.dataset.state=current?state(current)[0]:'none';
+    switcher.setAttribute('aria-label',current?`Gateway: ${current.name}, ${state(current)[1]}. Open gateway menu`:'Select a gateway');
+    const card=$('gateway-current');
+    if(current){
+      const [kind,label]=state(current);
+      card.replaceChildren(el('div',{class:'gw-current-head','data-state':kind},
+        el('span',{class:'gw-dot','aria-hidden':'true'}),
+        el('div',{class:'gw-title'},el('strong',{class:'gw-name',text:current.name}),
+          el('small',{text:[current.version&&`v${current.version}`,ago(current.lastHeartbeat)].filter(Boolean).join(' · ')})),
+        el('span',{class:'gw-pill gw-state',text:label})),
+        current.health?statTiles(current):el('p',{class:'gw-muted',text:'Activity appears once the agent reports in.'}));
+    } else card.replaceChildren(el('p',{class:'gw-current-empty',text:'Choose a gateway to open its Terminal, ChirpStack and Browser.'}));
+    const choices=gateways.filter(g=>!g.revoked);
+    // A refresh rebuilds the list; keep keyboard focus on the same gateway.
+    const focused=options.contains(document.activeElement)?document.activeElement.dataset.gateway:null;
+    options.replaceChildren(...(choices.length?choices.map(g=>{
+      const [kind,label]=state(g),isSelected=g.id===selected;
+      return el('button',{class:'gw-option','data-state':kind,role:'option','aria-selected':String(isSelected),'data-gateway':g.id,
+        onclick:()=>void chooseGateway(g.id)},
+        el('span',{class:'gw-dot','aria-hidden':'true'}),
+        el('span',{class:'gw-option-text'},el('strong',{text:g.name}),el('small',{text:g.online?label:`${label} · ${ago(g.lastHeartbeat)}`})),
+        isSelected&&el('span',{class:'gw-check','aria-hidden':'true',text:'✓'}));
+    }):[el('p',{class:'gw-current-empty',text:'No gateways yet. Use Manage gateways to add one.'})]));
+    if(focused)options.querySelector(`[data-gateway="${CSS.escape(focused)}"]`)?.focus();
   }
-
+  function placeMenu(){
+    // Phones get a full-width sheet from CSS; wider screens anchor the panel under the switcher.
+    if(innerWidth<640){menu.style.left='';return;}
+    const rect=switcher.getBoundingClientRect(),width=menu.offsetWidth||380;
+    menu.style.left=`${Math.max(8,Math.min(innerWidth-width-8,rect.left+rect.width/2-width/2))}px`;
+  }
+  function setMenu(open){
+    if(open===!menu.hidden)return;
+    menu.hidden=!open;switcher.setAttribute('aria-expanded',String(open));
+    if(open){document.dispatchEvent(new CustomEvent('topbar:menu',{detail:'gateway'}));placeMenu();void refresh();
+      requestAnimationFrame(()=>(options.querySelector('[aria-selected="true"]')||options.querySelector('button')||$('manage-gateways')).focus());}
+  }
+  async function chooseGateway(id){
+    if(id===selected){setMenu(false);switcher.focus();return;}
+    for(const app of NETWORK_APPS)Desktop.close(app);
+    try{await api('/api/gateways/select',{id});await refresh();setMenu(false);switcher.focus();}
+    catch(e){$('gateway-menu-summary').textContent=e.message;}
+  }
   function stopEditing(){editing=null;if(list.contains(document.activeElement))document.activeElement.blur();}
   function startEditing(id){editing=id;focusRename=true;render();}
   function renameForm(g){
@@ -106,13 +154,7 @@
     const tools=editing===g.id?null:el('div',{class:'gw-tools'},
       el('button',{class:'quiet-button',text:'Rename','aria-label':`Rename ${g.name}`,onclick:()=>startEditing(g.id)}),
       el('button',{class:'quiet-button gw-danger',text:'Delete','aria-label':`Delete ${g.name}`,onclick:()=>void deleteGateway(g)}));
-    const stat=(name,value,hint)=>el('div',{class:'gw-stat',title:hint},el('dt',{text:name}),el('dd',{text:String(value)}));
-    const stats=el('dl',{class:'gw-stats','aria-label':`${g.name} activity`},
-      stat('MQTT',s.mqtt||'—','Broker connection reported by the agent'),
-      stat('Pending',s.queueDepth||0,'Reports waiting for a decision'),
-      stat('Uncertain',s.uncertain||0,'Replies held for reconciliation (uncertain seen)'),
-      stat('Reconciled',s.reconciled||0,'Uncertain replies later resolved'),
-      stat('Superseded',s.superseded||0,'Replies replaced by a newer report'));
+    const stats=statTiles(g);
     const actions=el('div',{class:'gw-actions'});
     if(g.enrolled&&!g.revoked){
       actions.append(el('button',{class:'nes-btn',text:'Rotate credential',disabled:!g.online,title:g.online?undefined:'The gateway must be online to rotate',
@@ -176,12 +218,20 @@
     $('gateway-enrollment').scrollIntoView({block:'nearest',behavior:'smooth'});
   }
 
-  select.onchange=async()=>{
-    const id=select.value;if(!id)return;
-    for(const app of NETWORK_APPS)Desktop.close(app);
-    try{await api('/api/gateways/select',{id});await refresh();}catch(e){error(e.message);select.value=selected||'';}
-  };
-  $('manage-gateways').onclick=()=>{dialog.showModal();refresh();};
+  switcher.onclick=()=>setMenu(menu.hidden);
+  $('gateway-menu-close').onclick=()=>{setMenu(false);switcher.focus();};
+  menu.addEventListener('keydown',event=>{
+    if(event.key==='Escape'){event.stopPropagation();setMenu(false);switcher.focus();return;}
+    if(!['ArrowDown','ArrowUp'].includes(event.key))return;
+    const items=[...options.querySelectorAll('button')];const index=items.indexOf(document.activeElement);if(!items.length)return;
+    event.preventDefault();items[(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length].focus();
+  });
+  document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!menu.contains(event.target)&&!switcher.contains(event.target))setMenu(false);});
+  // Escape closes the menu wherever focus is, except inside an open dialog, which handles its own.
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!menu.hidden&&!document.querySelector('dialog[open]')){setMenu(false);switcher.focus();}});
+  document.addEventListener('topbar:menu',event=>{if(event.detail!=='gateway')setMenu(false);});
+  addEventListener('resize',()=>{if(!menu.hidden)placeMenu();});
+  $('manage-gateways').onclick=()=>{setMenu(false);dialog.showModal();refresh();};
   $('gateway-dialog-close').onclick=()=>dialog.close();
   // The enrollment secret never outlives the dialog.
   dialog.addEventListener('close',()=>{clearToken();editing=null;error('');});
