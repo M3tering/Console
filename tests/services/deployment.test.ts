@@ -51,6 +51,77 @@ case "$*" in *'ps -q console'*) echo new-container ;; esac
     return {run,calls:fs.readFileSync(log,'utf8')};
   } finally {fs.rmSync(dir,{recursive:true,force:true});}
 }
+function runBrowser(environment:string,options:{failProbe?:boolean;volumes?:boolean;oldRef?:string;compose?:string}={}) {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'console-browser-'));
+  try {
+    for(const file of ['auto-compose.sh','compose.yaml','compose.central.yaml','compose.gateway.yaml','compose.browser.yaml'])fs.copyFileSync(file,path.join(dir,file));
+    fs.mkdirSync(path.join(dir,'deploy'));fs.copyFileSync('deploy/browser-seccomp.json',path.join(dir,'deploy','browser-seccomp.json'));
+    fs.writeFileSync(path.join(dir,'.env'),environment);
+    fs.mkdirSync(path.join(dir,'.data'));fs.writeFileSync(path.join(dir,'.data','central.db'),'db');
+    fs.mkdirSync(path.join(dir,'.data','agent'));fs.writeFileSync(path.join(dir,'.data','agent','credential'),'id:secret');
+    const log=path.join(dir,'calls');fs.writeFileSync(log,'');
+    fs.writeFileSync(path.join(dir,'docker'),`#!/bin/bash
+printf '%s|%s|%s\\n' "$*" "$CONSOLE_IMAGE" "\${BROWSER_IMAGE:-}" >> "$DEPLOY_LOG"
+case "$*" in
+  *'ps -aq console'*) if [[ -n "$OLD_REF" ]]; then echo old-container; fi ;;
+  *'ps -q console'*) echo new-container ;;
+  *'ps -q agent'*) echo agent-container ;;
+  'inspect --format {{.Image}} old-container') echo sha256:old ;;
+  'inspect --format {{.Image}} new-container') echo sha256:new ;;
+  'inspect --format {{.Config.Image}} old-container') echo "$OLD_REF" ;;
+  *'com.docker.compose.project.config_files'*) echo "$OLD_COMPOSE" ;;
+  *'{{.State.Status}}'*) echo 'running 0' ;;
+  'volume inspect'*) [[ "$VOLUMES" == true ]] ;;
+  exec*) [[ "$FAIL_PROBE" != true ]] || { echo 'No usable sandbox!' >&2; exit 1; } ;;
+esac
+`,{mode:0o755});
+    fs.writeFileSync(path.join(dir,'sudo'),'#!/bin/bash\nwhile [[ "$1" == -* ]]; do shift; done\n"$@"\n',{mode:0o755});
+    fs.writeFileSync(path.join(dir,'sysctl'),'#!/bin/bash\n[[ "$2" == kernel.apparmor_restrict_unprivileged_userns ]] && echo 1\n',{mode:0o755});
+    const run=spawnSync('bash',['auto-compose.sh','--project-name','site'],{cwd:dir,encoding:'utf8',env:{...process.env,CONSOLE_IMAGE:'',PATH:dir+':'+process.env.PATH,DEPLOY_LOG:log,
+      FAIL_PROBE:String(!!options.failProbe),VOLUMES:String(!!options.volumes),OLD_REF:options.oldRef||'',OLD_COMPOSE:options.compose||'',AGENT_STABLE_CHECKS:'1',AGENT_READY_INTERVAL:'0',AGENT_SECRET_UID:String(process.getuid?.()??0)}});
+    return {run,calls:fs.readFileSync(log,'utf8')};
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
+}
+const centralBrowser='CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\nBROWSER_ENABLED=true\n';
+test('BROWSER_ENABLED on central runs the browser image with its seccomp profile and checks the sandbox', () => {
+  const {run,calls}=runBrowser(centralBrowser,{volumes:true});
+  expect(run.status).toBe(0);
+  expect(calls).toContain('-f compose.central.yaml -f compose.browser.yaml pull console|ghcr.io/fluxion9/console-browser:main|ghcr.io/fluxion9/console-browser:main');
+  // Data and existing extension volumes are handed to the image's UID 1000 before the switch.
+  const chown=calls.split('\n').find(line=>line.startsWith('run --rm --user 0 --entrypoint chown'))!;
+  expect(chown).toContain('-v site_console_extension_sources:/prepare/console_extension_sources');
+  expect(chown).toContain('ghcr.io/fluxion9/console-browser:main -R 1000:1000 /prepare');
+  expect(calls.indexOf('pull console')).toBeLessThan(calls.indexOf('--entrypoint chown'));
+  expect(calls.indexOf('--entrypoint chown')).toBeLessThan(calls.indexOf('stop console'));
+  expect(calls).toMatch(/exec new-container sh -c/);
+  expect(run.stdout).toContain('Browser: ready');
+});
+test('a Browser sandbox that cannot start leaves Console running and says how to fix the host', () => {
+  const {run,calls}=runBrowser(centralBrowser,{failProbe:true});
+  expect(run.status).toBe(0);
+  expect(calls).not.toContain('--force-recreate');
+  expect(calls).toMatch(/up --detach tls-proxy/);
+  expect(run.stderr).toContain('could not start its sandbox');
+  expect(run.stderr).toContain('kernel.apparmor_restrict_unprivileged_userns=0');
+});
+test('turning BROWSER_ENABLED on or off switches between the plain and browser images', () => {
+  const on=runBrowser(centralBrowser,{oldRef:'ghcr.io/fluxion9/console:main',compose:'/x/compose.central.yaml'});
+  expect(on.calls).toContain('pull console|ghcr.io/fluxion9/console-browser:main');
+  const kept=runBrowser(centralBrowser,{oldRef:'ghcr.io/fluxion9/console-browser:feat-x',compose:'/x/compose.central.yaml'});
+  expect(kept.calls).toContain('pull console|ghcr.io/fluxion9/console-browser:feat-x');
+  const off=runBrowser('CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\n',{oldRef:'ghcr.io/fluxion9/console-browser:main',compose:'/x/compose.central.yaml'});
+  expect(off.calls).toContain('-f compose.central.yaml pull console|ghcr.io/fluxion9/console:main');
+  expect(off.calls).not.toContain('compose.browser.yaml');expect(off.calls).not.toContain('--entrypoint chown');
+});
+test('BROWSER_ENABLED on standalone uses the browser image; a managed gateway ignores it', () => {
+  const standalone=runBrowser('API_TOKEN=token\nAPPLICATION_ID=0b8c1a6e-4f2d-4c8a-9d3e-7a6b5c4d3e2f\nBROWSER_ENABLED=true\n');
+  expect(standalone.run.status).toBe(0);
+  expect(standalone.calls).toContain('-f compose.yaml -f compose.browser.yaml pull console|ghcr.io/m3tering/console-browser:main');
+  const gateway=runBrowser('CONSOLE_ROLE=gateway\nCENTRAL_URL=wss://central.example.test\nAPI_TOKEN=token\nAPPLICATION_ID=0b8c1a6e-4f2d-4c8a-9d3e-7a6b5c4d3e2f\nBROWSER_ENABLED=true\n');
+  expect(gateway.run.stdout).toContain('BROWSER_ENABLED is ignored on a managed gateway');
+  expect(gateway.calls).not.toContain('compose.browser.yaml');expect(gateway.calls).not.toContain('-browser');
+});
+
 test('central role deploys console and TLS proxy from the central compose file', () => {
   const {run,calls}=runCentral('CONSOLE_ROLE=central\nCENTRAL_DOMAIN="console.example.test"\nCENTRAL_ADMIN_PASSWORD=a-very-long-password-1\n');
   expect(run.status).toBe(0);

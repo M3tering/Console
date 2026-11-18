@@ -117,12 +117,15 @@ gateway's `central_hostkeys` record. Do not routinely disable host-key validatio
 
 ## Optional Browser engine
 
-The default image intentionally omits Chromium. For a central or standalone test
-server, add `-f compose.browser.yaml` to its Compose commands. `./auto-compose.sh`
-does not manage this override yet, so run those commands by hand with
-`BROWSER_IMAGE=ghcr.io/<owner>/<repo>-browser:main` matching your checkout. The
-browser image is an optional target of the same Dockerfile, with Alpine Chromium/OpenSSL and a non-root runtime. Ensure
-its data and extension volumes are owned by UID 1000. Do not blindly apply this
+The default image intentionally omits Chromium. On a central or standalone server,
+add `BROWSER_ENABLED=true` to `.env` and run `./auto-compose.sh`. The script adds
+`compose.browser.yaml`, switches to `ghcr.io/<owner>/<repo>-browser`, gives `.data` and
+the extension volumes to the image's UID 1000, and after the start launches Chromium
+with its sandbox to confirm Browser works. The override applies
+`deploy/browser-seccomp.json`: Docker's default seccomp profile with `clone`, `setns`
+and `unshare` allowed, which the sandbox needs to create its namespaces. The container
+gains no capabilities. The browser image is an optional target of the same Dockerfile,
+with Alpine Chromium/OpenSSL and a non-root runtime. Do not blindly apply this
 override to a managed gateway pair: both services must use the same image and
 owner-file UID. Small gateways can keep Browser unavailable and use central's
 engine instead. The default Console still starts and passes health checks.
