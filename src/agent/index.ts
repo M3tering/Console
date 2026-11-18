@@ -133,8 +133,11 @@ export async function runAgent():Promise<()=>Promise<void>> {
       const parsed:unknown=JSON.parse(packet.payload.toString());
       if(typeof parsed!=='object'||parsed===null||Array.isArray(parsed)){done();return;}
       const event=parsed as UplinkEvent;
-      if(event.fPort!==2||typeof event.deviceInfo?.devEui!=='string'||typeof event.deviceInfo?.applicationId!=='string'||event.deviceInfo.devEui.toLowerCase()!==match[2].toLowerCase()||event.deviceInfo.applicationId.toLowerCase()!==application){
-        logger.info(`Uplink skipped (${event.fPort!==2?`fPort ${String(event.fPort)}; only fPort 2 is billed`:'device or application does not match its topic'}): ${describeReport(event)}`);done();return;}
+      // Only fPort 2 carries billing reports. MQTT can't filter by port (it isn't in the topic),
+      // so other ports (telemetry, network-control frames) are dropped here, silently.
+      if(event.fPort!==2){done();return;}
+      if(typeof event.deviceInfo?.devEui!=='string'||typeof event.deviceInfo?.applicationId!=='string'||event.deviceInfo.devEui.toLowerCase()!==match[2].toLowerCase()||event.deviceInfo.applicationId.toLowerCase()!==application){
+        logger.warn(`Report ignored: its device or application does not match its topic: ${describeReport(event)}`);done();return;}
       try{eventIdentity(event);}catch{logger.warn(`Invalid billing event ignored: ${describeReport(event)}`);done();return;}
       logger.info(`Report received from ChirpStack: ${describeReport(event)}`);
       // receive persists synchronously before returning its processing promise.

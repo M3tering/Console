@@ -398,7 +398,7 @@ docker compose -f compose.gateway.yaml -f compose.updater.yaml logs -f updater
 | Gateway `logs -f console` | The same as central, but only while central is unreachable and the gateway decides locally |
 | Standalone `logs -f console` | `Report received: …`, `Reading recorded: …`, `Reply enqueued: state=…` |
 
-`Uplink skipped (fPort …)` means the meter sent on a port other than 2, which isn't billed.
+Messages on ports other than 2 (telemetry, network-control frames) aren't billed and are dropped without a log line.
 The full signature and meter key are shortened in the logs; keys and tokens never appear.
 
 | Symptom | Cause and fix |

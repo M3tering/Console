@@ -48,7 +48,11 @@ test('agent persists before MQTT ack, filters ports, reconnects its own session 
     client.emit('connect',{});client.emit('reconnect');client.emit('connect',{});
     expect(client.subscribe).toHaveBeenCalledTimes(2);expect(client.subscribe).toHaveBeenLastCalledWith(`application/${application}/device/+/event/up`,{qos:1},expect.any(Function));
     const packet=(value:unknown)=>({cmd:'publish' as const,qos:1 as const,retain:false,dup:false,messageId:1,topic:`application/${application}/device/${event.deviceInfo.devEui}/event/up`,payload:Buffer.from(JSON.stringify(value))});
-    const ignored=jest.fn();client.handleMessage(packet({...event,fPort:4}),ignored);expect(ignored).toHaveBeenCalledWith();expect(compute).not.toHaveBeenCalled();
+    // Other ports are acknowledged and dropped without a log line.
+    const logged=jest.spyOn(console,'log');const before=logged.mock.calls.length;
+    const ignored=jest.fn();client.handleMessage(packet({...event,fPort:4}),ignored);client.handleMessage(packet({...event,fPort:0,data:undefined}),ignored);
+    expect(ignored).toHaveBeenCalledTimes(2);expect(ignored).toHaveBeenCalledWith();expect(compute).not.toHaveBeenCalled();
+    expect(logged.mock.calls.slice(before).filter(call=>/fPort|skipped|Report/.test(String(call[0])))).toEqual([]);
     for(const malformed of [null,[],42,{fPort:2,deviceInfo:{devEui:42,applicationId:application}}]){const ack=jest.fn();client.handleMessage(packet(malformed),ack);expect(ack).toHaveBeenCalledWith();}
     expect(client.stream.destroy).not.toHaveBeenCalled();
     let acked=false;client.handleMessage(packet(event),error=>{
