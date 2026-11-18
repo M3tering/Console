@@ -245,7 +245,8 @@ The script:
 - pulls the newest image for the tag the machine already runs;
 - replaces only the Console services and waits for them to be healthy;
 - restores the previous image if they aren't;
-- never touches `.env`, the database or volumes.
+- never touches the database or volumes, and in `.env` only updates its own `COMPOSE_FILE` and
+  `COMPOSE_PROJECT_NAME` lines (so plain `docker compose logs -f` follows the role).
 
 To run a specific build, pass its tag or digest:
 
