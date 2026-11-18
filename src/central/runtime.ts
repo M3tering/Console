@@ -48,6 +48,8 @@ export async function initializeManagedRole():Promise<http.Server|undefined> {
     const secret=readOwnerSecret(config.fallbackSecretPath);
     const directory=path.dirname(config.credentialPath);fs.mkdirSync(directory,{recursive:true,mode:0o700});
     processor=createBillingProcessor(path.join(directory,'local-outcomes.db'));
+    // Prover sends made while central is away; reported to central at handover.
+    configurePublications(path.join(directory,'publications.db'));
     const getGateway=()=>{
       const identity=readOwnerSecret(config.credentialPath!).split(':')[0];
       if(!/^[\w-]{36}$/.test(identity))throw new Error('Agent enrollment is not ready.');return identity;

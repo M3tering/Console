@@ -19,7 +19,11 @@ function snapshot(value:unknown):value is BillingSnapshot {
   const m=value.meter;
   if(!record(m)||typeof m.publicKey!=='string'||!/^0x[a-fA-F0-9]{64}$/.test(m.publicKey)||!int(m.tokenId)||!int(m.latestNonce,-1)||
     typeof m.devEui!=='string'||!/^[a-fA-F0-9]{16}$/.test(m.devEui))return false;
-  return value.transactions.every(t=>record(t)&&int(t.nonce)&&int(t.identifier)&&int(t.receivedAt)&&typeof t.raw==='string'&&/^[a-fA-F0-9]+$/.test(t.raw)&&[148,212,224].includes(t.raw.length));
+  if(!value.transactions.every(t=>record(t)&&int(t.nonce)&&int(t.identifier)&&int(t.receivedAt)&&typeof t.raw==='string'&&/^[a-fA-F0-9]+$/.test(t.raw)&&[148,212,224].includes(t.raw.length)))return false;
+  if(value.published===undefined)return true;
+  return Array.isArray(value.published)&&value.published.length<=1000&&value.published.every(p=>record(p)&&typeof p.destination==='string'&&
+    /^prover:https?:\/\/\S{1,300}$/.test(p.destination)&&int(p.tokenId)&&int(p.nonce)&&(p.state==='submitted'||p.state==='uncertain')&&
+    (value.transactions as Array<{identifier:number;nonce:number}>).some(t=>t.identifier===p.tokenId&&t.nonce===p.nonce));
 }
 export function validOutcome(value:unknown,id:string):value is Outcome {
   if(!record(value)||value.id!==id||!['offered','processing','decided','uncertain','rejected'].includes(String(value.state))||typeof value.active!=='boolean')return false;

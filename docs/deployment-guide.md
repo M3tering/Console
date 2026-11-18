@@ -164,6 +164,19 @@ same meter. Fix the error shown and run the script again.
 The gateway's own LAN desktop at `http://<gateway-ip>:3000` keeps working, without
 a login.
 
+## The prover
+
+Central sends readings to the prover (`PREFERRED_PROVER_NODE`) for every gateway. When central is
+unreachable and a gateway decides readings itself, that gateway sends those readings to the prover
+straight away, if its own `.env` sets `PREFERRED_PROVER_NODE`. When it hands those decisions over to
+central later, it says which readings it already sent, and central doesn't send them again, not even
+from its scheduled job. Sends with an unclear result are never repeated automatically, on either side.
+Without `PREFERRED_PROVER_NODE` on the gateway, nothing changes: central sends them after the handover.
+A gateway never publishes to Streamr or Arweave; central does that.
+
+Logs: the gateway's Console shows `Sending new transaction to prover`, and central shows
+`The gateway already sent N reading(s) of meter … to the prover; central won't send them again.`
+
 ## The Streamr app
 
 | Where | What it shows | Publish Now |

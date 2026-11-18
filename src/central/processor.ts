@@ -4,7 +4,9 @@ import type { MeterRecord, TransactionRecord } from '../types';
 import type { UplinkEvent } from './protocol';
 import { eventIdentity, eventFingerprint } from './operations';
 
-export interface BillingSnapshot { meter: MeterRecord | null; transactions: TransactionRecord[] }
+/** A reading the gateway already sent to a prover while central was away (handover only). */
+export interface PublishedRecord { destination: string; tokenId: number; nonce: number; state: 'submitted' | 'uncertain' }
+export interface BillingSnapshot { meter: MeterRecord | null; transactions: TransactionRecord[]; published?: PublishedRecord[] }
 export interface Outcome {
   id: string; state: 'offered' | 'processing' | 'decided' | 'uncertain' | 'rejected';
   active: boolean; decision: StateDownlink | null; snapshot: BillingSnapshot | null;
@@ -26,7 +28,9 @@ export class DurableProcessor implements Decider {
   private devices = new Map<string,Promise<unknown>>();
   constructor(filename:string, private compute:(event:UplinkEvent,sink:DownlinkSink)=>Promise<void>,
     private snapshot:(event:UplinkEvent)=>BillingSnapshot = ()=>({meter:null,transactions:[]}),
-    private importSnapshot?:(snapshot:BillingSnapshot)=>Promise<void>) {
+    private importSnapshot?:(snapshot:BillingSnapshot)=>Promise<void>,
+    /** Adds live details to a stored outcome when it is read (the gateway: what it already sent to the prover). */
+    private annotate:(outcome:Outcome)=>Outcome = outcome=>outcome) {
     this.db=new Database(filename);
     this.db.pragma('journal_mode = WAL');this.db.pragma('synchronous = FULL');this.db.pragma('busy_timeout = 5000');
     this.db.exec(`CREATE TABLE IF NOT EXISTS managed_operations (id TEXT PRIMARY KEY, gateway TEXT NOT NULL,
@@ -80,7 +84,7 @@ export class DurableProcessor implements Decider {
     // After a process crash, return the durable billing state even if the last
     // result snapshot was never written. Do not run the decision handler again.
     if(!result.active && !result.snapshot && row.state!=='offered') result.snapshot=this.snapshot(JSON.parse(row.event) as UplinkEvent);
-    return result;
+    return this.annotate(result);
   }
   async reconcile(gateway:string,event:UplinkEvent,outcome:Outcome):Promise<void> {
     if(eventIdentity(event)!==outcome.id || outcome.active)throw new Error('Invalid reconciliation identity or active operation.');

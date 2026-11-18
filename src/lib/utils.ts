@@ -76,7 +76,8 @@ export async function notifyHook<K extends keyof Hooks>(hook: K, ...args: Parame
 /** Managed roles publish centrally with a durable claim per extension and nonce.
  * Built-in cron/UI publishers additionally share destination-level claims. */
 export async function distributeManaged(records: TransactionRecord[]): Promise<void> {
-  if (process.env.CONSOLE_ROLE !== 'central') return;
+  // Gateways run this only for their own fallback decisions; publishManaged lets just the prover through.
+  if (process.env.CONSOLE_ROLE !== 'central' && process.env.CONSOLE_ROLE !== 'gateway') return;
   for (const [index, extension] of extensions.entries()) {
     const publish = extension.onTransactionDistribution;
     if (!publish) continue;
