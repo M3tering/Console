@@ -8,7 +8,7 @@ import type { Health } from './protocol';
 export type AuditAction = 'login-success' | 'login-failure' | 'logout' | 'enrolment-created' | 'enrolled' |
   'credential-rotated' | 'credential-rotation-acknowledged' | 'credential-revoked' | 'gateway-renamed' | 'gateway-deleted' |
   'password-changed' | 'password-change-failure' |
-  'device-assignment' | 'state-downlink-uncertain' | 'terminal-start' | 'terminal-end' | 'browser-start' | 'browser-end' | 'state-downlink' | 'update-status';
+  'device-assignment' | 'state-downlink-uncertain' | 'terminal-start' | 'terminal-end' | 'state-downlink' | 'update-status';
 export interface GatewayIdentity { id: string; name: string; revoked: boolean; enrolled: boolean; lastHeartbeat: number | null; version: string | null }
 export interface GatewayUpdate {id:string;gateway:string;image:string;status:UpdateStatus;history:Array<{status:UpdateStatus;time:number}>}
 export interface DeviceGateway { devEui:string; gateway:string; observedGateway:string; overridden:boolean; lastSeen:number }

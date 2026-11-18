@@ -46,7 +46,6 @@
     <div class="desktop-heading" aria-hidden="true"><span class="eyebrow">YOUR ENERGY. YOUR ENVIRONMENT.</span><h1>A little more<br>connected.</h1><p>M3tering Console <span> / </span> Provider workspace</p></div>
     <div id="desktop-scroll"><div id="desktop-icons" tabindex="-1" aria-label="Applications">
       <button class="desktop-icon" id="terminal-icon" data-app-id="terminal" data-app-label="Terminal" data-app-description="Connect to your console" data-icon-name="terminal"><span class="app-art" data-icon="terminal"></span><span class="icon-label">Terminal</span></button>
-      <button class="desktop-icon" id="browser-icon" data-app-id="browser" data-app-label="Browser" data-app-description="Explore the web" data-icon-name="browser"><span class="app-art" data-icon="browser"></span><span class="icon-label">Browser</span></button>
       <button class="desktop-icon" id="paint-icon" data-app-id="paint" data-app-label="Paint" data-app-description="Draw and save a picture" data-icon-name="paint"><span class="app-art" data-icon="paint"></span><span class="icon-label">Paint</span></button>
       <button class="desktop-icon" id="chirpstack-icon" data-app-id="chirpstack" data-app-label="ChirpStack" data-app-description="Manage your LoRaWAN network" data-icon-name="radio"><span class="app-art" data-icon="radio"></span><span class="icon-label">ChirpStack</span></button>
       {{#each icons}}
@@ -66,13 +65,8 @@
           <div id="terminal-status" role="status"><p id="status-message">Enter your credentials to start a terminal session.</p></div>
         </div>
       </section>
-      <section class="app-window" id="browser" data-window-title="Browser" aria-label="Browser" hidden>
-        <div class="browser-toolbar browser-controls"><button id="browser-back" aria-label="Back">←</button><button id="browser-forward" aria-label="Forward">→</button><button id="browser-reload" aria-label="Reload">↻</button><button id="browser-stop" aria-label="Stop loading">×</button><button id="browser-home" aria-label="Home">⌂</button><form id="browser-search"><label class="sr-only" for="browser-query">Search Google or enter a URL</label><input id="browser-query" class="nes-input" type="text" placeholder="Search Google or enter a URL" /><button type="submit">Go</button></form><button id="browser-copy" aria-label="Copy selected text">Copy</button><label class="sr-only" for="browser-zoom">Page zoom</label><select id="browser-zoom" aria-label="Page zoom"><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option></select></div>
-        <div id="browser-status" role="status">Open Browser to start an isolated session. Downloads and file uploads are disabled.</div>
-        <div id="browser-view" tabindex="0" role="application" aria-label="Remote browser page"><canvas id="browser-canvas"></canvas><textarea id="browser-input" aria-label="Browser text input" autocomplete="off" spellcheck="false"></textarea></div>
-      </section>
       <section class="app-window" id="chirpstack" data-window-title="ChirpStack" aria-label="ChirpStack" hidden>
-        <div class="browser-toolbar chirpstack-toolbar"><span data-icon="radio"></span><span>ChirpStack <small>LoRaWAN network server</small></span><button class="nes-btn" id="chirpstack-reload" aria-label="Reload ChirpStack">Reload</button><a href="/chirpstack/" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a></div>
+        <div class="app-toolbar chirpstack-toolbar"><span data-icon="radio"></span><span>ChirpStack <small>LoRaWAN network server</small></span><button class="nes-btn" id="chirpstack-reload" aria-label="Reload ChirpStack">Reload</button><a href="/chirpstack/" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a></div>
         <iframe id="chirpstack-frame" title="ChirpStack network server" data-src="/chirpstack/" referrerpolicy="same-origin"></iframe>
       </section>
       <section class="app-window" id="paint" data-window-title="Paint" aria-label="Paint" data-window-width="900" data-window-height="650" hidden>

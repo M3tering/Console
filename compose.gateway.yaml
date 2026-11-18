@@ -48,8 +48,6 @@ services:
       CHEFSTACK_URL: ${CHEFSTACK_URL:-}
       CHIRPSTACK_WEB_URL: ${CHIRPSTACK_WEB_URL:-}
       AGENT_SSH_PORT: ${AGENT_SSH_PORT:-22}
-      AGENT_BROWSER_ALLOW_LAN: ${AGENT_BROWSER_ALLOW_LAN:-false}
-      AGENT_BROWSER_PORTS: ${AGENT_BROWSER_PORTS:-80,443,3000,8080,8090}
     volumes:
       - ./.data/agent:/opt/app/.data/agent
     read_only: true

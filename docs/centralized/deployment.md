@@ -16,7 +16,7 @@ With no role configured the Console stays standalone, without a Console login.
 Manager is removed, including telemetry/commands UI; old Manager environment
 variables are ignored with one warning. Its SQLite tables are preserved. Use
 ChirpStack's device queue for technician downlinks and your external monitoring
-tool for telemetry. The Browser now uses an optional remote Chromium engine.
+tool for telemetry.
 
 Manual update and rollback still use the existing script:
 
@@ -107,37 +107,10 @@ tradeoff and reconciliation rules.
 ## Tunnel policy
 
 Gateway owners control each purpose separately. SSH defaults to 127.0.0.1:22;
-ChirpStack uses the existing configured web endpoint. Browser defaults to
-loopback ports 80,443,3000,8080,8090. Set `AGENT_BROWSER_PORTS` locally to adjust
-that list; private LAN access additionally requires `AGENT_BROWSER_ALLOW_LAN=true`.
-Metadata, Docker and fallback/SSH control ports remain blocked for Browser.
+ChirpStack uses the existing configured web endpoint. No other tunnel purpose exists.
 Central cannot override these settings. SSH uses first-use host-key pinning and
 refuses changes; investigate legitimate key changes before manually removing that
 gateway's `central_hostkeys` record. Do not routinely disable host-key validation.
-
-## Optional Browser engine
-
-The default image intentionally omits Chromium. On a central or standalone server,
-add `BROWSER_ENABLED=true` to `.env` and run `./auto-compose.sh`. The script adds
-`compose.browser.yaml`, switches to `ghcr.io/<owner>/<repo>-browser`, gives `.data` and
-the extension volumes to the image's UID 1000, and after the start launches Chromium
-with its sandbox to confirm Browser works. The override applies
-`deploy/browser-seccomp.json`: Docker's default seccomp profile with `clone`, `setns`
-and `unshare` allowed, which the sandbox needs to create its namespaces. The container
-gains no capabilities. The browser image is an optional target of the same Dockerfile,
-with Alpine Chromium/OpenSSL and a non-root runtime. Do not blindly apply this
-override to a managed gateway pair: both services must use the same image and
-owner-file UID. Small gateways can keep Browser unavailable and use central's
-engine instead. The default Console still starts and passes health checks.
-
-Production engine execution requires working Chromium sandbox/user namespaces.
-Never enable `BROWSER_UNSANDBOXED_TEST` outside test fixtures; it is ignored unless
-NODE_ENV=test. If the host cannot support the sandbox, retain the unavailable
-state until host isolation is correctly configured. No privileged-container or
-Docker-socket workaround is supported. Browser profiles are temporary; uploads
-and downloads are disabled. Copy/paste, IME, touch scrolling and zoom are provided.
-The optional Compose profile bounds the whole Console/engine to 2 GiB, 2 CPUs and
-256 MiB shared memory. These are limits, not measured i.MX8 requirements.
 
 ## Optional signed updater
 

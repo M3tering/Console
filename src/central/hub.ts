@@ -80,7 +80,7 @@ export class GatewayHub {
     app.post('/api/devices/:devEui/gateway',(req,res)=>{try{if(req.body?.gateway!==null&&typeof req.body?.gateway!=='string')throw new Error();this.identities.assignDevice(req.params.devEui,req.body.gateway,res.locals.centralUser.id);res.json({devices:this.identities.devices()});}catch{res.status(400).json({error:'Choose an observed device and available gateway, or null to restore discovery.'});}});
     app.post('/api/gateways/select',(req,res)=>{
       const secure=this.development?'':'; Secure';
-      // null deselects: Terminal, Browser and ChirpStack then work on the central server itself.
+      // null deselects: Terminal and ChirpStack then work on the central server itself.
       if(req.body?.id===null){res.setHeader('Set-Cookie',`console_gateway=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${secure}`);res.json({selected:null});return;}
       if(typeof req.body?.id!=='string'||!this.identities.gateways().some(g=>g.id===req.body.id&&!g.revoked)){res.status(400).json({error:'Choose an available gateway.'});return;}
       res.setHeader('Set-Cookie',`console_gateway=${req.body.id}; Path=/; HttpOnly; SameSite=Strict${secure}`);res.json({selected:req.body.id});

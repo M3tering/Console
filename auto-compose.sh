@@ -54,9 +54,9 @@ if remote=$(git remote get-url origin 2>/dev/null); then
     source_repo=$slug; repo_image="ghcr.io/$(tr '[:upper:]' '[:lower:]' <<<"$slug")"
   fi
 fi
-# The optional updater and browser images, and the updater's signature trust, follow the same repository.
+# The optional updater image and its signature trust follow the same repository.
 if [[ -n "$repo_image" ]]; then
-  export UPDATER_IMAGE="$repo_image-updater:main" BROWSER_IMAGE="$repo_image-browser:main"
+  export UPDATER_IMAGE="$repo_image-updater:main"
   export UPDATER_IMAGE_REPOSITORY="$repo_image" UPDATER_SOURCE_REPOSITORY="$source_repo"
 fi
 role=$(env_value CONSOLE_ROLE | sed -n 's/^\([a-z]*\).*/\1/p')
@@ -102,15 +102,6 @@ case "$role" in
     fi ;;
   *) echo 'CONSOLE_ROLE in .env must be standalone, central or gateway.' >&2; exit 2 ;;
 esac
-# BROWSER_ENABLED=true runs the Browser engine image (Chromium) for central or standalone.
-browser=false
-if [[ "$(env_value BROWSER_ENABLED)" == true ]]; then
-  if [[ "$role" == gateway ]]; then
-    echo 'Note: BROWSER_ENABLED is ignored on a managed gateway. Use Browser on central; it reaches this gateway through the agent.'
-  else
-    browser=true; default_image="${default_image%:*}-browser:main"
-  fi
-fi
 command -v docker >/dev/null || { echo 'Docker is not installed. Install it with: curl -fsSL https://get.docker.com | sudo sh' >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo 'The Docker Compose plugin is missing; install docker-compose-plugin.' >&2; exit 1; }
 docker info >/dev/null 2>&1 || { echo 'Cannot reach Docker. Run with sudo, or: sudo usermod -aG docker "$USER" and log in again.' >&2; exit 1; }
@@ -130,7 +121,6 @@ if [[ -z "$project" ]]; then
 fi
 [[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo 'Invalid Compose project name.' >&2; exit 2; }
 compose=(docker compose --project-name "$project" -f "$compose_file")
-if $browser; then compose+=(-f compose.browser.yaml); fi
 # Gateways: run the signed updater when the owner enabled it, or keep an existing one current.
 manage_updater=false
 if [[ "$role" == gateway ]] && { [[ "$(env_value REMOTE_UPDATES_ENABLED)" == true ]] ||
@@ -155,17 +145,14 @@ if [[ -n "$old_container" ]]; then
   echo "Current Console: $old_ref ($old_id)"
   # Keep the running tag or digest only for the same role (a standalone image may lack central
   # support) and the same repository as this checkout (the remote may have been switched).
-  # Turning BROWSER_ENABLED on or off switches between the plain and the -browser image.
+  # The Browser app and its -browser image were removed: a -browser container moves to the normal image.
   old_repo=${old_ref%@*}; old_repo=${old_repo%:*}
-  old_browser=false; [[ "$old_repo" == *-browser ]] && old_browser=true
-  if [[ -z "$image" && "$old_ref" == ghcr.io/* && "$old_role" == "$role" && "$old_browser" == "$browser" &&
-        ( -z "$repo_image" || "$old_repo" == "${default_image%:*}" ) ]]; then
+  if [[ -z "$image" && "$old_ref" == ghcr.io/* && "$old_role" == "$role" && "$old_repo" != *-browser &&
+        ( -z "$repo_image" || "$old_repo" == "$repo_image" ) ]]; then
     image="$old_ref"
   fi
 fi
 export CONSOLE_IMAGE="${image:-$default_image}"
-# compose.browser.yaml names the console image through BROWSER_IMAGE.
-if $browser; then export BROWSER_IMAGE="$CONSOLE_IMAGE"; fi
 [[ "$CONSOLE_IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+(:[a-zA-Z0-9._-]+|@sha256:[a-f0-9]{64})$ ]] || { echo 'Specify a published GHCR image with an explicit tag or digest.' >&2; exit 2; }
 echo "Project: $project; role: $role; update image: $CONSOLE_IMAGE"
 [[ -z "$repo_image" ]] || echo "Image repository from git origin: $repo_image"
@@ -219,7 +206,7 @@ deploy_failed() {
     echo 'Fix the problem shown above and rerun this script.' >&2
   elif [[ "$role" != gateway || "$old_role" == gateway ]]; then
     echo 'Restoring the previous image; persistent data has not been removed.' >&2
-    CONSOLE_IMAGE="$old_id" BROWSER_IMAGE="$old_id" "${compose[@]}" up --detach --no-deps --no-build --pull never --force-recreate "${services[@]}" || true
+    CONSOLE_IMAGE="$old_id" "${compose[@]}" up --detach --no-deps --no-build --pull never --force-recreate "${services[@]}" || true
   elif ! "${as_root[@]}" test -e .data/agent/operations.db; then
     # The agent never got past enrollment, so it handled no meter reports: standalone can safely resume.
     echo 'Restoring the standalone Console; the agent never started handling reports.' >&2
@@ -233,42 +220,8 @@ deploy_failed() {
   exit 1
 }
 
-# Chromium's sandbox must start inside the container, or Browser cannot open pages.
-# This runs the same kind of launch the Browser app does, with the sandbox on.
-browser_works() {
-  local container; container=$("${compose[@]}" ps -q console | head -1)
-  docker exec "$container" sh -c 'd=$(mktemp -d); HOME=$d timeout 30 chromium --headless=new --disable-gpu --no-first-run \
-    --user-data-dir="$d/profile" --dump-dom about:blank 2>"$d/err" | grep -q "<html"; s=$?
-    [ "$s" -eq 0 ] || tail -n 3 "$d/err" >&2; rm -rf "$d"; exit "$s"'
-}
-browser_help() {
-  echo 'Browser: the Console is running, but Chromium could not start its sandbox here, so Browser will not open pages.' >&2
-  if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" == 1 ]]; then
-    echo 'This Ubuntu release blocks unprivileged user namespaces, which the sandbox needs. Allow them, then rerun:' >&2
-    echo "  echo 'kernel.apparmor_restrict_unprivileged_userns=0' | sudo tee /etc/sysctl.d/60-console-browser.conf && sudo sysctl --system" >&2
-  elif [[ "$(sysctl -n kernel.unprivileged_userns_clone 2>/dev/null)" == 0 ]]; then
-    echo 'This kernel blocks unprivileged user namespaces, which the sandbox needs. Allow them, then rerun:' >&2
-    echo "  echo 'kernel.unprivileged_userns_clone=1' | sudo tee /etc/sysctl.d/60-console-browser.conf && sudo sysctl --system" >&2
-  elif [[ "$(sysctl -n user.max_user_namespaces 2>/dev/null)" == 0 ]]; then
-    echo 'User namespaces are disabled (user.max_user_namespaces=0). Allow them, then rerun:' >&2
-    echo "  echo 'user.max_user_namespaces=15000' | sudo tee /etc/sysctl.d/60-console-browser.conf && sudo sysctl --system" >&2
-  else
-    echo 'Check that this server allows user namespaces; see "Browser" in docs/deployment-guide.md.' >&2
-  fi
-}
-
 # Keep the old service and image until the correct architecture is downloaded.
 "${compose[@]}" pull "${services[@]}"
-if $browser; then
-  # The browser image runs as UID 1000 rather than root: hand it the data folder and extension volumes.
-  mkdir -p .data 2>/dev/null || true
-  volumes=()
-  for volume in console_extension_sources console_extension_builds; do
-    if docker volume inspect "${project}_$volume" >/dev/null 2>&1; then volumes+=(-v "${project}_$volume:/prepare/$volume"); fi
-  done
-  docker run --rm --user 0 --entrypoint chown -v "$PWD/.data:/prepare/data" ${volumes[@]+"${volumes[@]}"} "$CONSOLE_IMAGE" -R 1000:1000 /prepare \
-    || { echo 'Could not give the Browser image (UID 1000) ownership of .data and the extension volumes. Nothing was changed.' >&2; exit 1; }
-fi
 # The updater must not replace Console and agent while this script does.
 if $manage_updater; then "${compose[@]}" stop updater; fi
 # Stopping Console first also stops a standalone MQTT subscriber before the agent takes over.
@@ -295,8 +248,6 @@ if [[ -n "$old_id" && "$old_id" != "$new_id" && -z "$(docker ps -aq --filter "an
   # No force: Docker keeps images that still have other tags/references.
   docker image rm "$old_id" || echo 'Previous image retained because it is still referenced.'
 fi
-browser_ok=true
-if $browser && ! browser_works; then browser_ok=false; fi
 if [[ "$role" == central ]]; then
   # TLS proxy (Caddy) publishes the loopback-only Console on ports 80/443.
   "${compose[@]}" up --detach tls-proxy || { echo 'Console is running, but the TLS proxy failed to start; check ports 80/443.' >&2; exit 1; }
@@ -313,6 +264,6 @@ if [[ "$role" == central ]]; then
   admin=$(env_value CENTRAL_ADMIN_USERNAME)
   echo "Central: https://$(env_value CENTRAL_DOMAIN) (sign in as ${admin:-admin})"
 fi
-if $browser; then
-  if $browser_ok; then echo 'Browser: ready (sandboxed Chromium).'; else browser_help; fi
+if [[ -n "$(env_value BROWSER_ENABLED)" ]]; then
+  echo 'Note: the Browser app has been removed; delete the BROWSER_ENABLED line from .env.'
 fi

@@ -67,17 +67,15 @@ test('HTTP and gRPC-Web bytes travel through the same stream with backpressure',
     expect(result).toEqual(body);agent.destroy();
   }finally{link.close();upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));}
 });
-test('gateway allowlists are purpose-specific and metadata, Docker and fallback ports are refused',async()=>{
+test('gateway tunnels serve only the fixed SSH and ChirpStack purposes',async()=>{
   const request={v:1 as const,type:'tunnel-open' as const,id:'t',purpose:'ssh' as const,host:'ssh',port:22};
   expect(await gatewayTarget(request,{})).toEqual({host:'127.0.0.1',port:22});
+  expect(await gatewayTarget(request,{AGENT_SSH_PORT:'2222'})).toEqual({host:'127.0.0.1',port:2222});
   await expect(gatewayTarget({...request,port:2375},{})).rejects.toThrow();
-  for(const [host,port] of [['169.254.169.254',80],['127.0.0.1',2375],['127.0.0.1',3011],['192.168.1.2',80]] as const){
-    await expect(gatewayTarget({...request,purpose:'browser',host,port},{})).rejects.toThrow();
-  }
-  expect(await gatewayTarget({...request,purpose:'browser',host:'192.168.1.2',port:80},{AGENT_BROWSER_ALLOW_LAN:'true'})).toEqual({host:'192.168.1.2',port:80});
-  // The fallback port stays blocked even if an owner allowlists it for Browser.
-  await expect(gatewayTarget({...request,purpose:'browser',host:'127.0.0.1',port:3011},{AGENT_BROWSER_PORTS:'3011'})).rejects.toThrow();
-  await expect(gatewayTarget({...request,purpose:'browser',host:'127.0.0.1',port:4011},{AGENT_BROWSER_PORTS:'4011',GATEWAY_FALLBACK_PORT:'4011'})).rejects.toThrow();
+  await expect(gatewayTarget({...request,purpose:'chirpstack',host:'chirpstack',port:3011},{})).rejects.toThrow();
+  // The removed Browser purpose, or anything else, is refused.
+  for(const [host,port] of [['127.0.0.1',80],['192.168.1.2',8080]] as const)
+    await expect(gatewayTarget({...request,purpose:'browser' as never,host,port},{})).rejects.toThrow();
 });
 
 test('closing the agent link destroys active streams and refuses new sessions',async()=>{
@@ -86,18 +84,9 @@ test('closing the agent link destroys active streams and refuses new sessions',a
   const port=(upstream.address() as import('net').AddressInfo).port;
   const link=pair(async()=>({host:'127.0.0.1',port}));
   try{
-    const stream=await link.central.open('browser','localhost',80);
+    const stream=await link.central.open('chirpstack','chirpstack',8080);
     const closed=once(stream,'close');link.close();await closed;
     expect(stream.destroyed).toBe(true);
-    await expect(link.central.open('browser','localhost',80)).rejects.toThrow('unavailable');
+    await expect(link.central.open('chirpstack','chirpstack',8080)).rejects.toThrow('unavailable');
   }finally{link.close();upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));}
-});
-
-test('browser-purpose local names cannot hide public DNS answers or the custom SSH port',async()=>{
-  const request={v:1 as const,type:'tunnel-open' as const,id:'fixture',purpose:'browser' as const,host:'meter.lan',port:8080};
-  const lookup=jest.spyOn(destinations,'resolveTarget').mockResolvedValue({hostname:'meter.lan',address:'8.8.8.8',family:4,classification:'local'});
-  try{await expect(gatewayTarget(request,{AGENT_BROWSER_ALLOW_LAN:'true'})).rejects.toThrow('local destinations');
-    lookup.mockResolvedValue({hostname:'meter.lan',address:'127.0.0.1',family:4,classification:'local'});
-    await expect(gatewayTarget({...request,port:2222},{AGENT_SSH_PORT:'2222',AGENT_BROWSER_PORTS:'2222'})).rejects.toThrow('infrastructure port');
-  }finally{lookup.mockRestore();}
 });

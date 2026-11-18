@@ -1,7 +1,7 @@
 /** Versioned, bounded vocabulary. There is deliberately no command/script RPC. */
 export const MAX_MESSAGE_BYTES = 65536;
 export const MAX_TUNNEL_CHUNK = 16384;
-export type TunnelPurpose = 'ssh' | 'chirpstack' | 'browser';
+export type TunnelPurpose = 'ssh' | 'chirpstack';
 export type Health = { version: string; uptime: number; mqtt: 'connected' | 'disconnected' | 'connecting';
   fallback: boolean; queueDepth: number; updatesEnabled: boolean; uncertain: number; reconciled: number; superseded: number;
   lastError: 'none' | 'mqtt' | 'central' | 'local' | 'storage' | 'update' };
@@ -87,7 +87,7 @@ export function parseMessage(input: Buffer | string, direction: 'agent' | 'centr
     case 'tunnel-credit': valid = keys('id', 'bytes') && id(value.id) && integer(value.bytes, 1, 65536); break;
     case 'tunnel-close': valid = keys('id', 'reason') && id(value.id) && isOneOf(value.reason, ['closed', 'refused', 'timeout', 'limit', 'disconnected', 'error']); break;
     case 'tunnel-open': valid = direction === 'central' && keys('id', 'purpose', 'host', 'port') && id(value.id) &&
-      isOneOf(value.purpose, ['ssh', 'chirpstack', 'browser']) && typeof value.host === 'string' &&
+      isOneOf(value.purpose, ['ssh', 'chirpstack']) && typeof value.host === 'string' &&
       value.host.length > 0 && value.host.length <= 253 && !/[\s\x00-\x1f/@?#%]/.test(value.host) && integer(value.port, 1, 65535); break;
     case 'decision': valid = direction === 'central' && keys('id', 'devEui', 'fPort', 'confirmed', 'data') && id(value.id) &&
       typeof value.devEui === 'string' && /^[a-fA-F0-9]{16}$/.test(value.devEui) && value.fPort === 2 && value.confirmed === false &&

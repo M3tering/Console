@@ -8,7 +8,7 @@ import { GatewayHub } from '../../src/central/hub';
 import { SocketDecider, parseOperation } from '../../src/central/rpc';
 import { DurableProcessor } from '../../src/central/processor';
 import { LocalDecider, fallbackServer } from '../../src/central/local-channel';
-import { protectBrowserSockets, registerSocket } from '../../src/services/socket-router';
+import { protectSessionSockets, registerSocket } from '../../src/services/socket-router';
 import { hashPassword } from '../../src/central/secrets';
 import type { UplinkEvent } from '../../src/central/protocol';
 
@@ -23,7 +23,7 @@ async function fixture(){
   const compute=jest.fn(async(event,sink)=>sink({devEui:event.deviceInfo.devEui,fPort:2,confirmed:false,bytes:[1,0,0,0,0,0,0,0,0]}));
   const processor=new DurableProcessor(':memory:',compute);
   const hub=new GatewayHub(store,auth,()=>processor,true),app=express(),server=http.createServer(app);
-  auth.mount(app,hub.machineRoutes);app.use(express.json());protectBrowserSockets(server,auth.authorize);hub.mount(app,server);
+  auth.mount(app,hub.machineRoutes);app.use(express.json());protectSessionSockets(server,auth.authorize);hub.mount(app,server);
   const terminal=new WebSocket.Server({noServer:true});registerSocket(server,'/terminal',terminal);
   const base=await start(server);
   const g=store.createGateway('Fixture gateway','test'),token=store.enrollment(g.id,'test');

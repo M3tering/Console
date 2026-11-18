@@ -121,7 +121,7 @@ and upgrade dispatch; agent upgrades need separate credential authentication.
 | Terminal `/terminal` | `ssh2` to `127.0.0.1:22`; browser supplies SSH credentials, resize and input | Keep direct local SSH | `ssh2` over purpose-limited agent TCP stream; audit sessions |
 | ChirpStack `/chirpstack/*` | HTTP/gRPC-Web reverse proxy to optional ChefStack/web URL or `CHIRPSTACK_HOST:8080` | Keep local streaming proxy | Same proxy through selected agent, no central local-network access |
 | M3ter Manager `/api/m3ter-manager/*`, live stream | Own login, MQTT observations, SQLite history, REST device/queue management | Remove | Remove |
-| Browser | Explicit URLs framed; Google searches open another tab | Replace with optional remote engine; local traffic reaches this machine | Remote engine; private traffic reaches selected gateway only |
+| Browser | Explicit URLs framed; Google searches open another tab | Removed | Removed |
 | Paint | Browser canvas, pointer drawing, undo, image export | Unchanged client-side | Unchanged client-side |
 | Settings / themes / toggle / desktop preferences | Local storage, four themes, icon layout, window control | Unchanged | Unchanged, with gateway selection added separately |
 | App feedback / actions | App-scoped dialogs, notifications, extension action calls | Unchanged | Authenticated actions; selected gateway context where relevant |

@@ -1,7 +1,7 @@
 (() => {
   const $=id=>document.getElementById(id);
   const switcher=$('gateway-switcher'),menu=$('gateway-menu'),options=$('gateway-options'),dialog=$('gateway-dialog'),list=$('gateway-list'),confirmDialog=$('gateway-confirm');
-  const NETWORK_APPS=['terminal','chirpstack','browser'],TOKEN_LIFETIME=10*60000,CENTRAL_NAME='Central server';
+  const NETWORK_APPS=['terminal','chirpstack'],TOKEN_LIFETIME=10*60000,CENTRAL_NAME='Central server';
   let gateways=[],selected=null,busy=false,again=false,editing=null,focusRename=false,tokenTimer=null;
   const openUpdates=new Set();
 
@@ -85,7 +85,7 @@
     } else card.replaceChildren(el('div',{class:'gw-current-head','data-state':'central'},
         el('span',{class:'gw-dot','aria-hidden':'true'}),
         el('div',{class:'gw-title'},el('strong',{class:'gw-name',text:CENTRAL_NAME}),el('small',{text:'No gateway selected'}))),
-      el('p',{class:'gw-current-empty',text:'Terminal, Browser and ChirpStack open on the central server. Choose a gateway to work on it instead.'}));
+      el('p',{class:'gw-current-empty',text:'Terminal and ChirpStack open on the central server. Choose a gateway to work on it instead.'}));
     const choices=gateways.filter(g=>!g.revoked);
     // A refresh rebuilds the list; keep keyboard focus on the same option.
     const focused=options.contains(document.activeElement)?document.activeElement.dataset.gateway:null;

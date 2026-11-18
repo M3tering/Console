@@ -29,7 +29,7 @@ beforeEach(async()=>{
 afterEach(()=>store.close());
 const secure={'x-forwarded-proto':'https'};
 test('every central app route is protected, including static assets, proxies and health',async()=>{
-  for(const url of ['/','/healthz','/api/actions/streamr/publish-now','/chirpstack/','/js/desktop.js','/api/gateways','/api/browser']) {
+  for(const url of ['/','/healthz','/api/actions/streamr/publish-now','/chirpstack/','/js/desktop.js','/api/gateways']) {
     const result=await request(app,url,{headers:secure});expect(result.status).toBe(url==='/'?303:401);
   }
   expect((await request(app,'/login',{headers:secure})).status).toBe(200);

@@ -640,11 +640,7 @@ The old **M3ters** meter-list application has been removed from the desktop,
 along with its exclusive `/delete-meter` UI endpoint. The collector's database,
 MQTT service, and meter records are preserved. The removed M3ter Manager is no longer available.
 
-The Browser uses an optional isolated Chromium engine inside the Console window,
-including Google searches, back/forward navigation, copy/paste and touch scrolling.
-No site is embedded in an iframe. Without the optional browser image it shows an
-engine-unavailable message while the rest of Console remains usable. See the
-[Browser deployment instructions](docs/centralized/deployment.md#optional-browser-engine).
+The Browser app has been removed, along with its optional Chromium image.
 
 `compose.yaml` passes the existing `.env` into the single Console container,
 which hosts the collector. The update script leaves that file and persistent
@@ -689,7 +685,7 @@ integration tests are complete.
 The default `standalone` role preserves the local collector and LAN desktop.
 `central` adds authenticated multi-gateway access; `gateway` keeps a local fallback
 Console while an outbound agent owns MQTT. The same default multi-architecture
-image contains both entry points. Browser and updater are optional Docker targets.
+image contains both entry points. The signed updater is an optional Docker target.
 
 The central selector identifies each gateway and displays uncertain, reconciled
 and pending operation counts. Stored decisions are keyed by ChirpStack event ID.
@@ -698,9 +694,8 @@ reconciliation; uncertainty never generates an OFF reply or automatic second
 attempt. The next report supersedes an unresolved old reply. Existing revenue
 checks remain fail-closed for actual new decisions.
 
-Central Terminal and ChirpStack use purpose-limited gateway tunnels. With a gateway
-selected, Browser local traffic goes to that gateway, never central's internal network.
-With **Central server** selected (no gateway), Terminal, Browser and ChirpStack work on
+Central Terminal and ChirpStack use purpose-limited gateway tunnels.
+With **Central server** selected (no gateway), Terminal and ChirpStack work on
 the central machine itself; see the [deployment guide](docs/deployment-guide.md#working-on-the-central-server-itself). The
 separate, owner-enabled updater verifies provenance and replaces Console/agent by
 digest together, with rollback and persistent data preservation.
