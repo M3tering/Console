@@ -61,6 +61,10 @@ test('central with no gateway selected browses the central host directly',async(
       expect((await get(port,url,permit.token)).body).toBe('central fixture');
     }
     expect(tunnel).not.toHaveBeenCalled();
+    // localhost resolving to ::1 first must still reach an IPv4-only service.
+    const v6first=new BrowserProxy({role:'central',key,cert,resolve:async host=>({hostname:host,address:'::1',family:6,classification:'local'})});const v6port=await v6first.listen();
+    try{const url=`http://localhost:${localPort}/`,permit=await v6first.permit(url,'GET',typed);expect((await get(v6port,url,permit.token)).body).toBe('central fixture');}
+    finally{v6first.close();}
     await expect(proxy.permit('http://169.254.169.254/','GET',typed)).rejects.toThrow();
     await expect(proxy.permit(`http://127.0.0.1:${localPort}/`,'GET',{pageClass:'public',topLevel:false,userNavigation:false})).rejects.toThrow('Public pages');
   }finally{proxy.close();upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));}

@@ -101,8 +101,19 @@ export class BrowserProxy {
     }
     // With a gateway selected, private addresses belong to that gateway and never fall through to the central host.
     if(this.options.role==='central'&&this.options.gateway&&permit.target.classification!=='public')throw new Error('Private destinations go through the selected gateway.');
+    // "localhost" may resolve to ::1 first while the service listens only on 127.0.0.1
+    // (or the reverse), so try both loopback addresses for loopback names.
+    const name=permit.target.hostname,loopbackName=name==='localhost'||name.endsWith('.localhost');
+    const addresses=[...new Set([permit.target.address,...(loopbackName?['127.0.0.1','::1']:[])])];
+    let failure:unknown;
+    for(const address of addresses){
+      try{return await this.dial(address,port);}catch(error){failure=error;}
+    }
+    throw failure;
+  }
+  private dial(host:string,port:number):Promise<net.Socket>{
     return new Promise((resolve,reject)=>{
-      const socket=net.connect({host:permit.target.address,port});
+      const socket=net.connect({host,port});
       socket.setTimeout(10000,()=>socket.destroy(new Error('Connection timed out.')));
       socket.once('error',reject);socket.once('connect',()=>{socket.setTimeout(0);resolve(socket);});
     });
