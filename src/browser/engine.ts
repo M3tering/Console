@@ -21,6 +21,7 @@ export class BrowserEngine {
   private main='';private typed?:string;private closed=false;private ready=false;
   private width=1024;private height=700;private current='about:blank';private activity=Date.now();private born=Date.now();
   private timer?:ReturnType<typeof setInterval>;private queued=false;
+  private lastFrame=0;private stillTimer?:ReturnType<typeof setTimeout>;
   private starting?:Promise<void>;private stopProcess?:()=>Promise<void>;
   constructor(private options:EngineOptions){}
   start():Promise<void>{
@@ -71,12 +72,12 @@ export class BrowserEngine {
         if(!event.frame.parentId){this.main=event.frame.id;this.current=event.frame.url;this.options.emit({type:'navigation',url:this.current});void this.status();}
       });
       cdp.on('Page.frameDetached',(event:{frameId:string})=>this.frames.delete(event.frameId));
-      cdp.on('Page.loadEventFired',()=>void this.status());
+      cdp.on('Page.loadEventFired',()=>{void this.status();this.ensureFrame();});
       cdp.on('Page.frameStartedLoading',()=>this.options.emit({type:'loading',value:true}));
-      cdp.on('Page.frameStoppedLoading',()=>this.options.emit({type:'loading',value:false}));
+      cdp.on('Page.frameStoppedLoading',()=>{this.options.emit({type:'loading',value:false});this.ensureFrame();});
       cdp.on('Page.windowOpen',(event:{url:string;userGesture:boolean})=>{if(event.userGesture)void this.navigate(event.url);});
       cdp.on('Page.screencastFrame',(frame:{data:string;sessionId:number})=>{
-        this.options.emit({type:'frame',data:frame.data,width:this.width,height:this.height});void cdp.call('Page.screencastFrameAck',{sessionId:frame.sessionId}).catch(()=>{});
+        this.lastFrame=Date.now();this.options.emit({type:'frame',data:frame.data,width:this.width,height:this.height});void cdp.call('Page.screencastFrameAck',{sessionId:frame.sessionId}).catch(()=>{});
       });
       cdp.on('closed',()=>this.close());
       await cdp.call('Page.enable');await cdp.call('Network.enable');
@@ -88,7 +89,7 @@ export class BrowserEngine {
       const tree=await cdp.call<{frameTree:{frame:{id:string}}}>('Page.getFrameTree');this.main=tree.frameTree.frame.id;
       await cdp.call('Page.startScreencast',{format:'jpeg',quality:75,maxWidth:1600,maxHeight:1200,everyNthFrame:1});
       if(this.closed)throw new Error('Browser session closed.');
-      this.ready=true;this.options.emit({type:'ready',url:'about:blank'});
+      this.ready=true;this.options.emit({type:'ready',url:'about:blank'});this.ensureFrame();
       this.timer=setInterval(()=>{if(Date.now()-this.activity>10*60000||Date.now()-this.born>60*60000)this.close();},5000);this.timer.unref();
     }catch(error){this.close();throw error;}
   }
@@ -142,9 +143,23 @@ export class BrowserEngine {
     if(this.queued||!this.cdp)return;this.queued=true;
     try{const title=await this.cdp.call<{result:{value?:string}}>('Runtime.evaluate',{expression:'document.title',returnByValue:true});this.options.emit({type:'navigation',url:this.current,title:(title.result.value||'Browser').slice(0,200)});}catch{}finally{this.queued=false;}
   }
+  /** Chromium's screencast only sends a frame when something repaints, so a static page can
+   * finish loading without one and the viewer would stay blank. If no frame follows a load
+   * shortly, send a still screenshot instead; a real screencast frame always takes priority. */
+  private ensureFrame():void{
+    clearTimeout(this.stillTimer);const since=Date.now();
+    this.stillTimer=setTimeout(()=>{void (async()=>{
+      const cdp=this.cdp;if(!cdp||this.closed||this.lastFrame>=since)return;
+      try{
+        const shot=await cdp.call<{data:string}>('Page.captureScreenshot',{format:'jpeg',quality:75});
+        if(!this.closed&&this.lastFrame<since){this.lastFrame=Date.now();this.options.emit({type:'frame',data:shot.data,width:this.width,height:this.height});}
+      }catch{/* The next screencast frame or load will try again. */}
+    })();},400);
+    this.stillTimer.unref?.();
+  }
   close():void{
     if(this.closed)return;
-    this.closed=true;this.ready=false;clearInterval(this.timer);
+    this.closed=true;this.ready=false;clearInterval(this.timer);clearTimeout(this.stillTimer);
     this.cdp?.close();this.browser?.close();
     // Startup may still be writing certificates or opening a CDP connection.
     // Wait for it and Chromium's stdio/process closure before removing the profile.

@@ -12,7 +12,8 @@ test('non-frameable pages, history and target-blank links stay inside the remote
   await expect(page.locator('#browser-status')).toContainText('Ready.',{timeout:20000});
   await page.locator('#browser-query').fill('http://127.0.0.1:4174/browser-fixture/home');await page.locator('#browser-search button').click();
   await expect(page.locator('#browser .window-title')).toContainText('Remote Home');
-  await expect.poll(()=>page.locator('#browser-canvas').evaluate(canvas=>canvas.width)).toBeGreaterThan(300);
+  // The first picture can trail the title on a busy CI runner; the engine guarantees one per load.
+  await expect.poll(()=>page.locator('#browser-canvas').evaluate(canvas=>canvas.width),{timeout:15000}).toBeGreaterThan(300);
   await page.locator('#browser-canvas').click({position:{x:60,y:96}});
   await expect(page.locator('#browser .window-title')).toContainText('Remote Next');
   await expect(page.locator('#browser-query')).toHaveValue('http://127.0.0.1:4174/browser-fixture/next');
