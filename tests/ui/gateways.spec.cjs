@@ -208,3 +208,25 @@ test('the account dialog changes the password and reports mistakes',async({page}
   await page.getByRole('button',{name:'Close',exact:true}).click();
   await expect(page.locator('#account-dialog')).toBeHidden();
 });
+
+test('Streamr follows this tab\'s target on central and refreshes when it changes',async({page})=>{
+  const gateways=[{id:'gateway-one',name:'North gateway',online:true,revoked:false,enrolled:true,health:{mqtt:'connected'},updates:[]}];
+  const targets=[];
+  await page.route('**/api/gateways',route=>route.fulfill({json:{gateways}}));
+  await page.route('**/api/apps/streamr/status',route=>{
+    const target=route.request().headers()['x-console-target'];targets.push(target);
+    const gateway=target==='gateway-one';
+    return route.fulfill({json:{role:'central',scope:gateway?"Showing readings from North gateway's meters. Central publishes for every gateway together.":'Showing readings from every gateway. Central publishes them on the schedule below.',
+      recordCount:gateway?2:5,pendingCount:gateway?0:3,uncertainCount:gateway?0:1,canPublish:true,lastPublishTime:null,lastPublishStatus:null}});
+  });
+  await page.goto('/?central=1');
+  await page.evaluate(()=>Desktop.launch('streamr'));
+  await expect(page.locator('[data-streamr-field="scope"]')).toContainText('every gateway');
+  await expect(page.locator('[data-streamr-field="pending"]')).toHaveText('3');
+  await expect(page.locator('[data-streamr-field="uncertain"]')).toContainText('1 with an uncertain outcome');
+  await page.locator('#gateway-switcher').click();await page.getByRole('option',{name:/North gateway/}).click();
+  await page.evaluate(()=>Desktop.launch('streamr'));
+  await expect(page.locator('[data-streamr-field="scope"]')).toContainText("North gateway's meters");
+  await expect(page.locator('[data-streamr-field="pending"]')).toHaveText('0');
+  expect(targets).toContain('central');expect(targets).toContain('gateway-one');
+});

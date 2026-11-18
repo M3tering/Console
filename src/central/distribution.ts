@@ -20,7 +20,21 @@ export class PublicationStore {
   private finish(destination:string,records:TransactionRecord[],state:string):void {
     this.db.transaction(()=>{for(const r of records)this.db.prepare('UPDATE managed_publications SET state=? WHERE destination=? AND tokenId=? AND nonce=?').run(state,destination,r.identifier,r.nonce);})();
   }
+  /** Records not yet submitted to every destination, and how many have an uncertain outcome. */
+  status(destinations:string[],records:TransactionRecord[]):{pending:number;uncertain:number}{
+    const state=this.db.prepare('SELECT state FROM managed_publications WHERE destination=? AND tokenId=? AND nonce=?');
+    let pending=0,uncertain=0;
+    for(const record of records){
+      const states=destinations.map(d=>(state.get(d,record.identifier,record.nonce) as {state:string}|undefined)?.state);
+      if(states.some(s=>s===undefined))pending++;else if(states.some(s=>s!=='submitted'))uncertain++;
+    }
+    return {pending,uncertain};
+  }
   close():void{this.db.close();}
+}
+/** Central only: publication progress for these records; null elsewhere. */
+export function publicationStatus(destinations:string[],records:TransactionRecord[]):{pending:number;uncertain:number}|null{
+  return process.env.CONSOLE_ROLE==='central'&&publications?publications.status(destinations,records):null;
 }
 export function publishManaged<T>(destination:string,records:TransactionRecord[],send:(records:TransactionRecord[])=>Promise<T>):Promise<T|null>{
   if(process.env.CONSOLE_ROLE==='gateway')return Promise.resolve(null);

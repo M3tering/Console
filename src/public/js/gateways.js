@@ -13,6 +13,8 @@
     const frame=$('chirpstack-frame'),src=`/chirpstack/~${encodeURIComponent(selected||'central')}/`;
     // Unload the previous target's ChirpStack; the next launch loads this one.
     if(frame&&frame.dataset.src!==src){frame.dataset.src=src;if(frame.hasAttribute('src')){frame.src='about:blank';frame.removeAttribute('src');}}
+    // Apps that show per-gateway data (such as Streamr) refresh for the new target.
+    document.dispatchEvent(new CustomEvent('console:target',{detail:{target:selected||'central'}}));
   }
   const openUpdates=new Set();
 

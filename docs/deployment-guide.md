@@ -164,6 +164,19 @@ same meter. Fix the error shown and run the script again.
 The gateway's own LAN desktop at `http://<gateway-ip>:3000` keeps working, without
 a login.
 
+## The Streamr app
+
+| Where | What it shows | Publish Now |
+|---|---|---|
+| Standalone | Readings stored on this Console, waiting to be published | Publishes them to every configured stream |
+| Central, **Central server** selected | Readings from every gateway not yet published to every stream, plus any with an uncertain outcome | Publishes what is waiting, for every gateway |
+| Central, a gateway selected | The same, but only for meters served by that gateway | Same as above: central always publishes for every gateway together |
+| A managed gateway's own Console | How many readings are kept locally; central publishes them | Hidden |
+
+The window refreshes when you open it, after **Publish Now**, when you switch gateway and every 30
+seconds while open. **Last publish** covers both the hourly job and **Publish Now**. Central never
+resends a reading whose earlier publish had an uncertain outcome.
+
 ## Managing gateways on central
 
 Open **Gateways** from the top bar. Each gateway is a card.
@@ -344,13 +357,23 @@ are listed in [`.env.example`](../.env.example) and
 
 ## Troubleshooting
 
-Useful commands, using the compose file for the machine's role
-(`compose.yaml`, `compose.central.yaml` or `compose.gateway.yaml`):
+**Logs on any machine.** In the Console folder, plain Compose commands follow whatever role is
+running there: central (Console and HTTPS proxy), a managed gateway (Console and agent) or standalone.
 
 ```sh
-docker compose -f compose.gateway.yaml ps
-docker compose -f compose.gateway.yaml logs -f console
+docker compose logs -f            # every service of this role
+docker compose logs -f agent      # one service
+docker compose ps
+```
+
+This works because `./auto-compose.sh` keeps two lines in `.env` up to date after each successful
+deploy: `COMPOSE_FILE` (the role's compose file) and `COMPOSE_PROJECT_NAME`. It doesn't change
+anything else in the file. The explicit form still works and is what you need for the gateway
+updater, whose compose file is only added by the script:
+
+```sh
 docker compose -f compose.gateway.yaml logs -f agent
+docker compose -f compose.gateway.yaml -f compose.updater.yaml logs -f updater
 ```
 
 **Following a meter report.** Each step logs one line with the reading and the reply:
@@ -379,8 +402,50 @@ The full signature and meter key are shortened in the logs; keys and tokens neve
 | Gateway: `Port 3011 is already used by …` | Another program uses the gateway Console's local fallback port. Add `GATEWAY_FALLBACK_PORT=3101` (any free port) to `.env` and rerun. Older setups used 3001, which clashes with ChirpStack's Basic Station bridge. |
 | Gateway: agent online once, then **Offline** for good | Usually the gateway Console couldn't start, often because of a port clash. Check `logs console` and rerun `./auto-compose.sh`; it now says what's wrong. |
 | Gateway: `This gateway is not enrolled yet` | Add the `AGENT_ENROLLMENT_TOKEN` line from central. |
+| Every reply is `state=OFF`; logs show `Failed to resolve ENS name: base-sepolia.verifier.unruggable.eth` | Known issue, see [Every meter is switched OFF](#known-issue-every-meter-is-switched-off). |
 | Gateway: `Agent enrollment failed` in agent logs | The token expired or was already used. Get a new one from the gateway's card. |
 | Gateway card stays **Waiting to connect** | The gateway can't reach central on port 443, or `CENTRAL_URL` is wrong. Try `curl -I https://console.example.com` from the gateway. |
 | Gateway card shows **Offline** after a revoke/delete | Expected. To reconnect, see [Reconnecting a revoked or deleted gateway](#managing-gateways-on-central). |
 | `Secret file must be owner-only` in logs | Someone changed permissions in `.data/agent/`. Run `./auto-compose.sh` again; it repairs them. |
 | Script says *standalone was NOT restarted* | The agent had started handling reports when something failed. Fix the error shown and rerun; don't start standalone by hand. |
+
+## Known issue: every meter is switched OFF
+
+**Status:** open, not fixed in this repository (checked 2026-11-18).
+
+**Symptom.** Every state reply is OFF (`hex=000000000000000000`), whoever decides it. The deciding
+Console logs:
+
+```text
+[error] [utils] Extension hook isOnStateCompute failed: Failed to resolve ENS name: base-sepolia.verifier.unruggable.eth
+[error] [Device-…] Could not determine meter power state, so the reply is OFF: 1 extension(s) failed in isOnStateCompute
+```
+
+**Cause.** The ON/OFF rule (`core/is_on`) switches a meter ON only when its revenue covers what it
+owes. Revenue is read through the verifiers listed in the CCIP revenue reader contract
+(`CCIP_REVENUE_READER_ADDRESS`, default `0xD648cdF47e9534B2FCfb18C1E94CA9AAff07BA0E` on Sepolia).
+That contract lists exactly one verifier, `base-sepolia.verifier.unruggable.eth` (target
+`0xC08E39789A93230069c956e76B0c10cbC83D903e`). That ENS name has no address record, neither
+on Sepolia (no resolver) nor on Ethereum mainnet (a resolver, but no address for any chain), so
+the revenue lookup fails and the safe default, OFF, is used.
+
+This is not a Console bug and not specific to one machine: central and gateways give the same
+result. Check it from any Console with:
+
+```sh
+docker compose -f compose.central.yaml exec console node -e "const {JsonRpcProvider}=require('ethers');new JsonRpcProvider(process.env.MAINNET_RPC).resolveName('base-sepolia.verifier.unruggable.eth').then(a=>console.log('resolved',a))"
+```
+
+`resolved null` means the issue is still present.
+
+**Possible fixes (not done yet).**
+
+- Have the revenue reader contract's owner update its verifier entry to a name (or verifier) that
+  currently resolves. Unruggable's [verifier deployments](https://gateway-docs.unruggable.com/verifiers/deployments)
+  page says its verifiers are deployed on Ethereum mainnet and Sepolia.
+- Point `CCIP_REVENUE_READER_ADDRESS` at a revenue reader whose verifiers resolve.
+- Add a Console setting that maps a verifier name to a known verifier address, so a broken ENS
+  record can be bypassed.
+
+Until then, meters stay OFF. Billing still records every reading; only the state reply is affected.
+

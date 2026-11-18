@@ -4,7 +4,8 @@ import express, { Express, Request, Response } from 'express';
 import { requireSameOrigin } from './auth';
 import { proxyChirpstack, proxyChirpstackThrough } from './chirpstack';
 import { createLogger } from '../utils/logger';
-import { getUIComponents, invokeUIAction } from '../lib/utils';
+import { getUIComponents, invokeUIAction, getUIExtension } from '../lib/utils';
+import type { UIStatusContext } from '../types';
 import { central, config } from '../central/runtime';
 import { centralChirpstackUrl } from '../central/config';
 import { protectSessionSockets } from './socket-router';
@@ -70,6 +71,26 @@ app.get('/', async (req: Request, res: Response, next) => {
 
     res.render('index', { icons, windows, central:config.role==='central' });
     logger.info('Server handled GET request at `/`');
+  } catch (error) { next(error); }
+});
+
+// Live status for an app window. On central the tab names its target in X-Console-Target,
+// so an app can show one gateway's meters (or everything, for the central server).
+app.get('/api/apps/:moduleId/status', async (req: Request, res: Response, next) => {
+  try {
+    const ext = getUIExtension(req.params.moduleId);
+    if (!ext?.getStatusData) { res.status(404).json({ error: 'This app has no status.' }); return; }
+    const context: UIStatusContext = {};
+    if (central) {
+      const target = central.hub.target(String(req.headers['x-console-target'] || ''));
+      if (!target) { res.status(404).json({ error: 'That gateway is no longer available.' }); return; }
+      if (target.gateway) {
+        context.gateway = target.gateway;
+        context.gatewayName = central.identities.gateways().find(g => g.id === target.gateway)?.name;
+        context.devEuis = central.identities.devices().filter(d => d.gateway === target.gateway).map(d => d.devEui);
+      }
+    }
+    res.json(await ext.getStatusData(context));
   } catch (error) { next(error); }
 });
 

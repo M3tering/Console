@@ -54,7 +54,8 @@ export class GatewayHub {
         if(typeof value==='object'&&value!==null&&'type' in value&&value.type==='operation'){
           let message;try{message=parseOperation(data.toString());if(message.type!=='operation')throw new Error();}catch{socket.close(1008,'Invalid operation');return;}
           inFlight++;
-          void serveOperation(this.processor(),gateway,message).then(reply=>{if(!reply.error&&message.action==='offer'&&message.event)this.identities.observeDevice(message.event.deviceInfo.devEui,gateway);if(socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify(reply));}).catch(()=>socket.close(1011,'Operation storage unavailable')).finally(()=>inFlight--);
+          void serveOperation(this.processor(),gateway,message).then(reply=>{// Learn which gateway serves a meter, also from reports it decided while central was away.
+            if(!reply.error&&(message.action==='offer'||message.action==='reconcile')&&message.event)this.identities.observeDevice(message.event.deviceInfo.devEui,gateway);if(socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify(reply));}).catch(()=>socket.close(1011,'Operation storage unavailable')).finally(()=>inFlight--);
           return;
         }
         try {

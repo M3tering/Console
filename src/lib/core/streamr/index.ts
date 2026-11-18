@@ -6,6 +6,7 @@ import type { Hooks, TransactionRecord } from "../../../types";
 import { getSyncedPendingTransactions } from "../../sync";
 import { createLogger } from "../../../utils/logger";
 import { managedRole, publishManaged } from '../../../central/distribution';
+import { recordPublish } from "./state";
 
 const logger = createLogger("[streamr]");
 
@@ -44,7 +45,7 @@ export default class implements Hooks {
                 2000,
               );
             }),
-          );
+          ).then(() => recordPublish('success', pendingTransactions.length), error => { recordPublish('error'); throw error; });
         }
       },
       { name: "streamr-publish-pending-transactions", noOverlap: true },

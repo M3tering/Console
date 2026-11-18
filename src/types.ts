@@ -143,6 +143,7 @@ export interface UIAction {
  * UI Hooks interface for extending the console UI
  * Modules can implement this to add icons, windows, and actions to the web interface
  */
+export type UIStatusContext = { gateway?: string; gatewayName?: string; devEuis?: string[] };
 export type UIHooks = {
   /** Return an app icon to display on the desktop */
   getAppIcon?: () => UIAppIcon | Promise<UIAppIcon>;
@@ -150,6 +151,6 @@ export type UIHooks = {
   getAppWindow?: () => UIAppWindow | Promise<UIAppWindow>;
   /** Return available actions for this module */
   getActions?: () => UIAction[] | Promise<UIAction[]>;
-  /** Return metadata/status data for display */
-  getStatusData?: () => Record<string, any> | Promise<Record<string, any>>;
+  /** Return metadata/status data for display. On central, scoped to the tab's gateway when one is selected. */
+  getStatusData?: (context?: UIStatusContext) => Record<string, any> | Promise<Record<string, any>>;
 };

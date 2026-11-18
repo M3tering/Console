@@ -1,7 +1,8 @@
-import { getAllTransactionRecords } from "../../../store/sqlite";
+import { getAllTransactionRecords, getMeterByDevEui } from "../../../store/sqlite";
 import { buildBatchPayload, retry } from "../../utils";
-import { managedRole, publishManaged } from '../../../central/distribution';
-import type { UIHooks, UIAppIcon, UIAppWindow, UIAction, TransactionRecord } from "../../../types";
+import { managedRole, publishManaged, publicationStatus } from '../../../central/distribution';
+import { lastPublish, recordPublish } from './state';
+import type { UIHooks, UIAppIcon, UIAppWindow, UIAction, TransactionRecord, UIStatusContext } from "../../../types";
 import { StreamrClient } from "@streamr/sdk";
 import { createLogger } from "../../../utils/logger";
 
@@ -24,9 +25,7 @@ function escapeHtml(value: string): string {
  */
 export default class implements UIHooks {
   private streamIds: string[] = process.env.STREAMR_STREAM_ID ? process.env.STREAMR_STREAM_ID.split(",") : [];
-  private cronSchedule: string = process.env.STREAMR_CRONSCHEDULE || "Not configured";
-  private lastPublishTime: Date | null = null;
-  private lastPublishStatus: "success" | "error" | null = null;
+  private cronSchedule: string = process.env.STREAMR_CRONSCHEDULE || "0 * * * *";
 
   getAppIcon(): UIAppIcon {
     return {
@@ -38,10 +37,9 @@ export default class implements UIHooks {
   }
 
   async getAppWindow(): Promise<UIAppWindow> {
-    const pendingCount = (await this.getPendingTransactions()).length;
-    const streamIds = this.streamIds;
-    const cronSchedule = this.cronSchedule;
-
+    // First paint; /js/streamr.js keeps it current and follows the tab's gateway on central.
+    const status = await this.status();
+    const gateway = status.role === 'gateway';
     return {
       id: "streamr",
       title: "Streamr Publisher",
@@ -50,21 +48,23 @@ export default class implements UIHooks {
         <div class="page-heading">
           <div><span class="eyebrow">STREAMR NETWORK</span><h2>Keep the data flowing.</h2>
           <p>Publish your pending meter transactions to connected streams.</p></div>
-          <span class="count-badge">${pendingCount} pending</span>
+          <span class="count-badge" data-streamr-field="badge">${gateway ? "Central publishes" : `${status.pendingCount} pending`}</span>
         </div>
+        <p class="section-description" data-streamr-field="scope">${escapeHtml(status.scope)}</p>
         <div class="publisher-summary">
-          <div class="publisher-stat"><span>Pending transactions</span><strong>${pendingCount}</strong></div>
-          <div class="publisher-stat"><span>Last publish</span><strong id="streamr-last-publish">${this.lastPublishTime ? this.lastPublishTime.toLocaleString() : "Never"}</strong>
-          ${this.lastPublishStatus ? `<small>${this.lastPublishStatus === "success" ? "Published successfully" : "Publish failed"}</small>` : ""}</div>
+          <div class="publisher-stat"><span data-streamr-field="pending-label">${gateway ? "Readings kept here" : "Waiting to publish"}</span><strong data-streamr-field="pending">${gateway ? status.recordCount : status.pendingCount}</strong>
+          <small data-streamr-field="uncertain">${status.uncertainCount ? `${status.uncertainCount} with an uncertain outcome (not resent automatically)` : ""}</small></div>
+          <div class="publisher-stat"><span>Last publish</span><strong data-streamr-field="last">${status.lastPublishTime ? new Date(status.lastPublishTime).toLocaleString() : "Never"}</strong>
+          <small data-streamr-field="last-status">${status.lastPublishStatus ? (status.lastPublishStatus === "success" ? "Published successfully" : "Publish failed") : ""}</small></div>
         </div>
         <section class="publisher-config"><h3>Configuration</h3>
-          <div class="setting-row"><span>Publish schedule</span><code>${escapeHtml(cronSchedule)}</code></div>
+          <div class="setting-row"><span>Publish schedule</span><code>${escapeHtml(this.cronSchedule)}</code></div>
           <h3>Connected streams</h3>
-          <ul class="stream-list">${streamIds.map((id) => `<li><span class="status-dot" aria-hidden="true"></span><code>${escapeHtml(id)}</code></li>`).join("") || '<li>No streams configured.</li>'}</ul>
+          <ul class="stream-list">${this.streamIds.map((id) => `<li><span class="status-dot" aria-hidden="true"></span><code>${escapeHtml(id)}</code></li>`).join("") || '<li>No streams configured.</li>'}</ul>
         </section>
         <div class="publisher-actions">
-          <button class="nes-btn is-primary" onclick="invokeAction('streamr', 'publish-now', this)" ${pendingCount === 0 ? "disabled" : ""}>Publish Now</button>
-          <button class="nes-btn" onclick="location.reload()">Refresh</button>
+          <button class="nes-btn is-primary" data-streamr-field="publish" onclick="invokeAction('streamr', 'publish-now', this)" ${!status.canPublish || status.pendingCount === 0 ? "disabled" : ""} ${gateway ? "hidden" : ""}>Publish Now</button>
+          <button class="nes-btn" onclick="window.StreamrApp ? StreamrApp.refresh() : location.reload()">Refresh</button>
         </div>
       `,
     };
@@ -77,7 +77,7 @@ export default class implements UIHooks {
         label: "Publish Now",
         buttonClass: "is-warning",
         handler: async () => {
-          if (process.env.CONSOLE_ROLE === 'gateway') return { message: 'Publication is owned by the central Console. Local reports are retained for reconciliation.' };
+          if (process.env.CONSOLE_ROLE === 'gateway') return { message: 'Central publishes for managed gateways. Readings here are kept for reconciliation.' };
           const pendingTransactions = await this.getPendingTransactions();
 
           if (pendingTransactions.length === 0) {
@@ -92,15 +92,14 @@ export default class implements UIHooks {
               }),
             );
 
-            this.lastPublishTime = new Date();
-            this.lastPublishStatus = "success";
+            recordPublish("success", pendingTransactions.length);
 
             return {
-              message: managedRole() ? 'Central publication checked. Previously submitted or uncertain transactions are not resubmitted.' : `Published ${pendingTransactions.length} transactions to ${this.streamIds.length} stream(s)`,
+              message: managedRole() ? 'Published what was waiting, for every gateway. Readings already published, or with an uncertain outcome, are not sent again.' : `Published ${pendingTransactions.length} transactions to ${this.streamIds.length} stream(s)`,
               data: { count: pendingTransactions.length },
             };
           } catch (error: any) {
-            this.lastPublishStatus = "error";
+            recordPublish("error");
             throw new Error(`Failed to publish: ${error.message}`);
           }
         },
@@ -108,14 +107,32 @@ export default class implements UIHooks {
     ];
   }
 
-  async getStatusData(): Promise<Record<string, any>> {
-    const pendingTransactions = await this.getPendingTransactions();
+  async getStatusData(context?: UIStatusContext): Promise<Record<string, any>> {
+    return this.status(context);
+  }
+
+  /** What the window shows. Standalone: every stored reading is waiting. Central: readings not
+   * yet submitted to every stream, optionally only one gateway's meters. Gateway: central publishes. */
+  async status(context: UIStatusContext = {}) {
+    const role = (process.env.CONSOLE_ROLE || "standalone") as "standalone" | "central" | "gateway";
+    let records = await this.getPendingTransactions();
+    if (context.devEuis) {
+      const tokens = new Set(context.devEuis.map((devEui) => getMeterByDevEui(devEui)?.tokenId).filter((id) => id !== undefined));
+      records = records.filter((record) => tokens.has(record.identifier));
+    }
+    const progress = publicationStatus(this.streamIds.map((id) => `streamr:${id}`), records);
+    const scope = role === "gateway" ? "This gateway is managed by central, which publishes its readings to Streamr."
+      : role === "central" ? (context.gateway ? `Showing readings from ${context.gatewayName || "this gateway"}'s meters. Central publishes for every gateway together.`
+        : "Showing readings from every gateway. Central publishes them on the schedule below.")
+      : "";
     return {
-      pendingCount: pendingTransactions.length,
-      streamIds: this.streamIds,
-      cronSchedule: this.cronSchedule,
-      lastPublishTime: this.lastPublishTime,
-      lastPublishStatus: this.lastPublishStatus,
+      role, scope, gateway: context.gateway || null,
+      recordCount: records.length,
+      pendingCount: role === "gateway" ? 0 : progress ? progress.pending : records.length,
+      uncertainCount: progress ? progress.uncertain : 0,
+      canPublish: role !== "gateway" && this.streamIds.length > 0,
+      streamIds: this.streamIds, cronSchedule: this.cronSchedule,
+      lastPublishTime: lastPublish.time, lastPublishStatus: lastPublish.status,
     };
   }
 
