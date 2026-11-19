@@ -12,7 +12,7 @@ export interface Operation {
   queueBefore: string[]; queueId: string | null; sequence: number; uncertainCounted: boolean;
 }
 export interface GatewayCounts { uncertain: number; reconciled: number; superseded: number; pending: number }
-export type OperationLog = (event: { gateway: string; id: string; state: OperationState }) => void;
+export type OperationLog = (event: { gateway: string; id: string; state: OperationState; owner?: Owner | null }) => void;
 type Row = Omit<Operation, 'event' | 'decision' | 'attempted' | 'queueBefore' | 'uncertainCounted'> & {
   event: string; decision: string | null; attempted: number; queueBefore: string; uncertainCounted: number;
 };
@@ -145,6 +145,6 @@ export class OperationJournal {
   }
   replays(target:Owner):Outcome[] {return (this.db.prepare('SELECT outcome FROM agent_replays WHERE target=? ORDER BY rowid').all(target) as Array<{outcome:string}>).map(row=>JSON.parse(row.outcome) as Outcome);}
   replayed(target:Owner,id:string):void {this.db.prepare('DELETE FROM agent_replays WHERE id=? AND target=?').run(id,target);}
-  private emit(id: string): void { const row=this.get(id); if(row) this.log({gateway:row.gateway,id:row.id,state:row.state}); }
+  private emit(id: string): void { const row=this.get(id); if(row) this.log({gateway:row.gateway,id:row.id,state:row.state,owner:row.owner}); }
   close(): void { this.db.close(); }
 }

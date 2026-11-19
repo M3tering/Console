@@ -3,6 +3,10 @@ import WebSocket from 'ws';
 import type { Decider, Outcome, BillingSnapshot } from './processor';
 import { parseMessage, UplinkEvent, MAX_MESSAGE_BYTES } from './protocol';
 import { eventIdentity } from './operations';
+import { createLogger } from '../utils/logger';
+import { errorText } from '../utils/report-log';
+
+const logger=createLogger('[central]');
 
 export type OperationRequest = {v:1;type:'operation';requestId:string;action:'offer'|'commit'|'outcome'|'reconcile';id:string;event?:UplinkEvent;outcome?:Outcome};
 export type OperationResponse = {v:1;type:'operation-result';requestId:string;id:string;outcome:Outcome|null;error:boolean};
@@ -15,7 +19,11 @@ function snapshot(value:unknown):value is BillingSnapshot {
   const m=value.meter;
   if(!record(m)||typeof m.publicKey!=='string'||!/^0x[a-fA-F0-9]{64}$/.test(m.publicKey)||!int(m.tokenId)||!int(m.latestNonce,-1)||
     typeof m.devEui!=='string'||!/^[a-fA-F0-9]{16}$/.test(m.devEui))return false;
-  return value.transactions.every(t=>record(t)&&int(t.nonce)&&int(t.identifier)&&int(t.receivedAt)&&typeof t.raw==='string'&&/^[a-fA-F0-9]+$/.test(t.raw)&&[148,212,224].includes(t.raw.length));
+  if(!value.transactions.every(t=>record(t)&&int(t.nonce)&&int(t.identifier)&&int(t.receivedAt)&&typeof t.raw==='string'&&/^[a-fA-F0-9]+$/.test(t.raw)&&[148,212,224].includes(t.raw.length)))return false;
+  if(value.published===undefined)return true;
+  return Array.isArray(value.published)&&value.published.length<=1000&&value.published.every(p=>record(p)&&typeof p.destination==='string'&&
+    /^prover:https?:\/\/\S{1,300}$/.test(p.destination)&&int(p.tokenId)&&int(p.nonce)&&(p.state==='submitted'||p.state==='uncertain')&&
+    (value.transactions as Array<{identifier:number;nonce:number}>).some(t=>t.identifier===p.tokenId&&t.nonce===p.nonce));
 }
 export function validOutcome(value:unknown,id:string):value is Outcome {
   if(!record(value)||value.id!==id||!['offered','processing','decided','uncertain','rejected'].includes(String(value.state))||typeof value.active!=='boolean')return false;
@@ -51,7 +59,10 @@ export async function serveOperation(processor:Decider,gateway:string,request:Op
     else if(request.action==='outcome')outcome=await processor.outcome(gateway,request.id);
     else if(processor.reconcile)await processor.reconcile(gateway,request.event!,request.outcome!);
     else throw new Error('Reconciliation is unavailable.');
-  } catch {error=true;}
+  } catch(failure) {
+    error=true;
+    logger.warn(`Refused ${request.action} of report ${request.id} from gateway ${gateway}: ${errorText(failure)}`);
+  }
   return {v:1,type:'operation-result',requestId:request.requestId,id:request.id,outcome,error};
 }
 

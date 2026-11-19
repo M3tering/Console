@@ -51,6 +51,8 @@ async function invokeAction(moduleId, actionId, buttonElement) {
       buttonElement.disabled = false;
       buttonElement.removeAttribute('aria-busy');
     }
+    // Let the app refresh what it shows (and re-disable the button if nothing is left).
+    document.dispatchEvent(new CustomEvent('app:action', { detail: { moduleId, actionId } }));
   }
 }
 

@@ -13,15 +13,19 @@ export class Replication {
   async flush(target:Owner):Promise<void> {
     const decider=target==='central'?this.central:this.local;
     if(!decider.reconcile)throw new Error('Decider does not support reconciliation.');
-    for(const outcome of this.journal.replays(target)){
-      const operation=this.journal.get(outcome.id);if(!operation)throw new Error('Reconciliation event is missing.');
-      await decider.reconcile(operation.gateway,operation.event,outcome);
-      this.journal.replayed(target,outcome.id);
+    for(const stored of this.journal.replays(target)){
+      const operation=this.journal.get(stored.id);if(!operation)throw new Error('Reconciliation event is missing.');
+      await decider.reconcile(operation.gateway,operation.event,stored);
+      this.journal.replayed(target,stored.id);
     }
   }
   guarded(owner:Owner):Decider {
     const target=owner==='central'?this.central:this.local;
-    return {offer:async(gateway,event)=>{await this.flush(owner);await target.offer(gateway,event);},
+    return {offer:async(gateway,event)=>{
+      // A decider must first learn the reports the other side decided; until then it cannot take new ones.
+      try{await this.flush(owner);}
+      catch(error){throw new Error(`replaying ${this.journal.replays(owner).length} report(s) decided elsewhere failed: ${error instanceof Error?error.message:String(error)}`);}
+      await target.offer(gateway,event);},
       commit:(gateway,id)=>target.commit(gateway,id),outcome:(gateway,id)=>target.outcome(gateway,id),reconcile:target.reconcile?.bind(target)};
   }
 }

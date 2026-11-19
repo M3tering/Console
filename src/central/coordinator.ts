@@ -12,14 +12,18 @@ export interface CoordinatorOptions {
   centralHealthy:()=>boolean;
   timeoutMs:number;
   reconcileSnapshot?:(owner:Owner,outcome:Outcome)=>Promise<void>;
+  /** Explains why a report is not decided by central. */
+  log?:(message:string)=>void;
 }
 function deadline<T>(promise:Promise<T>,ms:number):Promise<T> {
   return new Promise((resolve,reject)=>{
     const timeout=setTimeout(()=>reject(new Error('Decision deadline elapsed.')),ms);
-    promise.then(value=>{clearTimeout(timeout);resolve(value);},()=>{clearTimeout(timeout);reject(new Error('Decider unavailable.'));});
+    promise.then(value=>{clearTimeout(timeout);resolve(value);},error=>{clearTimeout(timeout);reject(new Error(`Decider unavailable: ${error instanceof Error?error.message:String(error)}`));});
   });
 }
 const terminal = (state:string) => ['enqueued','queue-observed','superseded','rejected'].includes(state);
+/** The reply went out (or is in ChirpStack's queue) and the outcome was replayed to the other side. */
+const settled = (state:string) => state==='enqueued'||state==='queue-observed';
 
 /** Only this component may enqueue a managed state reply. Network code never
  * retries enqueue. New reports revoke permission to send previous replies before
@@ -47,7 +51,10 @@ export class UplinkCoordinator {
       // commit conflicting records for one nonce. Drop its reply, but reconcile
       // its billing snapshot before handing the newer report to another side.
       const prior=this.journal.previous(row);
-      if(prior?.owner) {
+      // A finished prior report (its reply enqueued or seen in the queue) already had its outcome
+      // replayed to the other decider, so there is nothing in flight to wait for. Asking its owner
+      // anyway would leave every new report undecided whenever that owner (central) is unreachable.
+      if(prior?.owner && !settled(prior.state)) {
         try {
           const outcome=await deadline(this.decider(prior.owner).outcome(prior.gateway,prior.id),this.options.timeoutMs);
           if(!outcome || outcome.active)return;
@@ -55,9 +62,14 @@ export class UplinkCoordinator {
         } catch {return;}
       }
       let chosen:Owner|null=null;
-      for(const owner of this.options.centralHealthy()?['central','local'] as const:['local'] as const) {
+      const healthy=this.options.centralHealthy();
+      if(!healthy)this.options.log?.(`Report ${id}: central link is not ready (offline or connected under 15 s); this gateway decides`);
+      for(const owner of healthy?['central','local'] as const:['local'] as const) {
         try {await deadline(this.decider(owner).offer(row.gateway,row.event),this.options.timeoutMs);chosen=owner;break;}
-        catch {/* Offers never process billing, so pre-commit fallback is safe. */}
+        catch(error) {
+          // Offers never process billing, so pre-commit fallback is safe.
+          this.options.log?.(`Report ${id}: ${owner==='central'?'central':'this gateway'} did not take it (${error instanceof Error?error.message:String(error)})${owner==='central'?'; this gateway decides':''}`);
+        }
       }
       if(!chosen || !this.journal.own(id,chosen))return;
       row=this.journal.get(id)!;

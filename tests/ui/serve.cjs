@@ -14,7 +14,7 @@ app.get('/', (req, res) => {
   for (let i = 0; i < count; i++) {
     const id = i ? `extension-${i}` : 'streamr';
     icons.push({ id, label: i ? `Extension ${i}` : 'Streamr', iconHtml: '<span aria-hidden="true">✦</span>' });
-    windows.push({ id, title: i ? `Extension ${i}` : 'Streamr Publisher', contentHtml: '<div class="nes-container with-title"><p class="title">Configuration</p><p>Pending transactions: 2</p><label>Draft<input class="nes-input" aria-label="Extension draft" /></label><button class="nes-btn is-warning" onclick="invokeAction(\'streamr\', \'publish-now\', this)">Publish Now</button></div>' });
+    windows.push({ id, title: i ? `Extension ${i}` : 'Streamr Publisher', contentHtml: (i ? '' : '<p data-streamr-field="scope"></p><strong data-streamr-field="pending">2</strong><small data-streamr-field="uncertain"></small>') + '<div class="nes-container with-title"><p class="title">Configuration</p><p>Pending transactions: 2</p><label>Draft<input class="nes-input" aria-label="Extension draft" /></label><button class="nes-btn is-warning" onclick="invokeAction(\'streamr\', \'publish-now\', this)">Publish Now</button></div>' });
   }
   res.render('index', { icons, windows, central:req.query.central==='1' });
 });

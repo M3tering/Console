@@ -4,7 +4,9 @@ import type { MeterRecord, TransactionRecord } from '../types';
 import type { UplinkEvent } from './protocol';
 import { eventIdentity, eventFingerprint } from './operations';
 
-export interface BillingSnapshot { meter: MeterRecord | null; transactions: TransactionRecord[] }
+/** Older gateways list readings they already sent to a prover at handover; accepted and ignored. */
+export interface PublishedRecord { destination: string; tokenId: number; nonce: number; state: 'submitted' | 'uncertain' }
+export interface BillingSnapshot { meter: MeterRecord | null; transactions: TransactionRecord[]; published?: PublishedRecord[] }
 export interface Outcome {
   id: string; state: 'offered' | 'processing' | 'decided' | 'uncertain' | 'rejected';
   active: boolean; decision: StateDownlink | null; snapshot: BillingSnapshot | null;

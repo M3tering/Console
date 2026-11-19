@@ -253,7 +253,28 @@ if [[ "$role" == central ]]; then
   "${compose[@]}" up --detach tls-proxy || { echo 'Console is running, but the TLS proxy failed to start; check ports 80/443.' >&2; exit 1; }
 fi
 "${compose[@]}" ps
-echo 'Console updated. Database, extension volumes and .env were preserved.'
+# Plain `docker compose logs -f`, `ps` and so on in this folder follow the role that is now running:
+# Compose reads COMPOSE_FILE and COMPOSE_PROJECT_NAME from .env. Only these two lines are touched;
+# rewriting in place keeps the file's owner-only permissions.
+set_env_value() {
+  local name=$1 value=$2 tmp
+  [[ "$(env_value "$name")" == "$value" ]] && return 0
+  tmp=$(mktemp) || return 1
+  if grep -q "^[[:space:]]*$name[[:space:]]*=" .env; then
+    sed "s|^[[:space:]]*$name[[:space:]]*=.*|$name=$value|" .env > "$tmp"
+  else
+    { cat .env; [[ -z "$(tail -c 1 .env)" ]] || echo
+      [[ "$name" != COMPOSE_FILE ]] || echo "# Set by ./auto-compose.sh: plain 'docker compose logs -f' follows the role running here."
+      echo "$name=$value"; } > "$tmp"
+  fi
+  cat "$tmp" > .env; rm -f "$tmp"
+}
+if set_env_value COMPOSE_FILE "$compose_file" && set_env_value COMPOSE_PROJECT_NAME "$project"; then
+  echo "Logs: run 'docker compose logs -f' here (it follows $compose_file)."
+else
+  echo "Note: could not record the role in .env; use: docker compose -f $compose_file logs -f" >&2
+fi
+echo 'Console updated. Database, extension volumes and your .env settings were preserved.'
 if [[ "$role" == gateway ]]; then
   echo 'Gateway agent is running. Its card on central should show Online within a minute.'
   if [[ -n "$(env_value AGENT_ENROLLMENT_TOKEN)" ]]; then

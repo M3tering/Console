@@ -28,7 +28,9 @@ esac
     expect(calls).toContain('pull console');expect(calls).toContain('stop console');expect(calls).toContain('rm --force console');
     expect(calls).not.toMatch(/down|--volumes|system prune|build console/);
     expect(calls.indexOf('pull console')).toBeLessThan(calls.indexOf('stop console'));
-    expect(fs.readFileSync(path.join(dir,'.env'),'utf8')).toBe(environment);
+    // Only the two role lines are added on success, so plain `docker compose logs -f` follows this role.
+    expect(fs.readFileSync(path.join(dir,'.env'),'utf8')).toBe(fail?environment:environment+"# Set by ./auto-compose.sh: plain 'docker compose logs -f' follows the role running here.\nCOMPOSE_FILE=compose.yaml\nCOMPOSE_PROJECT_NAME=existing\n");
+    if(!fail)expect(run.stdout).toContain("Logs: run 'docker compose logs -f' here");
     expect(fs.readFileSync(path.join(dir,'.data','sentinel'),'utf8')).toBe('keep');
     if(fail){expect(calls).toContain('logs --tail 80 console');expect(calls).toContain('--force-recreate console');expect(calls).not.toContain('image rm');}
     else expect(calls).toContain('image rm sha256:old');
@@ -131,7 +133,7 @@ test('gateway role enrolls: secrets are owner-only, standalone stops before Cons
   expect(calls).not.toContain('-f compose.yaml');
   expect(modes).toEqual({fallback:0o600,updater:0o600,agentDir:0o700});
   expect(fallback).toBe('keep-this-existing-secret'.padEnd(43,'k'));
-  expect(env).toBe(environment);
+  expect(env).toBe(environment+"# Set by ./auto-compose.sh: plain 'docker compose logs -f' follows the role running here.\nCOMPOSE_FILE=compose.gateway.yaml\nCOMPOSE_PROJECT_NAME=site\n");
   expect(run.stdout).toContain('remove the AGENT_ENROLLMENT_TOKEN line');
 });
 test('gateway role refuses to start without enrollment or with a bad central URL, before touching Docker', () => {
@@ -278,4 +280,20 @@ test('a fallback port taken by another program stops the switch and restores wha
 test('GATEWAY_FALLBACK_PORT in .env moves the check to that port',()=>{
   expect(runGateway(gatewayEnv+'GATEWAY_FALLBACK_PORT=3101\n',{credential:true,busyPort:'3011'}).run.status).toBe(0);
   expect(runGateway(gatewayEnv+'GATEWAY_FALLBACK_PORT=3101\n',{credential:true,busyPort:'3101'}).run.status).toBe(2);
+});
+
+test('the role lines in .env are updated in place, keep the file owner-only, and are not duplicated', () => {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'console-role-'));
+  try {
+    for(const file of ['auto-compose.sh','compose.yaml','compose.central.yaml'])fs.copyFileSync(file,path.join(dir,file));
+    fs.writeFileSync(path.join(dir,'.env'),'CONSOLE_ROLE=central\nCENTRAL_DOMAIN=console.example.test\nCOMPOSE_FILE=compose.yaml\n',{mode:0o600});
+    fs.mkdirSync(path.join(dir,'.data'));fs.writeFileSync(path.join(dir,'.data','central.db'),'db');
+    fs.writeFileSync(path.join(dir,'docker'),"#!/bin/bash\ncase \"$*\" in *'ps -q console'*) echo new-container ;; esac\n",{mode:0o755});
+    const run=()=>spawnSync('bash',['auto-compose.sh','--project-name','central'],{cwd:dir,encoding:'utf8',env:{...process.env,PATH:dir+':'+process.env.PATH}});
+    expect(run().status).toBe(0);expect(run().status).toBe(0);
+    const env=fs.readFileSync(path.join(dir,'.env'),'utf8');
+    expect(env.match(/^COMPOSE_FILE=/gm)).toHaveLength(1);expect(env).toContain('COMPOSE_FILE=compose.central.yaml');
+    expect(env.match(/^COMPOSE_PROJECT_NAME=central$/gm)).toHaveLength(1);
+    expect(fs.statSync(path.join(dir,'.env')).mode&0o777).toBe(0o600);
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
 });

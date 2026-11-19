@@ -2,7 +2,8 @@ import StreamrUI from '../../src/lib/core/streamr/ui';
 import { getAllTransactionRecords } from '../../src/store/sqlite';
 
 jest.mock('@streamr/sdk', () => ({ StreamrClient: jest.fn() }));
-jest.mock('../../src/store/sqlite', () => ({ getAllTransactionRecords: jest.fn(() => []) }));
+jest.mock('../../src/store/sqlite', () => ({ getAllTransactionRecords: jest.fn(() => []), getMeterByDevEui: jest.fn((devEui: string) => devEui === 'aaaaaaaaaaaaaaaa' ? { tokenId: 1 } : devEui === 'bbbbbbbbbbbbbbbb' ? { tokenId: 2 } : null) }));
+import { configurePublications } from '../../src/central/distribution';
 
 describe('Streamr desktop presentation', () => {
   const originalStream = process.env.STREAMR_STREAM_ID;
@@ -30,5 +31,40 @@ describe('Streamr desktop presentation', () => {
     expect(window.contentHtml).toContain('example/&lt;script&gt;&amp;&quot;');
     expect(window.contentHtml).not.toContain('<script>');
     expect(window.contentHtml).not.toContain('disabled');
+  });
+
+  describe('in each role', () => {
+    const role = process.env.CONSOLE_ROLE;
+    const records = [1, 2, 3].map(nonce => ({ identifier: 1, nonce, receivedAt: 1, raw: '' })).concat([{ identifier: 2, nonce: 1, receivedAt: 1, raw: '' }]);
+    afterEach(() => { if (role === undefined) delete process.env.CONSOLE_ROLE; else process.env.CONSOLE_ROLE = role; });
+
+    it('central counts every reading not yet confirmed on-chain, for every gateway or one gateway\'s meters', async () => {
+      process.env.CONSOLE_ROLE = 'central'; process.env.STREAMR_STREAM_ID = 'stream/a';
+      configurePublications(':memory:');
+      (getAllTransactionRecords as jest.Mock).mockReturnValue(records);
+      const ui = new StreamrUI();
+      expect(await ui.getStatusData()).toMatchObject({ role: 'central', pendingCount: 4, uncertainCount: 0, canPublish: true });
+      // Publishing does not remove readings from the count: they are resent until the chain confirms them.
+      const { publishManaged } = require('../../src/central/distribution');
+      const send = jest.fn(async () => {});
+      await publishManaged('streamr:stream/a', records, send); await publishManaged('streamr:stream/a', records, send);
+      expect(send).toHaveBeenCalledTimes(2);
+      expect(await ui.getStatusData()).toMatchObject({ pendingCount: 4 });
+      const scoped = await ui.getStatusData({ gateway: 'g2', gatewayName: 'South', devEuis: ['bbbbbbbbbbbbbbbb'] });
+      expect(scoped).toMatchObject({ gateway: 'g2', recordCount: 1, pendingCount: 1 });
+      expect(scoped.scope).toContain("South's meters");
+      (getAllTransactionRecords as jest.Mock).mockReturnValue([]);
+    });
+
+    it('a managed gateway shows that central publishes, with no Publish Now button', async () => {
+      process.env.CONSOLE_ROLE = 'gateway'; process.env.STREAMR_STREAM_ID = 'stream/a';
+      (getAllTransactionRecords as jest.Mock).mockReturnValue(records);
+      const ui = new StreamrUI();
+      expect(await ui.getStatusData()).toMatchObject({ role: 'gateway', pendingCount: 0, recordCount: 4, canPublish: false });
+      const window = await ui.getAppWindow();
+      expect(window.contentHtml).toContain('Central publishes');
+      expect(window.contentHtml).toMatch(/data-streamr-field="publish"[^>]*disabled[^>]*hidden/);
+      (getAllTransactionRecords as jest.Mock).mockReturnValue([]);
+    });
   });
 });

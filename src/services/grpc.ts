@@ -3,6 +3,7 @@ import { DeviceServiceClient } from "@chirpstack/chirpstack-api/api/device_grpc_
 import { DeviceQueueItem, EnqueueDeviceQueueItemRequest, GetDeviceQueueItemsRequest } from "@chirpstack/chirpstack-api/api/device_pb";
 import type { ChirpstackQueue } from '../central/coordinator';
 import { createLogger } from "../utils/logger";
+import { describeReply } from "../utils/report-log";
 
 const logger = createLogger("[grpc]");
 
@@ -27,7 +28,7 @@ export function enqueue(devEui: string, data: number[]): Promise<void> {
   return new Promise((resolve, reject) => {
     client().enqueue(enqueueReq, metadata, (err, resp) => {
       if (err || !resp) { reject(err || new Error("Missing enqueue response")); return; }
-      logger.info(`${data} has been enqueued with id: ` + resp.getId());
+      logger.info(`Reply enqueued to ChirpStack for ${devEui} (queue id ${resp.getId()}): ${describeReply(data)}`);
       resolve();
     });
   });

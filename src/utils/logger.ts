@@ -16,7 +16,10 @@ function managedLog(value:unknown,depth=0):unknown {
   if(typeof value==='string'){
     let text=value;
     for(const [name,secret] of Object.entries(process.env)){
-      if(secret&&/(?:PASSWORD|SECRET|TOKEN|PRIVATE_KEY|CREDENTIAL)/i.test(name))text=text.split(secret).join('[redacted]');
+      // Very short values (such as a template's "...") are not real secrets and would mangle ordinary text.
+      if(secret&&secret.length>=8&&/(?:PASSWORD|SECRET|TOKEN|PRIVATE_KEY|CREDENTIAL)/i.test(name))text=text.split(secret).join('[redacted]');
+      // RPC providers often put an API key in the URL path or query; plain public endpoints stay readable.
+      else if(secret&&/RPC/i.test(name)&&/^https?:\/\/[^/]+\/./i.test(secret))text=text.split(secret).join('[rpc url redacted]');
     }
     return text.replace(/(?:0x)?[a-fA-F0-9]{64,}/g,'[redacted bytes]')
       .replace(/[A-Za-z0-9+/]{80,}={0,2}/g,'[redacted payload]')

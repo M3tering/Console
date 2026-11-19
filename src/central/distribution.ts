@@ -22,9 +22,20 @@ export class PublicationStore {
   }
   close():void{this.db.close();}
 }
+/** Which sends are recorded and never repeated:
+ * - "arweave": permanent, paid storage, so each reading is uploaded once;
+ * - "hook:<module>": central's first send of each new reading to each module (its catch-up loop
+ *   runs every minute, so these must not repeat).
+ * The scheduled prover and Streamr runs ("prover:<url>", "streamr:<stream>") are NOT recorded: they
+ * resend every stored reading until the chain confirms its nonce, and confirmed ones are pruned first. */
+const recorded=(destination:string)=>destination==='arweave'||destination.startsWith('hook:');
 export function publishManaged<T>(destination:string,records:TransactionRecord[],send:(records:TransactionRecord[])=>Promise<T>):Promise<T|null>{
-  if(process.env.CONSOLE_ROLE==='gateway')return Promise.resolve(null);
-  if(!managedRole())return send(records);
+  if(process.env.CONSOLE_ROLE==='gateway'){
+    // A managed gateway publishes nothing itself, except sending readings it decided while central was
+    // away to the prover. Central resends them on its schedule anyway, so nothing is recorded here.
+    return destination==='hook:core/prover'||destination.startsWith('prover:')?send(records):Promise.resolve(null);
+  }
+  if(!managedRole()||!recorded(destination))return send(records);
   if(!publications)return Promise.reject(new Error('Central publication journal is unavailable.'));
   return publications.publish(destination,records,send);
 }

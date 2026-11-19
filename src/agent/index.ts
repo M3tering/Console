@@ -15,6 +15,9 @@ import { mqttConnection } from '../lib/mqtt-config';
 import { applicationId } from '../lib/chirpstack-config';
 import { managedQueue } from '../services/grpc';
 import { createLogger } from '../utils/logger';
+import { watchResolver } from '../utils/dns-watch';
+import { describeReport, describeReply, errorText } from '../utils/report-log';
+import type { ChirpstackQueue } from '../central/coordinator';
 import { RateLimit } from '../central/auth';
 import { UpdaterClient } from './updater-client';
 import { TunnelMux, gatewayTarget } from '../central/tunnels';
@@ -41,15 +44,27 @@ export async function runAgent():Promise<()=>Promise<void>> {
   const updater=new UpdaterClient(process.env.UPDATER_SOCKET||path.join(path.dirname(config.credentialPath),'updater.sock'),process.env.UPDATER_SECRET_PATH||path.join(path.dirname(config.credentialPath),'updater-secret'));
   let updatesEnabled=false;const updateStatuses=new Map<string,string>();
   const stateDirectory=path.dirname(config.credentialPath);
-  const journal=new OperationJournal(path.join(stateDirectory,'operations.db'),config.queueLimit,event=>logger.info('Operation status',event));
+  const lastStates=new Map<string,string>();
+  const journal=new OperationJournal(path.join(stateDirectory,'operations.db'),config.queueLimit,event=>{
+    // The journal can record the same state twice (for example the decision); log each change once.
+    if(lastStates.get(event.id)===event.state)return;
+    lastStates.set(event.id,event.state);if(lastStates.size>1000)lastStates.delete(lastStates.keys().next().value!);
+    const by=event.owner==='central'?' (decided by central)':event.owner==='local'?' (decided by this gateway: central unreachable)':'';
+    logger.info(`Report ${event.id} is now ${event.state}${by}`);
+  });
   const local=new LocalDecider(gatewayFallbackPort(),readOwnerSecret(config.fallbackSecretPath),config.decisionTimeoutMs);
   let socket:WebSocket|undefined,stopped=false,reconnect:ReturnType<typeof setTimeout>|undefined;
   let connectedAt=0,attempt=0,mqttState:Health['mqtt']='connecting',lastError:Health['lastError']='none';
   const central=new SocketDecider(()=>socket,config.decisionTimeoutMs);
   const replication=new Replication(journal,central,local);
   const healthy=()=>socket?.readyState===WebSocket.OPEN&&Date.now()-connectedAt>=config.recoveryHealthyMs;
-  const coordinator=new UplinkCoordinator(journal,replication.guarded('central'),replication.guarded('local'),managedQueue,
-    {centralHealthy:healthy,timeoutMs:config.decisionTimeoutMs,reconcileSnapshot:(owner,outcome)=>replication.observe(owner,outcome)});
+  // Log every reply the agent puts in ChirpStack's queue, and every failed attempt.
+  const queue:ChirpstackQueue={list:devEui=>managedQueue.list(devEui),enqueue:async decision=>{
+    try{const id=await managedQueue.enqueue(decision);logger.info(`Reply enqueued to ChirpStack for ${decision.devEui} (queue id ${id}): ${describeReply(decision.bytes)}`);return id;}
+    catch(error){logger.warn(`Reply for ${decision.devEui} may not have been enqueued (${errorText(error)}); it is held, never resent: ${describeReply(decision.bytes)}`);throw error;}
+  }};
+  const coordinator=new UplinkCoordinator(journal,replication.guarded('central'),replication.guarded('local'),queue,
+    {centralHealthy:healthy,timeoutMs:config.decisionTimeoutMs,reconcileSnapshot:(owner,outcome)=>replication.observe(owner,outcome),log:message=>logger.warn(message)});
   const sendHealth=()=>{
     if(socket?.readyState!==WebSocket.OPEN)return;
     const counts=journal.counts(gateway);
@@ -60,6 +75,7 @@ export async function runAgent():Promise<()=>Promise<void>> {
     socket.send(JSON.stringify({v:1,type:'health',health}));
     if(socket.bufferedAmount<MAX_MESSAGE_BYTES*8)for(const result of journal.results())socket.send(JSON.stringify({v:1,type:'result',...result}));
   };
+  let failing:string|null=null;
   const connectCentral=()=>{
     if(stopped)return;
     const ws=socket=new WebSocket(new URL('/agent',config.centralUrl),{headers:{Authorization:`Bearer ${currentCredential}`},maxPayload:MAX_MESSAGE_BYTES,
@@ -67,6 +83,7 @@ export async function runAgent():Promise<()=>Promise<void>> {
     const inputLimit=new RateLimit(512,1000,1);
     const tunnels=new TunnelMux(ws,request=>gatewayTarget(request));
     ws.on('open',()=>{connectedAt=Date.now();attempt=0;lastError='none';
+      logger.info(failing?`Connected to central again (${config.centralUrl}).`:`Connected to central (${config.centralUrl}).`);failing=null;
       if(process.env.CONSOLE_DEPLOY_IMAGE)writeOwnerSecret(path.join(stateDirectory,'reconnected.json'),JSON.stringify({image:process.env.CONSOLE_DEPLOY_IMAGE,time:Date.now()}));
       updateStatuses.clear();sendHealth();});
     ws.on('message',data=>{
@@ -96,7 +113,11 @@ export async function runAgent():Promise<()=>Promise<void>> {
         } else if(message.type!=='pong')ws.close(1008,'Unsupported operation for this agent version');
       }catch{lastError='central';ws.close(1008,'Invalid central message');}
     });
-    ws.on('error',()=>{lastError='central';});
+    ws.on('error',error=>{lastError='central';
+      // Say once that central can't be reached, and why; stay quiet while retrying.
+      const reason=(error as NodeJS.ErrnoException).code||error.message;
+      if(failing!==reason){failing=reason;logger.warn(`Cannot reach central (${reason}); retrying.${['EAI_AGAIN','ENOTFOUND'].includes(reason)?' Its name does not resolve from this container.':''}`);}
+    });
     ws.on('close',()=>{
       central.disconnect();connectedAt=0;lastError='central';
       if(!stopped){const delay=Math.min(60000,1000*2**Math.min(attempt++,6))*(.75+Math.random()*.5);reconnect=setTimeout(connectCentral,delay);}
@@ -108,7 +129,7 @@ export async function runAgent():Promise<()=>Promise<void>> {
   const application=applicationId(),topic=`application/${application}/device/+/event/up`;
   mqtt.on('connect',()=>{mqtt.subscribe(topic,{qos:1},(error,granted)=>{
     if(error||granted?.some(grant=>grant.qos===128)){mqttState='disconnected';lastError='mqtt';mqtt.stream.destroy();}
-    else mqttState='connected';sendHealth();
+    else {mqttState='connected';logger.info(`Listening for meter reports on ${topic}`);}sendHealth();
   });});
   mqtt.on('reconnect',()=>{mqttState='connecting';});mqtt.on('close',()=>{mqttState='disconnected';});
   mqtt.on('error',()=>{lastError='mqtt';logger.warn('MQTT connection unavailable; reconnecting.');});
@@ -119,8 +140,13 @@ export async function runAgent():Promise<()=>Promise<void>> {
       const parsed:unknown=JSON.parse(packet.payload.toString());
       if(typeof parsed!=='object'||parsed===null||Array.isArray(parsed)){done();return;}
       const event=parsed as UplinkEvent;
-      if(event.fPort!==2||typeof event.deviceInfo?.devEui!=='string'||typeof event.deviceInfo?.applicationId!=='string'||event.deviceInfo.devEui.toLowerCase()!==match[2].toLowerCase()||event.deviceInfo.applicationId.toLowerCase()!==application){done();return;}
-      try{eventIdentity(event);}catch{logger.warn('Invalid billing event ignored.');done();return;}
+      // Only fPort 2 carries billing reports. MQTT can't filter by port (it isn't in the topic),
+      // so other ports (telemetry, network-control frames) are dropped here, silently.
+      if(event.fPort!==2){done();return;}
+      if(typeof event.deviceInfo?.devEui!=='string'||typeof event.deviceInfo?.applicationId!=='string'||event.deviceInfo.devEui.toLowerCase()!==match[2].toLowerCase()||event.deviceInfo.applicationId.toLowerCase()!==application){
+        logger.warn(`Report ignored: its device or application does not match its topic: ${describeReport(event)}`);done();return;}
+      try{eventIdentity(event);}catch{logger.warn(`Invalid billing event ignored: ${describeReport(event)}`);done();return;}
+      logger.info(`Report received from ChirpStack: ${describeReport(event)}`);
       // receive persists synchronously before returning its processing promise.
       const processing=coordinator.receive(gateway,event);
       done();void processing.then(sendHealth).catch(()=>{lastError='storage';logger.error('Managed operation unavailable; inspect gateway status.');});
@@ -141,7 +167,12 @@ export async function runAgent():Promise<()=>Promise<void>> {
       try{await replication.flush('local');}catch{}try{await replication.flush('central');}catch{}await coordinator.drain();})()
       .catch(()=>{lastError='storage';}).finally(()=>{draining=undefined;});
   },5000);timer.unref();connectCentral();
-  return async()=>{stopped=true;clearTimeout(reconnect);clearInterval(timer);central.disconnect();socket?.terminate();await mqtt.endAsync(false);await coordinator.stop();await draining;journal.close();};
+  const stop=async()=>{stopped=true;stopResolverWatch();clearTimeout(reconnect);clearInterval(timer);central.disconnect();socket?.terminate();await mqtt.endAsync(false);await coordinator.stop();await draining;journal.close();};
+  const stopResolverWatch=watchResolver(()=>{
+    logger.error('This container has no DNS server (Docker copied the host\'s DNS settings before its network was up). Restarting so Docker provides fresh ones.');
+    void stop().finally(()=>process.exit(1));
+  });
+  return stop;
 }
 if(require.main===module){
   void runAgent().then(stop=>{for(const signal of ['SIGINT','SIGTERM'] as const)process.once(signal,()=>{void stop().finally(()=>process.exit(0));});})

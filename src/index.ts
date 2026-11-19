@@ -10,15 +10,19 @@ else {
  const sessions=new Map<string,{user:string;gateway?:string}>();
  attachTerminal(server,undefined,{
   connection:async request=>{
-    const gateway=runtime.hub.selected(request);
+    const target=runtime.hub.socketTarget(request);
+    if(!target)throw new Error('That gateway is no longer available.');
+    const gateway=target.gateway;
     // No gateway selected: a shell on the central server itself (the container shares the host network).
     if(!gateway)return centralSsh();
     const sock=await runtime.hub.open(gateway,'ssh','ssh',22);
     return {sock,hostHash:'sha256',hostVerifier:(hash:string)=>runtime.identities.verifyHostKey(gateway,hash)};
   },
+  // Only the same signed-in user, working on the same target, may pick a session back up.
+  owner:request=>`${runtime.auth.session(request)?.id||'none'}|${runtime.hub.socketTarget(request)?.gateway||'central'}`,
   audit:(request,event,session)=>{
     if(event==='start'){
-      const user=runtime.auth.session(request),gateway=runtime.hub.selected(request)||undefined;
+      const user=runtime.auth.session(request),gateway=runtime.hub.socketTarget(request)?.gateway||undefined;
       if(user)sessions.set(session,{user:user.id,gateway});
     }
     const actor=sessions.get(session);
@@ -31,6 +35,7 @@ import { loadExtensionsFromConfig, loadUIExtensionsFromConfig, runHook, notifyHo
 import setupDatabase from './store/sqlite';
 import { createLogger } from './utils/logger';
 import { warnRemovedManagerSettings } from './lib/legacy-config';
+import { watchResolver } from './utils/dns-watch';
 
 const logger = createLogger('[index]');
 warnRemovedManagerSettings(process.env, message => logger.warn(message));
@@ -75,6 +80,13 @@ warnRemovedManagerSettings(process.env, message => logger.warn(message));
     logger.info('Application initialization completed successfully');
 
     startServer();
+
+    // After a reboot Docker may start this container before the host has DNS (for example slow Wi-Fi).
+    // Its copy of the DNS settings then stays empty; restart so Docker provides the host's current ones.
+    watchResolver(() => {
+      logger.error('This container has no DNS server (Docker copied the host\'s DNS settings before its network was up). Restarting so Docker provides fresh ones.');
+      process.exit(1);
+    });
 
     await runHook('onAfterInit');
   } catch (error) {

@@ -2,7 +2,20 @@
   const $=id=>document.getElementById(id);
   const switcher=$('gateway-switcher'),menu=$('gateway-menu'),options=$('gateway-options'),dialog=$('gateway-dialog'),list=$('gateway-list'),confirmDialog=$('gateway-confirm');
   const NETWORK_APPS=['terminal','chirpstack'],TOKEN_LIFETIME=10*60000,CENTRAL_NAME='Central server';
-  let gateways=[],selected=null,busy=false,again=false,editing=null,focusRename=false,tokenTimer=null;
+  // The target belongs to this tab only (sessionStorage): other tabs keep their own gateway or central.
+  const TARGET_KEY='m3tering.console.target';
+  const loadTarget=()=>{try{return sessionStorage.getItem(TARGET_KEY)||null;}catch{return null;}};
+  let gateways=[],selected=loadTarget(),busy=false,again=false,editing=null,focusRename=false,tokenTimer=null;
+  // Terminal and ChirpStack name this tab's target in their addresses; "central" means the central server.
+  window.ConsoleTarget=()=>selected||'central';
+  function applyTarget(){
+    try{if(selected)sessionStorage.setItem(TARGET_KEY,selected);else sessionStorage.removeItem(TARGET_KEY);}catch{/* still works for this page */}
+    const frame=$('chirpstack-frame'),src=`/chirpstack/~${encodeURIComponent(selected||'central')}/`;
+    // Unload the previous target's ChirpStack; the next launch loads this one.
+    if(frame&&frame.dataset.src!==src){frame.dataset.src=src;if(frame.hasAttribute('src')){frame.src='about:blank';frame.removeAttribute('src');}}
+    // Apps that show per-gateway data (such as Streamr) refresh for the new target.
+    document.dispatchEvent(new CustomEvent('console:target',{detail:{target:selected||'central'}}));
+  }
   const openUpdates=new Set();
 
   const error=message=>{$('gateway-error').textContent=message||'';};
@@ -120,8 +133,7 @@
     // null deselects the gateway.
     if(id===selected){setMenu(false);switcher.focus();return;}
     for(const app of NETWORK_APPS)Desktop.close(app);
-    try{await api('/api/gateways/select',{id});await refresh();setMenu(false);switcher.focus();}
-    catch(e){$('gateway-menu-summary').textContent=e.message;}
+    selected=id;applyTarget();render();setMenu(false);switcher.focus();
   }
   function stopEditing(){editing=null;if(list.contains(document.activeElement))document.activeElement.blur();}
   function startEditing(id){editing=id;focusRename=true;render();}
@@ -195,7 +207,9 @@
 
   async function refresh(){
     if(busy){again=true;return;}busy=true;
-    try{const result=await api('/api/gateways');gateways=result.gateways;selected=result.selected;
+    try{const result=await api('/api/gateways');gateways=result.gateways;
+      // A gateway deleted or revoked elsewhere can't stay this tab's target.
+      if(selected&&!gateways.some(g=>g.id===selected&&!g.revoked)){for(const app of NETWORK_APPS)Desktop.close(app);selected=null;applyTarget();}
       if(editing&&!gateways.some(g=>g.id===editing))editing=null;render();}
     catch(e){error(e.message);}
     finally{busy=false;if(again){again=false;void refresh();}}
@@ -262,5 +276,6 @@
   window.addEventListener('desktop:open',event=>{if(NETWORK_APPS.includes(event.detail.id))title(event.detail.id);});
   // Keep titles of already-open network apps in step with a rename.
   const retitle=()=>{for(const app of NETWORK_APPS)if($(app)&&!$(app).hidden)title(app);};
+  applyTarget();
   const timer=setInterval(()=>{void refresh().then(retitle);},5000);window.addEventListener('pagehide',()=>clearInterval(timer));refresh();
 })();
