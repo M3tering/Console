@@ -166,29 +166,35 @@ a login.
 
 ## The prover
 
-Central sends readings to the prover (`PREFERRED_PROVER_NODE`) for every gateway. When central is
-unreachable and a gateway decides readings itself, that gateway sends those readings to the prover
-straight away, if its own `.env` sets `PREFERRED_PROVER_NODE`. When it hands those decisions over to
-central later, it says which readings it already sent, and central doesn't send them again, not even
-from its scheduled job. Sends with an unclear result are never repeated automatically, on either side.
-Without `PREFERRED_PROVER_NODE` on the gateway, nothing changes: central sends them after the handover.
-A gateway never publishes to Streamr or Arweave; central does that.
+Readings are sent to the prover (`PREFERRED_PROVER_NODE`) in two ways:
 
-Logs: the gateway's Console shows `Sending new transaction to prover`, and central shows
-`The gateway already sent N reading(s) of meter … to the prover; central won't send them again.`
+- **As each reading arrives:** once per reading. On central this covers every gateway's readings,
+  including those handed over after a gateway decided them on its own.
+- **On `PROVER_CRONSCHEDULE`:** every stored reading whose nonce is not yet confirmed on-chain is sent
+  again, on every run, until the chain confirms it. Each run first checks the chain and prunes the
+  readings that are confirmed.
+
+While central is unreachable, a managed gateway sends the readings it decides itself to the prover, if
+its own `.env` sets `PREFERRED_PROVER_NODE`. Central's scheduled runs resend them later anyway. A gateway
+never publishes to Streamr or Arweave; central does that.
+
+Logs: `Sending N transactions to prover at …`, then `Prover response (text): …`.
 
 ## The Streamr app
 
+Every publish, the hourly `STREAMR_CRONSCHEDULE` run or **Publish Now**, sends all stored readings
+whose nonce is not yet confirmed on-chain. They are sent again on every run until the chain confirms
+them; then they are pruned. Only Arweave uploads happen once per reading.
+
 | Where | What it shows | Publish Now |
 |---|---|---|
-| Standalone | Readings stored on this Console, waiting to be published | Publishes them to every configured stream |
-| Central, **Central server** selected | Readings from every gateway not yet published to every stream, plus any with an uncertain outcome | Publishes what is waiting, for every gateway |
-| Central, a gateway selected | The same, but only for meters served by that gateway | Same as above: central always publishes for every gateway together |
+| Standalone | Readings not yet confirmed on-chain | Publishes them to every configured stream |
+| Central, **Central server** selected | Readings not yet confirmed on-chain, from every gateway | Publishes them, for every gateway |
+| Central, a gateway selected | The same, for that gateway's meters only | Same as above: central publishes for every gateway together |
 | A managed gateway's own Console | How many readings are kept locally; central publishes them | Hidden |
 
 The window refreshes when you open it, after **Publish Now**, when you switch gateway and every 30
-seconds while open. **Last publish** covers both the hourly job and **Publish Now**. Central never
-resends a reading whose earlier publish had an uncertain outcome.
+seconds while open. **Last publish** covers both the hourly job and **Publish Now**.
 
 ## Managing gateways on central
 

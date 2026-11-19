@@ -1,6 +1,6 @@
 import { getAllTransactionRecords, getMeterByDevEui } from "../../../store/sqlite";
 import { buildBatchPayload, retry } from "../../utils";
-import { managedRole, publishManaged, publicationStatus } from '../../../central/distribution';
+import { managedRole, publishManaged } from '../../../central/distribution';
 import { lastPublish, recordPublish } from './state';
 import type { UIHooks, UIAppIcon, UIAppWindow, UIAction, TransactionRecord, UIStatusContext } from "../../../types";
 import { StreamrClient } from "@streamr/sdk";
@@ -95,7 +95,7 @@ export default class implements UIHooks {
             recordPublish("success", pendingTransactions.length);
 
             return {
-              message: managedRole() ? 'Published what was waiting, for every gateway. Readings already published, or with an uncertain outcome, are not sent again.' : `Published ${pendingTransactions.length} transactions to ${this.streamIds.length} stream(s)`,
+              message: managedRole() ? `Published ${pendingTransactions.length} reading(s) not yet confirmed on-chain, for every gateway, to ${this.streamIds.length} stream(s)` : `Published ${pendingTransactions.length} transactions to ${this.streamIds.length} stream(s)`,
               data: { count: pendingTransactions.length },
             };
           } catch (error: any) {
@@ -111,8 +111,8 @@ export default class implements UIHooks {
     return this.status(context);
   }
 
-  /** What the window shows. Standalone: every stored reading is waiting. Central: readings not
-   * yet submitted to every stream, optionally only one gateway's meters. Gateway: central publishes. */
+  /** What the window shows: readings not yet confirmed on-chain, which every publish (re)sends.
+   * Central: optionally only one gateway's meters. A managed gateway: central publishes. */
   async status(context: UIStatusContext = {}) {
     const role = (process.env.CONSOLE_ROLE || "standalone") as "standalone" | "central" | "gateway";
     let records = await this.getPendingTransactions();
@@ -120,7 +120,6 @@ export default class implements UIHooks {
       const tokens = new Set(context.devEuis.map((devEui) => getMeterByDevEui(devEui)?.tokenId).filter((id) => id !== undefined));
       records = records.filter((record) => tokens.has(record.identifier));
     }
-    const progress = publicationStatus(this.streamIds.map((id) => `streamr:${id}`), records);
     const scope = role === "gateway" ? "This gateway is managed by central, which publishes its readings to Streamr."
       : role === "central" ? (context.gateway ? `Showing readings from ${context.gatewayName || "this gateway"}'s meters. Central publishes for every gateway together.`
         : "Showing readings from every gateway. Central publishes them on the schedule below.")
@@ -128,8 +127,9 @@ export default class implements UIHooks {
     return {
       role, scope, gateway: context.gateway || null,
       recordCount: records.length,
-      pendingCount: role === "gateway" ? 0 : progress ? progress.pending : records.length,
-      uncertainCount: progress ? progress.uncertain : 0,
+      // Readings stay until the chain confirms their nonce, and each publish sends all of them.
+      pendingCount: role === "gateway" ? 0 : records.length,
+      uncertainCount: 0,
       canPublish: role !== "gateway" && this.streamIds.length > 0,
       streamIds: this.streamIds, cronSchedule: this.cronSchedule,
       lastPublishTime: lastPublish.time, lastPublishStatus: lastPublish.status,

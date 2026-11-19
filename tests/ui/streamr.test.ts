@@ -38,18 +38,18 @@ describe('Streamr desktop presentation', () => {
     const records = [1, 2, 3].map(nonce => ({ identifier: 1, nonce, receivedAt: 1, raw: '' })).concat([{ identifier: 2, nonce: 1, receivedAt: 1, raw: '' }]);
     afterEach(() => { if (role === undefined) delete process.env.CONSOLE_ROLE; else process.env.CONSOLE_ROLE = role; });
 
-    it('central counts only what is still to publish, for every gateway or one gateway\'s meters', async () => {
+    it('central counts every reading not yet confirmed on-chain, for every gateway or one gateway\'s meters', async () => {
       process.env.CONSOLE_ROLE = 'central'; process.env.STREAMR_STREAM_ID = 'stream/a';
       configurePublications(':memory:');
       (getAllTransactionRecords as jest.Mock).mockReturnValue(records);
       const ui = new StreamrUI();
       expect(await ui.getStatusData()).toMatchObject({ role: 'central', pendingCount: 4, uncertainCount: 0, canPublish: true });
-      // Publish two readings: they no longer count as waiting.
+      // Publishing does not remove readings from the count: they are resent until the chain confirms them.
       const { publishManaged } = require('../../src/central/distribution');
-      await publishManaged('streamr:stream/a', records.slice(0, 2), async () => {});
-      await expect(publishManaged('streamr:stream/a', records.slice(2, 3), async () => { throw new Error('lost'); })).rejects.toThrow();
-      expect(await ui.getStatusData()).toMatchObject({ pendingCount: 1, uncertainCount: 1 });
-      // A gateway tab sees only its own meters (token 2 here).
+      const send = jest.fn(async () => {});
+      await publishManaged('streamr:stream/a', records, send); await publishManaged('streamr:stream/a', records, send);
+      expect(send).toHaveBeenCalledTimes(2);
+      expect(await ui.getStatusData()).toMatchObject({ pendingCount: 4 });
       const scoped = await ui.getStatusData({ gateway: 'g2', gatewayName: 'South', devEuis: ['bbbbbbbbbbbbbbbb'] });
       expect(scoped).toMatchObject({ gateway: 'g2', recordCount: 1, pendingCount: 1 });
       expect(scoped.scope).toContain("South's meters");

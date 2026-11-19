@@ -1,7 +1,6 @@
 import { handleMessage } from '../services/mqtt';
 import { getMeterByPublicKey, mergeBillingSnapshot, readBillingSnapshot } from '../store/sqlite';
-import { DurableProcessor, BillingSnapshot, Outcome } from './processor';
-import { adoptGatewaySends, gatewayProverSends } from './distribution';
+import { DurableProcessor, BillingSnapshot } from './processor';
 import { managedBilling } from './billing-context';
 import type { UplinkEvent } from './protocol';
 import { verifyPayloadSignature, distributeManaged } from '../lib/utils';
@@ -16,15 +15,7 @@ export function createBillingProcessor(filename:string):DurableProcessor {
     const context={id:event.deduplicationId!,distribution:[]};
     await managedBilling.run(context,()=>handleMessage(Buffer.from(JSON.stringify(event)),sink));
     void distributeManaged(context.distribution).catch(()=>{});
-  },billingSnapshot,importBillingSnapshot,withProverSends);
-}
-
-/** Gateway: when a fallback outcome is read for the handover, say which of its readings this
- * gateway already sent to a prover (read now, not when decided, since sending finishes later). */
-export function withProverSends(outcome:Outcome):Outcome{
-  if(process.env.CONSOLE_ROLE!=='gateway'||!outcome.snapshot)return outcome;
-  const published=gatewayProverSends(outcome.snapshot.transactions);
-  return published.length?{...outcome,snapshot:{...outcome.snapshot,published}}:outcome;
+  },billingSnapshot,importBillingSnapshot);
 }
 
 const logger=createLogger('[central]');
@@ -55,11 +46,8 @@ export async function importBillingSnapshot(snapshot:BillingSnapshot):Promise<vo
       }
       if(meter.latestNonce>supportedNonce)throw new Error(`Reconciliation nonce ${meter.latestNonce} is not supported by signed records or the chain (up to ${supportedNonce}).`);
       mergeBillingSnapshot(snapshot);
-      // Only central publishes what another decider handed over. Readings the gateway already sent
-      // to a prover are recorded first, so they are not sent again (now or by the scheduled job).
+      // Only central publishes what another decider handed over. (Older gateways may list readings they
+      // already sent to the prover; that is ignored: the prover is resent until the chain confirms.)
       if(process.env.CONSOLE_ROLE!=='central')return;
-      const handed=new Set(records.map(r=>`${r.identifier}:${r.nonce}`));
-      const adopted=adoptGatewaySends((snapshot.published||[]).filter(p=>p.destination.startsWith('prover:')&&handed.has(`${p.tokenId}:${p.nonce}`)));
-      if(adopted)logger.info(`The gateway already sent ${adopted} reading(s) of meter ${token} to the prover; central won't send them again.`);
       void distributeManaged(snapshot.transactions).catch(()=>{});
 }

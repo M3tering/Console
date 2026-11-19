@@ -108,8 +108,12 @@ export default class implements Hooks {
   }
 
   async sendPendingTransactionsToProver(proverURL: string, pendingTransactions: TransactionRecord[]) {
-    if (managedRole()) return publishManaged(`prover:${proverURL}`, pendingTransactions,
-      records => this.sendTransactionsToProver(proverURL, buildBatchPayload(records)));
+    // Resent on every run until the chain confirms the nonces (no "already sent" record). On a managed
+    // gateway, publishManaged only lets prover sends through; elsewhere it sends straight away.
+    if (managedRole()) return publishManaged(`prover:${proverURL}`, pendingTransactions, records => {
+      logger.info('Sending', records.length, 'transactions to prover at', proverURL);
+      return retry(async () => this.sendTransactionsToProver(proverURL, buildBatchPayload(records)));
+    });
     logger.info('[info] Sending', pendingTransactions.length, 'transactions to prover at', proverURL);
 
     const requestPayload = buildBatchPayload(pendingTransactions);

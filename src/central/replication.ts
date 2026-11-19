@@ -15,19 +15,9 @@ export class Replication {
     if(!decider.reconcile)throw new Error('Decider does not support reconciliation.');
     for(const stored of this.journal.replays(target)){
       const operation=this.journal.get(stored.id);if(!operation)throw new Error('Reconciliation event is missing.');
-      const outcome=target==='central'?await this.current(operation.gateway,stored):stored;
-      await decider.reconcile(operation.gateway,operation.event,outcome);
-      this.journal.replayed(target,outcome.id);
+      await decider.reconcile(operation.gateway,operation.event,stored);
+      this.journal.replayed(target,stored.id);
     }
-  }
-  /** The gateway's view of a decision it made, read at handover rather than when decided: by now it
-   * can say which readings it already sent to the prover. The decision itself never changes. */
-  private async current(gateway:string,stored:Outcome):Promise<Outcome>{
-    try{
-      const fresh=await this.local.outcome(gateway,stored.id);
-      if(fresh&&fresh.id===stored.id&&!fresh.active&&fresh.snapshot)return {...stored,snapshot:fresh.snapshot};
-    }catch{/* hand over what was stored */}
-    return stored;
   }
   guarded(owner:Owner):Decider {
     const target=owner==='central'?this.central:this.local;
