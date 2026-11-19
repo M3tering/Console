@@ -316,6 +316,12 @@ CENTRAL_CHIRPSTACK_URL=https://chirpstack.example.com   # address only, no path
 CENTRAL_SSH_PORT=22                                      # only if sshd uses another port
 ```
 
+**Terminal sessions survive switching apps.** If the browser drops the connection (a phone putting
+the page in the background, switching tabs, a network blip), the shell keeps running for 10 minutes
+(`TERMINAL_RESUME_MS`). When you come back, Terminal reconnects to the same session by itself and shows
+what you missed, even if the browser reloaded the page. **Disconnect** or closing the Terminal window
+ends the session at once. On central, only the same signed-in user on the same target can resume it.
+
 **Terminal needs password login if your server doesn't already use it.** The Terminal signs in with a username and password,
 and many cloud servers allow SSH keys only. To use it, the user needs a password
 (`sudo passwd <user>`) and sshd must accept passwords for it. For example, add this

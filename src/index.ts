@@ -18,6 +18,8 @@ else {
     const sock=await runtime.hub.open(gateway,'ssh','ssh',22);
     return {sock,hostHash:'sha256',hostVerifier:(hash:string)=>runtime.identities.verifyHostKey(gateway,hash)};
   },
+  // Only the same signed-in user, working on the same target, may pick a session back up.
+  owner:request=>`${runtime.auth.session(request)?.id||'none'}|${runtime.hub.socketTarget(request)?.gateway||'central'}`,
   audit:(request,event,session)=>{
     if(event==='start'){
       const user=runtime.auth.session(request),gateway=runtime.hub.socketTarget(request)?.gateway||undefined;
