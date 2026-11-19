@@ -7,7 +7,7 @@ import { managedBilling } from '../central/billing-context';
 import { encode } from '../lib/encode';
 import {
   getAllTransactionRecords, getMeterByDevEui, getMeterByPublicKey,
-  getTransactionByNonce, recordMeterTransaction, saveMeter, updateMeterDevEui, updateMeterNonce,
+  getTransactionByNonce, getReplyTransaction, recordMeterTransaction, saveMeter, updateMeterDevEui, updateMeterNonce,
 } from '../store/sqlite';
 import type { State, TransactionRecord } from '../types';
 import { decodePayload } from '../lib/decode';
@@ -131,7 +131,7 @@ export async function handleMessage(blob: Buffer, downlink: DownlinkSink = chirp
       recordMeterTransaction(key, record);
       newTransaction = true;
     } else if (decoded.nonce !== 0) {
-      const previous = getTransactionByNonce(decoded.nonce, meter.tokenId);
+      const previous = getReplyTransaction(decoded.nonce, meter.tokenId);
       if (decoded.nonce !== meter.latestNonce || !previous || decoded.energy < decodePayload(Buffer.from(previous.raw, 'hex')).energy) {
         throw new Error(`Invalid nonce. Expected ${expectedNonce}, got ${decoded.nonce}`);
       }

@@ -682,6 +682,34 @@ integration tests are complete.
 
 ## Central Console and gateway agent (opt-in test branch)
 
+Managed gateways also transfer stored billing history to central, including
+readings collected before enrollment. Every five seconds, while the central
+connection is healthy, the agent can transfer one batch of up to 100 readings
+from one meter, oldest nonces first. Central verifies signatures and nonce
+continuity and merges missing rows without overwriting conflicting transactions.
+Accepted batches are acknowledged durably on the gateway. Lost responses are
+retried idempotently; historical transfers do not send device replies or create
+new agent operation records. A rejected batch stays on the gateway for correction
+and retry. Central's existing chain pruning and publishing policies still apply
+to imported history; this is not a permanent archive of confirmed readings.
+
+The gateway Console runs a pruning cron job every five minutes (UTC). Set
+`GATEWAY_PRUNE_CRONSCHEDULE="0 * * * *"` for hourly pruning, for example. For each
+meter, it reads the confirmed nonce from the chain and removes transaction rows
+with `nonce <= confirmedNonce` only when the exact record was accepted by the
+configured central/enrollment. Unconfirmed readings and readings awaiting central
+acceptance remain. Chain failures or failed transfers preserve data for a later
+run. A separate checkpoint retains at most one last confirmed reading per meter
+so a device retry can still be acknowledged after its transaction row is pruned.
+The checkpoint is not part of the pending `transactions` table.
+
+Update central and both gateway services (`console` and `agent`) to enable this
+policy. The agent negotiates history support with central; an older central keeps
+the existing live billing connection and no new history acknowledgments are
+created. Existing databases gain the receipt/checkpoint tables automatically.
+This policy does not prune the agent's duplicate-detection operation journal or
+change `AGENT_QUEUE_LIMIT`.
+
 The default `standalone` role preserves the local collector and LAN desktop.
 `central` adds authenticated multi-gateway access; `gateway` keeps a local fallback
 Console while an outbound agent owns MQTT. The same default multi-architecture

@@ -36,6 +36,13 @@ export async function initializeManagedRole():Promise<http.Server|undefined> {
     if(!config.development&&!config.trustedProxies.length)throw new Error('Configure an explicit TLS reverse proxy peer in CENTRAL_TRUSTED_PROXIES.');
     configurePublications('.data/central.db');
     processor=createBillingProcessor('.data/central.db');
+    processor.history=async(_gateway,action,snapshot)=>{
+      if(action!=='history-import'||!snapshot?.meter)throw new Error('Central only accepts history imports.');
+      // Reuse the signature, identity, nonce-continuity and atomic merge checks.
+      // Central's recovery loop publishes only unconfirmed rows after chain sync.
+      await (await import('./billing')).importBillingSnapshot(snapshot,false);
+      return null;
+    };
     let publishing=false;
     const recover=()=>{if(publishing)return;publishing=true;
       void import('../lib/sync').then(module=>module.getSyncedPendingTransactions()).then(distributeManaged).catch(()=>{}).finally(()=>{publishing=false;});
@@ -52,6 +59,13 @@ export async function initializeManagedRole():Promise<http.Server|undefined> {
       const identity=readOwnerSecret(config.credentialPath!).split(':')[0];
       if(!/^[\w-]{36}$/.test(identity))throw new Error('Agent enrollment is not ready.');return identity;
     };
+    const historyTarget=()=>`${config.centralUrl}|${getGateway()}`;
+    processor.history=async(_gateway,action,snapshot)=>{
+      const store=await import('../store/sqlite');
+      if(action==='history-read')return store.readGatewayHistory(historyTarget());
+      if(action==='history-ack'&&snapshot){store.acknowledgeGatewayHistory(historyTarget(),snapshot);return null;}
+      throw new Error('Gateway history only supports export and acknowledgment.');
+    };
     const server=fallbackServer(processor,secret,getGateway);
     const port=gatewayFallbackPort();
     if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('GATEWAY_FALLBACK_PORT must be 1024–65535.');
@@ -64,6 +78,8 @@ export async function initializeManagedRole():Promise<http.Server|undefined> {
       });
       server.listen(port,'127.0.0.1',()=>{server.removeAllListeners('error');resolve();});
     });
+    const pruning=(await import('./gateway-pruning')).startGatewayPruning(historyTarget);
+    server.once('close',()=>{void pruning.destroy();});
     return server;
   }
 }

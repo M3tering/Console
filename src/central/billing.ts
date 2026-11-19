@@ -21,7 +21,7 @@ export function createBillingProcessor(filename:string):DurableProcessor {
 const logger=createLogger('[central]');
 /** Accept another decider's billing state (a gateway's fallback decisions) after
  * checking it against the meter's signatures, its token and the chain. */
-export async function importBillingSnapshot(snapshot:BillingSnapshot):Promise<void> {
+export async function importBillingSnapshot(snapshot:BillingSnapshot, distribute=true):Promise<void> {
       const meter=snapshot.meter;if(!meter)return;
       const known=getMeterByPublicKey(meter.publicKey);
       const token=known?.tokenId ?? await meterIdFromPublicKeyContractCall(meter.publicKey);
@@ -48,6 +48,6 @@ export async function importBillingSnapshot(snapshot:BillingSnapshot):Promise<vo
       mergeBillingSnapshot(snapshot);
       // Only central publishes what another decider handed over. (Older gateways may list readings they
       // already sent to the prover; that is ignored: the prover is resent until the chain confirms.)
-      if(process.env.CONSOLE_ROLE!=='central')return;
+      if(process.env.CONSOLE_ROLE!=='central'||!distribute)return;
       void distributeManaged(snapshot.transactions).catch(()=>{});
 }
