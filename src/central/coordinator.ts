@@ -22,6 +22,8 @@ function deadline<T>(promise:Promise<T>,ms:number):Promise<T> {
   });
 }
 const terminal = (state:string) => ['enqueued','queue-observed','superseded','rejected'].includes(state);
+/** The reply went out (or is in ChirpStack's queue) and the outcome was replayed to the other side. */
+const settled = (state:string) => state==='enqueued'||state==='queue-observed';
 
 /** Only this component may enqueue a managed state reply. Network code never
  * retries enqueue. New reports revoke permission to send previous replies before
@@ -49,7 +51,10 @@ export class UplinkCoordinator {
       // commit conflicting records for one nonce. Drop its reply, but reconcile
       // its billing snapshot before handing the newer report to another side.
       const prior=this.journal.previous(row);
-      if(prior?.owner) {
+      // A finished prior report (its reply enqueued or seen in the queue) already had its outcome
+      // replayed to the other decider, so there is nothing in flight to wait for. Asking its owner
+      // anyway would leave every new report undecided whenever that owner (central) is unreachable.
+      if(prior?.owner && !settled(prior.state)) {
         try {
           const outcome=await deadline(this.decider(prior.owner).outcome(prior.gateway,prior.id),this.options.timeoutMs);
           if(!outcome || outcome.active)return;

@@ -15,6 +15,7 @@ import { mqttConnection } from '../lib/mqtt-config';
 import { applicationId } from '../lib/chirpstack-config';
 import { managedQueue } from '../services/grpc';
 import { createLogger } from '../utils/logger';
+import { watchResolver } from '../utils/dns-watch';
 import { describeReport, describeReply, errorText } from '../utils/report-log';
 import type { ChirpstackQueue } from '../central/coordinator';
 import { RateLimit } from '../central/auth';
@@ -74,6 +75,7 @@ export async function runAgent():Promise<()=>Promise<void>> {
     socket.send(JSON.stringify({v:1,type:'health',health}));
     if(socket.bufferedAmount<MAX_MESSAGE_BYTES*8)for(const result of journal.results())socket.send(JSON.stringify({v:1,type:'result',...result}));
   };
+  let failing:string|null=null;
   const connectCentral=()=>{
     if(stopped)return;
     const ws=socket=new WebSocket(new URL('/agent',config.centralUrl),{headers:{Authorization:`Bearer ${currentCredential}`},maxPayload:MAX_MESSAGE_BYTES,
@@ -81,6 +83,7 @@ export async function runAgent():Promise<()=>Promise<void>> {
     const inputLimit=new RateLimit(512,1000,1);
     const tunnels=new TunnelMux(ws,request=>gatewayTarget(request));
     ws.on('open',()=>{connectedAt=Date.now();attempt=0;lastError='none';
+      logger.info(failing?`Connected to central again (${config.centralUrl}).`:`Connected to central (${config.centralUrl}).`);failing=null;
       if(process.env.CONSOLE_DEPLOY_IMAGE)writeOwnerSecret(path.join(stateDirectory,'reconnected.json'),JSON.stringify({image:process.env.CONSOLE_DEPLOY_IMAGE,time:Date.now()}));
       updateStatuses.clear();sendHealth();});
     ws.on('message',data=>{
@@ -110,7 +113,11 @@ export async function runAgent():Promise<()=>Promise<void>> {
         } else if(message.type!=='pong')ws.close(1008,'Unsupported operation for this agent version');
       }catch{lastError='central';ws.close(1008,'Invalid central message');}
     });
-    ws.on('error',()=>{lastError='central';});
+    ws.on('error',error=>{lastError='central';
+      // Say once that central can't be reached, and why; stay quiet while retrying.
+      const reason=(error as NodeJS.ErrnoException).code||error.message;
+      if(failing!==reason){failing=reason;logger.warn(`Cannot reach central (${reason}); retrying.${['EAI_AGAIN','ENOTFOUND'].includes(reason)?' Its name does not resolve from this container.':''}`);}
+    });
     ws.on('close',()=>{
       central.disconnect();connectedAt=0;lastError='central';
       if(!stopped){const delay=Math.min(60000,1000*2**Math.min(attempt++,6))*(.75+Math.random()*.5);reconnect=setTimeout(connectCentral,delay);}
@@ -160,7 +167,12 @@ export async function runAgent():Promise<()=>Promise<void>> {
       try{await replication.flush('local');}catch{}try{await replication.flush('central');}catch{}await coordinator.drain();})()
       .catch(()=>{lastError='storage';}).finally(()=>{draining=undefined;});
   },5000);timer.unref();connectCentral();
-  return async()=>{stopped=true;clearTimeout(reconnect);clearInterval(timer);central.disconnect();socket?.terminate();await mqtt.endAsync(false);await coordinator.stop();await draining;journal.close();};
+  const stop=async()=>{stopped=true;stopResolverWatch();clearTimeout(reconnect);clearInterval(timer);central.disconnect();socket?.terminate();await mqtt.endAsync(false);await coordinator.stop();await draining;journal.close();};
+  const stopResolverWatch=watchResolver(()=>{
+    logger.error('This container has no DNS server (Docker copied the host\'s DNS settings before its network was up). Restarting so Docker provides fresh ones.');
+    void stop().finally(()=>process.exit(1));
+  });
+  return stop;
 }
 if(require.main===module){
   void runAgent().then(stop=>{for(const signal of ['SIGINT','SIGTERM'] as const)process.once(signal,()=>{void stop().finally(()=>process.exit(0));});})

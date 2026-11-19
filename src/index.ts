@@ -33,6 +33,7 @@ import { loadExtensionsFromConfig, loadUIExtensionsFromConfig, runHook, notifyHo
 import setupDatabase from './store/sqlite';
 import { createLogger } from './utils/logger';
 import { warnRemovedManagerSettings } from './lib/legacy-config';
+import { watchResolver } from './utils/dns-watch';
 
 const logger = createLogger('[index]');
 warnRemovedManagerSettings(process.env, message => logger.warn(message));
@@ -77,6 +78,13 @@ warnRemovedManagerSettings(process.env, message => logger.warn(message));
     logger.info('Application initialization completed successfully');
 
     startServer();
+
+    // After a reboot Docker may start this container before the host has DNS (for example slow Wi-Fi).
+    // Its copy of the DNS settings then stays empty; restart so Docker provides the host's current ones.
+    watchResolver(() => {
+      logger.error('This container has no DNS server (Docker copied the host\'s DNS settings before its network was up). Restarting so Docker provides fresh ones.');
+      process.exit(1);
+    });
 
     await runHook('onAfterInit');
   } catch (error) {

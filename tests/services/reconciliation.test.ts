@@ -87,3 +87,32 @@ test('when central cannot take a report the agent logs why, including a failed r
     expect(journal.get('replay-2')?.owner).toBe('local');
   }finally{await coordinator.stop();journal.close();central.close();local.close();}
 });
+
+test('after central sends a reply and then goes away, the gateway decides the next report; an unfinished one still waits',async()=>{
+  const journal=new OperationJournal(':memory:');
+  const decision2={...decision};
+  const central={offer:jest.fn(async()=>{}),commit:jest.fn(async(_g:string,id:string)=>({id,state:'decided' as const,active:false,decision:decision2,snapshot:null})),
+    outcome:jest.fn(async(_g:string,id:string)=>{if(down)throw new Error('central unreachable');return {id,state:'decided' as const,active:false,decision:decision2,snapshot:null};}),reconcile:jest.fn(async()=>{})};
+  const local={offer:jest.fn(async()=>{}),commit:jest.fn(async(_g:string,id:string)=>({id,state:'decided' as const,active:false,decision:decision2,snapshot:null})),
+    outcome:jest.fn(async(_g:string,id:string)=>({id,state:'decided' as const,active:false,decision:decision2,snapshot:null})),reconcile:jest.fn(async()=>{})};
+  let healthy=true,down=false;
+  const queue={list:jest.fn(async()=>[]),enqueue:jest.fn(async()=>`q-${queue.enqueue.mock.calls.length}`)};
+  const coordinator=new UplinkCoordinator(journal,central,local,queue,{centralHealthy:()=>healthy,timeoutMs:50});
+  const event=(id:string)=>({...report,deduplicationId:id});
+  try{
+    await coordinator.receive('gateway',event('a'));
+    expect(journal.get('a')).toMatchObject({owner:'central',state:'enqueued'});
+    healthy=false;down=true;central.outcome.mockClear();
+    await coordinator.receive('gateway',event('b'));
+    expect(journal.get('b')).toMatchObject({owner:'local',state:'enqueued'});
+    expect(central.outcome).not.toHaveBeenCalled();
+    // A prior report central owns but has not finished must still be asked about first.
+    healthy=true;down=false;central.commit.mockRejectedValueOnce(new Error('lost reply'));
+    await coordinator.receive('gateway',event('c'));
+    expect(journal.get('c')?.state).toBe('uncertain');
+    healthy=false;down=true;
+    await coordinator.receive('gateway',event('d'));
+    expect(central.outcome).toHaveBeenCalled();
+    expect(journal.get('d')?.owner).toBeNull();
+  }finally{await coordinator.stop();journal.close();}
+});
