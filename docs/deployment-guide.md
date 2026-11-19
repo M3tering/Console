@@ -178,6 +178,18 @@ While central is unreachable, a managed gateway sends the readings it decides it
 its own `.env` sets `PREFERRED_PROVER_NODE`. Central's scheduled runs resend them later anyway. A gateway
 never publishes to Streamr or Arweave; central does that.
 
+To send a batch now instead of waiting for the schedule, run this in the Console folder on central or
+a standalone Console:
+
+```sh
+./prover-batch.sh              # each meter's lowest 100 unconfirmed nonces
+./prover-batch.sh --limit 250  # each meter's lowest 250
+./prover-batch.sh --all        # every unconfirmed reading, like the scheduled job
+```
+
+It prints, per meter, which nonces it sends, then the prover's answer. The lowest nonces go first because
+they are the ones the prover needs next.
+
 Logs: `Sending N transactions to prover at …`, then `Prover response (text): …`.
 
 ## The Streamr app

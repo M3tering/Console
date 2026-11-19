@@ -11,6 +11,7 @@ import { LocalDecider } from '../central/local-channel';
 import { SocketDecider, parseOperation } from '../central/rpc';
 import { parseMessage, MAX_MESSAGE_BYTES, Health, UplinkEvent } from '../central/protocol';
 import { Replication } from '../central/replication';
+import { syncGatewayHistory } from '../central/history';
 import { mqttConnection } from '../lib/mqtt-config';
 import { applicationId } from '../lib/chirpstack-config';
 import { managedQueue } from '../services/grpc';
@@ -55,6 +56,7 @@ export async function runAgent():Promise<()=>Promise<void>> {
   const local=new LocalDecider(gatewayFallbackPort(),readOwnerSecret(config.fallbackSecretPath),config.decisionTimeoutMs);
   let socket:WebSocket|undefined,stopped=false,reconnect:ReturnType<typeof setTimeout>|undefined;
   let connectedAt=0,attempt=0,mqttState:Health['mqtt']='connecting',lastError:Health['lastError']='none';
+  let historyAvailable=false;
   const central=new SocketDecider(()=>socket,config.decisionTimeoutMs);
   const replication=new Replication(journal,central,local);
   const healthy=()=>socket?.readyState===WebSocket.OPEN&&Date.now()-connectedAt>=config.recoveryHealthyMs;
@@ -78,9 +80,11 @@ export async function runAgent():Promise<()=>Promise<void>> {
   let failing:string|null=null;
   const connectCentral=()=>{
     if(stopped)return;
+    historyAvailable=false;
     const ws=socket=new WebSocket(new URL('/agent',config.centralUrl),{headers:{Authorization:`Bearer ${currentCredential}`},maxPayload:MAX_MESSAGE_BYTES,
       perMessageDeflate:false,handshakeTimeout:8000,followRedirects:false});
     const inputLimit=new RateLimit(512,1000,1);
+    ws.on('upgrade',response=>{historyAvailable=response.headers['x-console-history']==='1';});
     const tunnels=new TunnelMux(ws,request=>gatewayTarget(request));
     ws.on('open',()=>{connectedAt=Date.now();attempt=0;lastError='none';
       logger.info(failing?`Connected to central again (${config.centralUrl}).`:`Connected to central (${config.centralUrl}).`);failing=null;
@@ -158,8 +162,22 @@ export async function runAgent():Promise<()=>Promise<void>> {
     }
   };
   let draining:Promise<void>|undefined;
+  let historySync:Promise<void>|undefined;
+  let historyFailed=false;
   const timer=setInterval(()=>{
-    sendHealth();if(draining)return;
+    sendHealth();
+    // A bounded history batch runs independently of live decisions/replay. Slow
+    // chain validation on central must not hold up the gateway's fallback loop.
+    if(healthy()&&historyAvailable&&!historySync){
+      historySync=syncGatewayHistory(gateway,local,central).then(count=>{
+        if(count)logger.info(`Central accepted ${count} historical readings.`);
+        historyFailed=false;
+      }).catch(()=>{
+        if(!historyFailed)logger.warn('Historical synchronization deferred; readings stay on this gateway until central accepts them.');
+        historyFailed=true;
+      }).finally(()=>{historySync=undefined;});
+    }
+    if(draining)return;
     draining=(async()=>{
       try{const state=await updater.status();updatesEnabled=state.enabled;
         if(socket?.readyState===WebSocket.OPEN)for(const job of state.jobs){if(updateStatuses.get(job.id)!==job.status){socket.send(JSON.stringify({v:1,type:'update-progress',id:job.id,status:job.status}));updateStatuses.set(job.id,job.status);}}
@@ -167,7 +185,7 @@ export async function runAgent():Promise<()=>Promise<void>> {
       try{await replication.flush('local');}catch{}try{await replication.flush('central');}catch{}await coordinator.drain();})()
       .catch(()=>{lastError='storage';}).finally(()=>{draining=undefined;});
   },5000);timer.unref();connectCentral();
-  const stop=async()=>{stopped=true;stopResolverWatch();clearTimeout(reconnect);clearInterval(timer);central.disconnect();socket?.terminate();await mqtt.endAsync(false);await coordinator.stop();await draining;journal.close();};
+  const stop=async()=>{stopped=true;stopResolverWatch();clearTimeout(reconnect);clearInterval(timer);central.disconnect();socket?.terminate();await mqtt.endAsync(false);await coordinator.stop();await draining;await historySync;journal.close();};
   const stopResolverWatch=watchResolver(()=>{
     logger.error('This container has no DNS server (Docker copied the host\'s DNS settings before its network was up). Restarting so Docker provides fresh ones.');
     void stop().finally(()=>process.exit(1));

@@ -32,6 +32,9 @@ export class GatewayHub {
   };
   mount(app:Express,server:http.Server):void {
     const wss=new WebSocket.Server({noServer:true,maxPayload:MAX_MESSAGE_BYTES,perMessageDeflate:false});
+    // Capability negotiation keeps upgraded gateways from sending new RPCs to
+    // older central servers, which would close the live billing connection.
+    wss.on('headers',headers=>headers.push('X-Console-History: 1'));
     registerSocket(server,'/agent',wss,req=>{
       if((!this.development&&!this.auth.secure(req))||!this.upgradeLimit.allow(req.socket.remoteAddress||'unknown'))return false;
       const token=req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
@@ -55,7 +58,9 @@ export class GatewayHub {
           let message;try{message=parseOperation(data.toString());if(message.type!=='operation')throw new Error();}catch{socket.close(1008,'Invalid operation');return;}
           inFlight++;
           void serveOperation(this.processor(),gateway,message).then(reply=>{// Learn which gateway serves a meter, also from reports it decided while central was away.
-            if(!reply.error&&(message.action==='offer'||message.action==='reconcile')&&message.event)this.identities.observeDevice(message.event.deviceInfo.devEui,gateway);if(socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify(reply));}).catch(()=>socket.close(1011,'Operation storage unavailable')).finally(()=>inFlight--);
+            if(!reply.error&&(message.action==='offer'||message.action==='reconcile')&&message.event)this.identities.observeDevice(message.event.deviceInfo.devEui,gateway);
+            if(!reply.error&&message.action==='history-import'&&message.history?.meter?.devEui)this.identities.observeDevice(message.history.meter.devEui,gateway);
+            if(socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify(reply));}).catch(()=>socket.close(1011,'Operation storage unavailable')).finally(()=>inFlight--);
           return;
         }
         try {

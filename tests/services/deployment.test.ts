@@ -297,3 +297,27 @@ test('the role lines in .env are updated in place, keep the file owner-only, and
     expect(fs.statSync(path.join(dir,'.env')).mode&0o777).toBe(0o600);
   } finally {fs.rmSync(dir,{recursive:true,force:true});}
 });
+
+test('prover-batch.sh runs the batch script in the running Console, using the role\'s compose file', () => {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'console-prover-'));
+  try {
+    fs.copyFileSync('prover-batch.sh',path.join(dir,'prover-batch.sh'));fs.chmodSync(path.join(dir,'prover-batch.sh'),0o755);
+    fs.mkdirSync(path.join(dir,'scripts'));fs.writeFileSync(path.join(dir,'scripts','prover-batch.cjs'),'// batch script\n');
+    const log=path.join(dir,'calls');
+    fs.writeFileSync(path.join(dir,'docker'),`#!/bin/bash
+printf '%s\\n' "$*" >> "$DEPLOY_LOG"
+case "$*" in *' ps -q console') [[ "$RUNNING" == true ]] && echo container ;; *' console node -') cat >> "$DEPLOY_LOG" ;; esac
+`,{mode:0o755});
+    const run=(env:string,running=true,args:string[]=[])=>{fs.writeFileSync(path.join(dir,'.env'),env);fs.writeFileSync(log,'');
+      const r=spawnSync('bash',['prover-batch.sh',...args],{cwd:dir,encoding:'utf8',env:{...process.env,PATH:dir+':'+process.env.PATH,DEPLOY_LOG:log,RUNNING:String(running)}});
+      return {r,calls:fs.readFileSync(log,'utf8')};};
+    let {r,calls}=run('CONSOLE_ROLE=central\nCOMPOSE_FILE=compose.central.yaml\nCOMPOSE_PROJECT_NAME=console\n');
+    expect(r.status).toBe(0);
+    expect(calls).toContain('compose -f compose.central.yaml --project-name console exec -T -e PROVER_BATCH_LIMIT=100 console node -');
+    expect(calls).toContain('// batch script');
+    ({r,calls}=run('CONSOLE_ROLE=central\n',true,['--limit','250']));expect(calls).toContain('compose -f compose.central.yaml exec -T -e PROVER_BATCH_LIMIT=250 console node -');
+    ({r,calls}=run('API_TOKEN=x\n',true,['--all']));expect(calls).toContain('compose -f compose.yaml exec -T -e PROVER_BATCH_LIMIT=0 console node -');
+    for(const bad of [['--limit','0'],['--limit','x'],['--nope']]){({r,calls}=run('CONSOLE_ROLE=central\n',true,bad));expect(r.status).toBe(2);expect(calls).toBe('');}
+    ({r,calls}=run('CONSOLE_ROLE=central\n',false));expect(r.status).toBe(1);expect(r.stderr).toContain("isn't running");expect(calls).not.toContain('exec -T');
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
+});

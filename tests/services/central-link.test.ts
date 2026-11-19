@@ -11,6 +11,7 @@ import { LocalDecider, fallbackServer } from '../../src/central/local-channel';
 import { protectSessionSockets, registerSocket } from '../../src/services/socket-router';
 import { hashPassword } from '../../src/central/secrets';
 import type { UplinkEvent } from '../../src/central/protocol';
+import { syncGatewayHistory } from '../../src/central/history';
 
 const report:UplinkEvent={deduplicationId:'wire-report',fPort:2,deviceInfo:{applicationId:'11111111-1111-4111-8111-111111111111',devEui:'0102030405060708'},data:Buffer.alloc(74).toString('base64')};
 const start=async(server:http.Server)=>{await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));return `http://127.0.0.1:${(server.address() as import('net').AddressInfo).port}`;};
@@ -30,7 +31,9 @@ async function fixture(){
   const response=await fetch(base+'/api/agent/enroll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
   const enrolled=await response.json() as {gateway:string;credential:string};
   const sockets:WebSocket[]=[];
-  const connect=async()=>{const ws=new WebSocket(base.replace('http:','ws:')+'/agent',{headers:{authorization:`Bearer ${enrolled.credential}`}});sockets.push(ws);await once(ws,'open');return ws;};
+  const connect=async()=>{const ws=new WebSocket(base.replace('http:','ws:')+'/agent',{headers:{authorization:`Bearer ${enrolled.credential}`}});
+    ws.on('upgrade',response=>expect(response.headers['x-console-history']).toBe('1'));
+    sockets.push(ws);await once(ws,'open');return ws;};
   return {store,cookie,processor,hub,compute,base,enrolled,token,connect,close:async()=>{
     for(const ws of sockets)ws.terminate();for(const ws of hub.sockets.values())ws.terminate();
     terminal.close();await close(server);processor.close();store.close();
@@ -56,6 +59,35 @@ test('authenticated outbound link returns the same stored decision by ChirpStack
     expect(revoked.status).toBe(200);await closed;
     expect(f.store.authenticateAgent(f.enrolled.credential)).toBeNull();
   }finally{client?.disconnect();await f.close();}
+});
+
+test('historical batches traverse authenticated local HTTP and the central socket without billing a new report',async()=>{
+  const f=await fixture();
+  const local=new DurableProcessor(':memory:',jest.fn());
+  const batch={meter:{publicKey:`0x${'ab'.repeat(32)}`,tokenId:7,devEui:'0102030405060708',latestNonce:2},
+    transactions:[{identifier:7,nonce:2,receivedAt:1,raw:'00'.repeat(74)}]};
+  let acknowledged=false;
+  local.history=jest.fn(async(_gateway,action)=>{
+    if(action==='history-read')return acknowledged?null:batch;
+    acknowledged=true;return null;
+  });
+  f.processor.history=jest.fn(async()=>null);
+  const server=fallbackServer(local,'history-test-secret',f.enrolled.gateway);
+  const base=await start(server);
+  let client:SocketDecider|undefined;
+  try{
+    const ws=await f.connect();client=new SocketDecider(()=>ws,1000);
+    ws.on('message',data=>{const response=parseOperation(data.toString());if(response.type==='operation-result')client!.receive(response);});
+    const fallback=new LocalDecider(Number(new URL(base).port),'history-test-secret',1000);
+    expect(await syncGatewayHistory(f.enrolled.gateway,fallback,client)).toBe(1);
+    expect(f.processor.history).toHaveBeenCalledWith(f.enrolled.gateway,'history-import',batch);
+    expect(f.store.devices()).toEqual(expect.arrayContaining([expect.objectContaining({devEui:batch.meter.devEui,gateway:f.enrolled.gateway})]));
+    expect(await syncGatewayHistory(f.enrolled.gateway,fallback,client)).toBe(0);
+    expect(f.compute).not.toHaveBeenCalled();
+    const unauthenticated=await fetch(base+'/operation',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({v:1,type:'operation',requestId:'test',id:'history',action:'history-read'})});
+    expect(unauthenticated.status).toBe(401);
+  }finally{client?.disconnect();await close(server);local.close();await f.close();}
 });
 
 test('rename updates the list; delete disconnects the agent and removes the gateway',async()=>{

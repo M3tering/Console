@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import WebSocket from 'ws';
-import type { Decider, Outcome, BillingSnapshot } from './processor';
+import type { Decider, Outcome, BillingSnapshot, HistoryAction } from './processor';
 import { parseMessage, UplinkEvent, MAX_MESSAGE_BYTES } from './protocol';
 import { eventIdentity } from './operations';
 import { createLogger } from '../utils/logger';
@@ -8,8 +8,8 @@ import { errorText } from '../utils/report-log';
 
 const logger=createLogger('[central]');
 
-export type OperationRequest = {v:1;type:'operation';requestId:string;action:'offer'|'commit'|'outcome'|'reconcile';id:string;event?:UplinkEvent;outcome?:Outcome};
-export type OperationResponse = {v:1;type:'operation-result';requestId:string;id:string;outcome:Outcome|null;error:boolean};
+export type OperationRequest = {v:1;type:'operation';requestId:string;action:'offer'|'commit'|'outcome'|'reconcile'|HistoryAction;id:string;event?:UplinkEvent;outcome?:Outcome;history?:BillingSnapshot};
+export type OperationResponse = {v:1;type:'operation-result';requestId:string;id:string;outcome:Outcome|null;error:boolean;history?:BillingSnapshot|null};
 const record=(value:unknown):value is Record<string,unknown>=>typeof value==='object'&&value!==null&&!Array.isArray(value);
 const identifier=(value:unknown):value is string=>typeof value==='string'&&/^[\w-]{1,128}$/.test(value)&&!/[\s]/.test(value);
 const int=(v:unknown,min=0):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=min;
@@ -37,8 +37,15 @@ export function parseOperation(input:Buffer|string):OperationRequest|OperationRe
   const value:unknown=JSON.parse(input.toString());
   if(!record(value)||value.v!==1||!identifier(value.requestId)||!identifier(value.id))throw new Error('Invalid operation envelope.');
   if(value.type==='operation-result'){
-    if(Object.keys(value).length!==6||typeof value.error!=='boolean'||(value.outcome!==null&&!validOutcome(value.outcome,value.id)))throw new Error('Invalid operation result.');
+    if(Object.keys(value).length!==(value.history===undefined?6:7)||typeof value.error!=='boolean'||(value.outcome!==null&&!validOutcome(value.outcome,value.id))||
+      (value.history!==undefined && (value.id!=='history'||value.outcome!==null||(value.history!==null&&!snapshot(value.history)))))throw new Error('Invalid operation result.');
     return value as OperationResponse;
+  }
+  if(value.type==='operation'&&['history-read','history-import','history-ack'].includes(String(value.action))){
+    const hasBatch=value.action!=='history-read';
+    if(value.id!=='history'||Object.keys(value).length!==(hasBatch?6:5)||
+      (hasBatch&&(!snapshot(value.history)||!value.history.meter||value.history.transactions.length<1||value.history.transactions.length>100)))throw new Error('Invalid history batch.');
+    return value as OperationRequest;
   }
   if(value.type!=='operation'||!['offer','commit','outcome','reconcile'].includes(String(value.action)))throw new Error('Unknown operation.');
   const wantsEvent=value.action==='offer'||value.action==='reconcile';
@@ -53,8 +60,14 @@ export function parseOperation(input:Buffer|string):OperationRequest|OperationRe
 }
 export async function serveOperation(processor:Decider,gateway:string,request:OperationRequest):Promise<OperationResponse> {
   let outcome:Outcome|null=null,error=false;
+  const isHistory=request.action.startsWith('history-');
+  let history:BillingSnapshot|null=null;
   try {
-    if(request.action==='offer')await processor.offer(gateway,request.event!);
+    if(isHistory){
+      if(!processor.history)throw new Error('History synchronization is unavailable.');
+      history=await processor.history(gateway,request.action as HistoryAction,request.history);
+    }
+    else if(request.action==='offer')await processor.offer(gateway,request.event!);
     else if(request.action==='commit')outcome=await processor.commit(gateway,request.id);
     else if(request.action==='outcome')outcome=await processor.outcome(gateway,request.id);
     else if(processor.reconcile)await processor.reconcile(gateway,request.event!,request.outcome!);
@@ -63,30 +76,35 @@ export async function serveOperation(processor:Decider,gateway:string,request:Op
     error=true;
     logger.warn(`Refused ${request.action} of report ${request.id} from gateway ${gateway}: ${errorText(failure)}`);
   }
-  return {v:1,type:'operation-result',requestId:request.requestId,id:request.id,outcome,error};
+  return {v:1,type:'operation-result',requestId:request.requestId,id:request.id,outcome,error,...(isHistory?{history}:{})};
 }
 
 /** One bounded RPC channel over the agent's persistent outbound socket. The
  * gateway identity is assigned by authentication, never by a frame's payload. */
 export class SocketDecider implements Decider {
-  private pending=new Map<string,{id:string;resolve:(value:Outcome|null)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
+  private pending=new Map<string,{id:string;resolve:(value:OperationResponse)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
   constructor(private socket:()=>WebSocket|undefined,private timeoutMs=8000) {}
   offer(_gateway:string,event:UplinkEvent):Promise<void>{return this.call('offer',eventIdentity(event),event).then(()=>{});}
-  commit(_gateway:string,id:string):Promise<Outcome>{return this.call('commit',id).then(value=>{if(!value)throw new Error('No stored outcome.');return value;});}
-  outcome(_gateway:string,id:string):Promise<Outcome|null>{return this.call('outcome',id);}
+  commit(_gateway:string,id:string):Promise<Outcome>{return this.call('commit',id).then(value=>{if(!value.outcome)throw new Error('No stored outcome.');return value.outcome;});}
+  outcome(_gateway:string,id:string):Promise<Outcome|null>{return this.call('outcome',id).then(value=>value.outcome);}
   reconcile(_gateway:string,event:UplinkEvent,outcome:Outcome):Promise<void>{return this.call('reconcile',outcome.id,event,outcome).then(()=>{});}
+  history(_gateway:string,action:HistoryAction,history?:BillingSnapshot):Promise<BillingSnapshot|null>{
+    return this.call(action,'history',undefined,undefined,history).then(value=>{
+      if(value.history===undefined)throw new Error('Central does not support history synchronization.');return value.history;
+    });
+  }
   receive(message:OperationResponse):void {
     const pending=this.pending.get(message.requestId);if(!pending)return;
     if(message.id!==pending.id){this.disconnect();return;}
     clearTimeout(pending.timer);this.pending.delete(message.requestId);
-    if(message.error)pending.reject(new Error('Operation refused or unavailable.'));else pending.resolve(message.outcome);
+    if(message.error)pending.reject(new Error('Operation refused or unavailable.'));else pending.resolve(message);
   }
   disconnect():void {for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(new Error('Agent link disconnected.'));}this.pending.clear();}
-  private call(action:OperationRequest['action'],id:string,event?:UplinkEvent,outcome?:Outcome):Promise<Outcome|null> {
+  private call(action:OperationRequest['action'],id:string,event?:UplinkEvent,outcome?:Outcome,history?:BillingSnapshot):Promise<OperationResponse> {
     const socket=this.socket();
     if(!socket||socket.readyState!==WebSocket.OPEN||this.pending.size>=64||socket.bufferedAmount>MAX_MESSAGE_BYTES*8)return Promise.reject(new Error('Agent link unavailable or busy.'));
     const requestId=randomUUID();
-    const message:OperationRequest={v:1,type:'operation',requestId,action,id,...(event?{event}:{}),...(outcome?{outcome}:{})};
+    const message:OperationRequest={v:1,type:'operation',requestId,action,id,...(event?{event}:{}),...(outcome?{outcome}:{}),...(history?{history}:{})};
     parseOperation(JSON.stringify(message));
     return new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>{this.pending.delete(requestId);reject(new Error('Operation timed out.'));},this.timeoutMs);

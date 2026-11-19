@@ -6,7 +6,7 @@ import { enqueue } from '../../src/services/grpc';
 
 jest.mock('mqtt', () => ({ connect: jest.fn() }));
 jest.mock('../../src/services/grpc', () => ({ enqueue: jest.fn() }));
-jest.mock('../../src/store/sqlite', () => ({ getAllTransactionRecords: jest.fn(), getMeterByDevEui: jest.fn(), getMeterByPublicKey: jest.fn(), getTransactionByNonce: jest.fn(), recordMeterTransaction: jest.fn(), saveMeter: jest.fn(), updateMeterDevEui: jest.fn(), updateMeterNonce: jest.fn() }));
+jest.mock('../../src/store/sqlite', () => ({ getAllTransactionRecords: jest.fn(), getMeterByDevEui: jest.fn(), getMeterByPublicKey: jest.fn(), getTransactionByNonce: jest.fn(), getReplyTransaction: jest.fn(), recordMeterTransaction: jest.fn(), saveMeter: jest.fn(), updateMeterDevEui: jest.fn(), updateMeterNonce: jest.fn() }));
 jest.mock('../../src/lib/sync', () => ({ getLatestTransactionNonce: jest.fn() }));
 jest.mock('../../src/utils/contracts', () => ({ meterIdFromPublicKeyContractCall: jest.fn() }));
 jest.mock('../../src/lib/utils', () => ({ runHook: jest.fn(), notifyHook: jest.fn(), verifyPayloadSignature: jest.fn() }));
@@ -34,6 +34,7 @@ function resetFixture() {
   (store.updateMeterDevEui as jest.Mock).mockReturnValue(true);
   (store.getAllTransactionRecords as jest.Mock).mockImplementation(() => records);
   (store.getTransactionByNonce as jest.Mock).mockImplementation(nonce => records.find(record => record.nonce === nonce));
+  (store.getReplyTransaction as jest.Mock).mockImplementation(nonce => records.find(record => record.nonce === nonce));
   (store.recordMeterTransaction as jest.Mock).mockImplementation((_, record) => { records.push(record); meter.latestNonce = record.nonce; });
 }
 beforeEach(resetFixture);
@@ -89,6 +90,16 @@ test('bootstrap messages use the balance hook and computation failures return of
   expect(runHook).toHaveBeenCalledWith('isOnStateCompute', 1);
   expect((enqueue as jest.Mock).mock.calls[0][1][0]).toBe(0);
   expect(store.recordMeterTransaction).not.toHaveBeenCalled();
+});
+
+test('a confirmed report pruned from transactions is acknowledged using its saved checkpoint',async()=>{
+  await handleMessage(uplink());
+  const checkpoint=records[0];records=[];
+  (store.getReplyTransaction as jest.Mock).mockImplementation(nonce=>nonce===1?checkpoint:null);
+  await handleMessage(uplink(1,'device-a',2000000));
+  expect(enqueue).toHaveBeenCalledTimes(2);
+  expect(store.recordMeterTransaction).toHaveBeenCalledTimes(1);
+  expect(records).toEqual([]);
 });
 test('persistence failure never acknowledges uncommitted data and releases the lock', async () => {
   (store.recordMeterTransaction as jest.Mock).mockImplementationOnce(() => { throw new Error('disk full'); });

@@ -36,6 +36,11 @@ export default function setupDatabase(databaseName = "m3tering.db") {
 
   initializeTransactionsTable();
   initializeMetersTable();
+  db.exec(`CREATE TABLE IF NOT EXISTS gateway_history_receipts (
+    target TEXT NOT NULL, identifier INTEGER NOT NULL, nonce INTEGER NOT NULL, raw TEXT NOT NULL,
+    PRIMARY KEY(target, identifier, nonce));
+    CREATE TABLE IF NOT EXISTS gateway_reply_checkpoints (
+    identifier INTEGER PRIMARY KEY, nonce INTEGER NOT NULL, receivedAt INTEGER NOT NULL, raw TEXT NOT NULL);`);
   prepareQueries();
 }
 
@@ -285,7 +290,7 @@ export function getAllTransactionRecords(): TransactionRecord[] {
 export function readBillingSnapshot(devEui:string):BillingSnapshot {
   const meter=getMeterByDevEuiQuery.get(devEui) as MeterRecord|undefined;
   if(!meter)return {meter:null,transactions:[]};
-  const transaction=getTransactionByNonceQuery.get(meter.latestNonce,meter.tokenId) as TransactionRecord|undefined;
+  const transaction=getReplyTransaction(meter.latestNonce,meter.tokenId);
   return {meter,transactions:transaction?[transaction]:[]};
 }
 
@@ -298,11 +303,68 @@ export function mergeBillingSnapshot(snapshot: BillingSnapshot): void {
     const existing = getMeterByPublicKeyQuery.get(meter.publicKey) as MeterRecord|undefined;
     if (existing && existing.tokenId !== meter.tokenId) throw new Error('Conflicting meter registration.');
     for (const record of snapshot.transactions) {
-      const previous = getTransactionByNonceQuery.get(record.nonce, record.identifier) as TransactionRecord|undefined;
+      const previous = getReplyTransaction(record.nonce, record.identifier);
       if (previous && previous.raw !== record.raw) throw new Error('Conflicting transaction requires reconciliation; data was not overwritten.');
       if (!previous) createTransactionQuery.run(record);
     }
     insertMeterQuery.run({ ...meter, latestNonce: Math.max(existing?.latestNonce ?? -1, meter.latestNonce) });
+  })();
+}
+
+/** Keep the last acknowledged reading outside the pending transaction table so
+ * a confirmed, pruned report can still be acknowledged if the device retries it. */
+export function getReplyTransaction(nonce: number, identifier: number): TransactionRecord | null {
+  return (getTransactionByNonceQuery.get(nonce, identifier) as TransactionRecord | undefined)
+    ?? (db.prepare('SELECT identifier,nonce,receivedAt,raw FROM gateway_reply_checkpoints WHERE identifier=? AND nonce=?')
+      .get(identifier, nonce) as TransactionRecord | undefined) ?? null;
+}
+
+/** One meter per bounded batch; ascending nonces let central fill old gaps first. */
+export function readGatewayHistory(target: string): BillingSnapshot | null {
+  const first = db.prepare(`SELECT t.identifier FROM transactions t
+    JOIN meters m ON m.tokenId=t.identifier
+    WHERE NOT EXISTS (SELECT 1 FROM gateway_history_receipts r
+      WHERE r.target=? AND r.identifier=t.identifier AND r.nonce=t.nonce AND r.raw=t.raw)
+    ORDER BY t.identifier,t.nonce LIMIT 1`).get(target) as {identifier:number} | undefined;
+  if (!first) return null;
+  const meter = getMeterByTokenIdQuery.get(first.identifier) as MeterRecord;
+  const transactions = db.prepare(`SELECT t.* FROM transactions t WHERE t.identifier=? AND NOT EXISTS
+    (SELECT 1 FROM gateway_history_receipts r WHERE r.target=? AND r.identifier=t.identifier AND r.nonce=t.nonce AND r.raw=t.raw)
+    ORDER BY t.nonce LIMIT 100`).all(first.identifier, target) as TransactionRecord[];
+  return { meter: {...meter, latestNonce: transactions[transactions.length - 1].nonce}, transactions };
+}
+
+/** An acknowledgment applies to the exact bytes central accepted, not a watermark. */
+export function acknowledgeGatewayHistory(target: string, snapshot: BillingSnapshot): void {
+  db.transaction(() => {
+    for (const record of snapshot.transactions) {
+      const local = getTransactionByNonceQuery.get(record.nonce, record.identifier) as TransactionRecord | undefined;
+      if (!local || local.raw !== record.raw) continue;
+      db.prepare(`INSERT INTO gateway_history_receipts VALUES (?,?,?,?)
+        ON CONFLICT(target,identifier,nonce) DO UPDATE SET raw=excluded.raw`)
+        .run(target, record.identifier, record.nonce, record.raw);
+    }
+  })();
+}
+
+/** Delete only chain-confirmed records whose exact contents reached this central. */
+export function pruneGatewayHistory(target: string, tokenId: number, confirmedNonce: number): number {
+  if (!Number.isSafeInteger(confirmedNonce) || confirmedNonce < 0) throw new Error('Invalid confirmed nonce.');
+  return db.transaction(() => {
+    const meter = getMeterByTokenIdQuery.get(tokenId) as MeterRecord | undefined;
+    if (!meter) return 0;
+    const latest = getTransactionByNonceQuery.get(meter.latestNonce, tokenId) as TransactionRecord | undefined;
+    if (latest && latest.nonce <= confirmedNonce) {
+      db.prepare(`INSERT INTO gateway_reply_checkpoints(identifier,nonce,receivedAt,raw) VALUES (@identifier,@nonce,@receivedAt,@raw)
+        ON CONFLICT(identifier) DO UPDATE SET nonce=excluded.nonce,receivedAt=excluded.receivedAt,raw=excluded.raw`).run(latest);
+    }
+    const count = db.prepare(`DELETE FROM transactions WHERE identifier=? AND nonce<=? AND EXISTS
+      (SELECT 1 FROM gateway_history_receipts r WHERE r.target=? AND r.identifier=transactions.identifier
+        AND r.nonce=transactions.nonce AND r.raw=transactions.raw)`).run(tokenId, confirmedNonce, target).changes;
+    db.prepare(`DELETE FROM gateway_history_receipts WHERE identifier=? AND NOT EXISTS
+      (SELECT 1 FROM transactions t WHERE t.identifier=gateway_history_receipts.identifier AND t.nonce=gateway_history_receipts.nonce)`)
+      .run(tokenId);
+    return count;
   })();
 }
 

@@ -12,17 +12,20 @@ export interface Outcome {
   active: boolean; decision: StateDownlink | null; snapshot: BillingSnapshot | null;
 }
 export interface Decider {
+  history?(gateway:string, action:HistoryAction, snapshot?:BillingSnapshot):Promise<BillingSnapshot|null>;
   offer(gateway: string, event: UplinkEvent): Promise<void>;
   commit(gateway: string, id: string): Promise<Outcome>;
   outcome(gateway: string, id: string): Promise<Outcome | null>;
   reconcile?(gateway:string,event:UplinkEvent,outcome:Outcome):Promise<void>;
 }
+export type HistoryAction = 'history-read' | 'history-import' | 'history-ack';
 type ProcessorRow = { id:string; gateway:string; fingerprint:string; event:string; state:Outcome['state']; decision:string|null; snapshot:string|null };
 
 /** Both central and fallback use this wrapper around the SAME billing handler.
  * Offer does no billing. A durable processing claim precedes the handler. Once
  * claimed, a missing result is never permission to recompute or change deciders. */
 export class DurableProcessor implements Decider {
+  history?: Decider['history'];
   private db: Database.Database;
   private active = new Map<string,Promise<Outcome>>();
   private devices = new Map<string,Promise<unknown>>();

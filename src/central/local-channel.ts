@@ -1,9 +1,9 @@
 import http from 'http';
 import express from 'express';
-import type { Decider, Outcome } from './processor';
+import type { Decider, Outcome, BillingSnapshot, HistoryAction } from './processor';
 import type { UplinkEvent } from './protocol';
 import { MAX_MESSAGE_BYTES } from './protocol';
-import { parseOperation, serveOperation, OperationRequest } from './rpc';
+import { parseOperation, serveOperation, OperationRequest, OperationResponse } from './rpc';
 import { hashSecret, equalSecretHash } from './secrets';
 import { eventIdentity } from './operations';
 import { randomUUID } from 'crypto';
@@ -30,11 +30,17 @@ export class LocalDecider implements Decider {
     if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('Invalid fallback port.');
   }
   offer(_gateway:string,event:UplinkEvent):Promise<void>{return this.call('offer',eventIdentity(event),event).then(()=>{});}
-  commit(_gateway:string,id:string):Promise<Outcome>{return this.call('commit',id).then(outcome=>{if(!outcome)throw new Error('No local outcome.');return outcome;});}
-  outcome(_gateway:string,id:string):Promise<Outcome|null>{return this.call('outcome',id);}
+  commit(_gateway:string,id:string):Promise<Outcome>{return this.call('commit',id).then(result=>{if(!result.outcome)throw new Error('No local outcome.');return result.outcome;});}
+  outcome(_gateway:string,id:string):Promise<Outcome|null>{return this.call('outcome',id).then(result=>result.outcome);}
   reconcile(_gateway:string,event:UplinkEvent,outcome:Outcome):Promise<void>{return this.call('reconcile',outcome.id,event,outcome).then(()=>{});}
-  private async call(action:OperationRequest['action'],id:string,event?:UplinkEvent,outcome?:Outcome):Promise<Outcome|null> {
-    const body:OperationRequest={v:1,type:'operation',requestId:randomUUID(),action,id,...(event?{event}:{}),...(outcome?{outcome}:{})};
+  history(_gateway:string,action:HistoryAction,history?:BillingSnapshot):Promise<BillingSnapshot|null>{
+    return this.call(action,'history',undefined,undefined,history).then(result=>{
+      if(result.history===undefined)throw new Error('Local history synchronization is unavailable.');return result.history;
+    });
+  }
+  private async call(action:OperationRequest['action'],id:string,event?:UplinkEvent,outcome?:Outcome,history?:BillingSnapshot):Promise<OperationResponse> {
+    const body:OperationRequest={v:1,type:'operation',requestId:randomUUID(),action,id,...(event?{event}:{}),...(outcome?{outcome}:{}),...(history?{history}:{})};
+    parseOperation(JSON.stringify(body));
     const response=await fetch(`http://127.0.0.1:${this.port}/operation`,{method:'POST',redirect:'error',signal:AbortSignal.timeout(this.timeoutMs),
       headers:{Authorization:`Bearer ${this.secret}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!response.ok)throw new Error('Local fallback is unavailable.');
@@ -45,6 +51,6 @@ export class LocalDecider implements Decider {
     }}finally{reader.releaseLock();}
     const result=parseOperation(Buffer.concat(chunks));
     if(result.type!=='operation-result'||result.id!==id||result.requestId!==body.requestId||result.error)throw new Error('Local operation is unavailable.');
-    return result.outcome;
+    return result;
   }
 }
